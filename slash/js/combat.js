@@ -82,6 +82,12 @@ const Combat = {
       launchSfx: move.launch,
     });
 
+    // 체간: 공격이 들어갈수록 차오름 (방패에 막혀도 조금)
+    const PO = CONFIG.posture;
+    const pd = move.posture !== undefined ? move.posture : move.damage * PO.hitMult;
+    if (res === 'blocked') enemy.addPosture(move.damage * PO.blockMult, game);
+    else if (res !== 'kill') enemy.addPosture(pd, game);
+
     if (res === 'blocked') {
       // 방패에 막힘: 플레이어가 튕겨남
       player.vx = -dir * enemy.cfg.blockPush;
@@ -179,15 +185,34 @@ const Combat = {
     const hb = this.worldBox(enemy, hitbox, this._hb);
     if (!this.overlap(hb, this.bodyBox(player, this._bb))) return;
     enemy.hitPlayer = true;
-    // 패링: 노랑 공격만 가능
-    if (player.isParrying() && attack.parryable) {
-      const x = (player.x + enemy.x) / 2, y = player.y - player.h * 0.6;
-      enemy.parried(Math.sign(enemy.x - player.x) || -player.facing);
-      this.parrySuccess(game, player, enemy, x, y);
-      return;
+    this.resolveIncoming(game, player, attack.damage, enemy.facing, attack.knock, attack, enemy, enemy.x);
+  },
+
+  // 플레이어에게 들어오는 공격 처리: 퍼펙트 패링 → 가드 → 회피(무적) → 피격
+  // 반환: 'perfect' | 'guard' | 'dodge' | 'hit'
+  resolveIncoming(game, player, dmg, dir, knock, attack, enemy, srcX) {
+    const parryable = attack.parryable || attack.telegraph === 'white';
+    // 퍼펙트 패링: 노랑/흰색 공격만. 방향 상관없이 (자동으로 돌아봄)
+    if (player.isParrying() && parryable) {
+      const x = enemy ? (player.x + enemy.x) / 2 : srcX;
+      this.perfectParry(game, player, enemy, x, player.y - player.h * 0.6, attack.telegraph === 'white');
+      return 'perfect';
     }
-    if (player.isInvulnerable()) return;   // 대시 무적 등: 피함
-    this.damagePlayer(game, player, attack.damage, enemy.facing, attack.knock);
+    if (player.isInvulnerable()) return 'dodge';   // 대시 무적 등: 피함
+    // 가드: 노랑/흰색 공격을 정면에서
+    if (player.isGuarding() && parryable && (srcX - player.x) * player.facing >= 0) {
+      const taken = player.onGuardBlock(dmg, dir);
+      const x = player.x + player.facing * 14, y = player.y - player.h * 0.6;
+      game.hitstop = Math.max(game.hitstop, 4);
+      Effects.addShake(3);
+      Effects.sparks(x, y, -player.facing, 8, '#dfe9ff');
+      Effects.damageNumber(player.x, player.y - player.h - 8, taken, false);
+      Sound.play('guard');
+      if (player.dead) game.onPlayerHurt();
+      return 'guard';
+    }
+    this.damagePlayer(game, player, dmg, dir, knock);
+    return 'hit';
   },
 
   damagePlayer(game, player, dmg, dir, knock) {
@@ -201,19 +226,51 @@ const Combat = {
     game.onPlayerHurt();
   },
 
-  // 패링 성공: 슬로모션 + 화면 번쩍 + 다음 공격 크리티컬 확정
-  parrySuccess(game, player, enemy, x, y) {
-    const PR = CONFIG.parry;
-    player.onParrySuccess(enemy);
+  // 연속 패링 체인 단계: 0(1~2회) / 1(3~4회) / 2(5회 이상)
+  chainTier(n) {
+    const C = CONFIG.parry.chain;
+    return n >= C.tier3 ? 2 : n >= C.tier2 ? 1 : 0;
+  },
+
+  // 퍼펙트 패링: 데미지 0, 적 체간 크게 증가, 칼 맞닿은 채 히트스톱
+  // enemy 가 null 이면 투사체 패링 (반사는 투사체 쪽에서)
+  perfectParry(game, player, enemy, x, y, white) {
+    const PR = CONFIG.parry, C = PR.chain;
+    player.onPerfectParry(enemy);
+    const tier = this.chainTier(player.parryChain);
+    const color = white ? '#ffffff' : C.colors[tier];
+
+    if (enemy) {
+      const dir = Math.sign(enemy.x - player.x) || player.facing;
+      enemy.parried(dir);
+      let gain = PR.enemyPosture;
+      if (white) gain *= PR.whitePostureMult;
+      if (tier === 2) gain *= C.tier3PostureMult;
+      enemy.addPosture(gain, game);
+    }
+
+    // 연출: 칼 맞닿은 채 정지 → 방사형 불꽃 + 충격파 원 + 1프레임 흑백 반전
     game.hitstop = Math.max(game.hitstop, PR.hitstop);
     game.slowmo(PR.slowmoMs);
-    Effects.screenFlash('rgba(255,250,215,', 8);
-    Effects.addShake(6);
-    Effects.sparks(x, y, 1, 14, '#fff6c0');
-    Effects.sparks(x, y, -1, 14, '#ffd040');
+    Effects.addShake(PR.shake + tier * 2);
+    Effects.radialSparks(x, y, C.sparks[tier] + (white ? 16 : 0), color, tier);
+    Effects.ring(x, y, color, 46 + tier * 18);
     Effects.flashRing(x, y);
-    Effects.popText(player.x, player.y - player.h - 30, 'PARRY!', '#ffe070', 24);
-    Sound.play('parry');
-    game.onParry(enemy);
+    Effects.monoInvert(1);
+    if (tier >= 1) game.zoomPulse = Math.max(game.zoomPulse, tier === 2 ? C.zoom3 : C.zoom2);
+    if (tier === 2) {
+      game.dim = Math.max(game.dim, C.dim3);
+      Effects.radialSparks(x, y, 18, '#ffd23a', 2);     // 주황 폭발 + 노란 불씨
+      Effects.ring(x, y, '#ff8a1a', 90);
+    }
+    if (white) {
+      // 간파: 흰 섬광 + 특수 연출
+      Effects.screenFlash('rgba(255,255,255,', 12);
+      Effects.ring(x, y, '#ffffff', 130);
+      Effects.popText(player.x, player.y - player.h - 34, '간파!', '#ffffff', 26);
+      game.zoomPulse = Math.max(game.zoomPulse, C.zoom3 * 1.3);
+    }
+    Sound.play(white ? 'perfectParryWhite' : tier === 2 ? 'perfectParry3' : tier === 1 ? 'perfectParry2' : 'perfectParry');
+    game.onParry(enemy, tier);
   },
 };

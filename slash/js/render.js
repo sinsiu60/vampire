@@ -43,6 +43,7 @@ const THEMES = [
 
 const Render = {
   themeIndex: 0,
+  lit: 0,          // 0~1: 어두운 화면(처형 암전 등)에서 캐릭터를 밝은 실루엣으로 그리는 정도
   _layers: null,
   _motes: null,
   _tufts: null,
@@ -235,12 +236,18 @@ const Render = {
     const fig = Anim.playerFigure(p);
     if (p.invuln > 0 && p.state !== 'hurt' && !p.dead && (p.invuln >> 2) % 2 === 0) ctx.globalAlpha = 0.45;
     const white = p.flash > 0;
-    const col = white ? '#ffffff' : '#060608';
-    const back = white ? '#e8e8e8' : '#2a2328';
-    let glow = null;
+    let col = white ? '#ffffff' : '#060608';
+    let back = white ? '#e8e8e8' : '#2a2328';
+    let glow = null, blur = 8 + 5 * p.chargeLevel;
     if (p.state === 'charge' && p.chargeLevel > 0) glow = p.chargeLevel >= 2 ? '#bff' : '#3ef';
+    if (p.state === 'guardBreak') { glow = '#ff7a40'; blur = 10; }
+    // 어두운 화면: 청록 테두리 → 완전히 어두우면 밝은 실루엣
+    if (this.lit > 0.05 && !white) {
+      glow = '#3ff'; blur = 6 + 10 * this.lit;
+      if (this.lit > 0.5) { col = '#eafcff'; back = '#a9c9cf'; }
+    }
 
-    Anim.drawFigure(ctx, fig, { color: col, back, glow, glowBlur: 8 + 5 * p.chargeLevel }, p.scarf);
+    Anim.drawFigure(ctx, fig, { color: col, back, glow, glowBlur: blur }, p.scarf);
 
     // 칼: 검은 칼날 (궤적만 청록). 패링 성공 후 크리티컬 확정 상태면 금빛
     const b = fig.blade;
@@ -280,7 +287,7 @@ const Render = {
 
     // 패링 판정 창: 칼날 가운데 노란 반짝임
     if (p.isParrying() || p.parryFlash > 0) {
-      const k = p.parryFlash > 0 ? p.parryFlash / 14 : 1 - p.stateFrame / (CONFIG.parry.window + 1);
+      const k = p.parryFlash > 0 ? p.parryFlash / 14 : 1 - p.stateFrame / (CONFIG.parry.perfectWindow + 1);
       const mx = (b.hand.x + b.tip.x) / 2, my = (b.hand.y + b.tip.y) / 2;
       ctx.save();
       ctx.globalAlpha = clamp01(k);
@@ -312,23 +319,31 @@ const Render = {
     const fig = Anim.enemyFigure(e);
     const look = e.cfg.look;
     ctx.save();
-    if (e.dead) ctx.globalAlpha = Math.max(0, 1 - e.stateFrame / 24);
+    if (e.dead && !e.executed) ctx.globalAlpha = Math.max(0, 1 - e.stateFrame / 24);
     const white = e.flash > 0;
     let col = '#060506', back = '#2b2225', glow = null, blur = 0;
-    // 예고: 빨강(패링 불가) / 노랑(패링 가능) 기운이 깜빡이며 차오름
+    // 예고: 빨강(패링 불가) / 노랑(패링 가능) / 흰색 섬광(간파, 보스) 기운이 깜빡이며 차오름
     if (e.telegraphing) {
-      const yellow = e.atk.parryable;
+      const tc = e.telegraphColor;
       const k = clamp01(e.stateFrame / e.atk.windup);
       const on = (e.stateFrame >> 2) % 2 === 0;
-      glow = yellow ? '#ffd21a' : '#ff1a1a';
+      glow = Render.TELE[tc].glow;
       blur = on ? 10 + 16 * k : 6;
-      if (on) { col = yellow ? '#2a2205' : '#2a0505'; back = yellow ? '#4a3e10' : '#4a1010'; }
+      if (on) { col = Render.TELE[tc].body; back = Render.TELE[tc].back; }
+    } else if (e.state === 'broken') {
+      // 체간 붕괴: 붉게 맥동
+      glow = '#ff2a1a';
+      blur = 8 + Math.sin((Game.frame || 0) * 0.3) * 5;
     } else if (e.armored) {
       // 슈퍼아머: 은빛 테두리
       glow = 'rgba(190,205,225,0.9)';
       blur = 5;
     }
     if (white) { col = '#ffffff'; back = '#e8e8e8'; glow = null; }
+    if (this.lit > 0.05 && !white) {
+      glow = glow || '#ff3030'; blur = Math.max(blur, 5 + 10 * this.lit);
+      if (this.lit > 0.5) { col = '#fbeeee'; back = '#cbb5b5'; }
+    }
 
     if (look.weapon === 'claws') this.wings(ctx, fig, e, col, back);
     Anim.drawFigure(ctx, fig, { color: col, back, glow, glowBlur: blur });
@@ -339,11 +354,12 @@ const Render = {
     if (!white) Anim.drawEye(ctx, fig, '#ff5050', '#f00', look.body === 'heavy' ? 2.6 : 2.2);
     ctx.restore();
 
+    if (e.executed) return;   // 처형 대상은 처형 연출이 마저 그림
     const headY = fig.j.head.y - fig.dim.headR;
     // 예고 표시 "!"
     if (e.telegraphing) {
       const k = clamp01(e.stateFrame / e.atk.windup);
-      const c = e.atk.parryable ? '#ffd21a' : '#ff2a2a';
+      const c = Render.TELE[e.telegraphColor].mark;
       ctx.save();
       ctx.fillStyle = c;
       ctx.shadowColor = c;
@@ -366,14 +382,114 @@ const Render = {
       }
       ctx.restore();
     }
-    // 체력바
-    if (!e.dead && e.hpShow > 0) {
-      const bw = look.body === 'heavy' ? 56 : 40;
-      const by = Math.min(e.y - e.h - 12, headY - 10);
+    // 체력바 + 체간 바 (세키로식: 가운데서 양옆으로 차오름)
+    const bw = look.body === 'heavy' ? 56 : 40;
+    const by = Math.min(e.y - e.h - 12, headY - 10);
+    if (!e.dead && (e.hpShow > 0 || e.posture > 0)) {
       ctx.fillStyle = 'rgba(0,0,0,0.7)';
       ctx.fillRect(e.x - bw / 2 - 1, by - 1, bw + 2, 5);
       ctx.fillStyle = '#d33';
       ctx.fillRect(e.x - bw / 2, by, bw * (e.hp / e.maxHp), 3);
+    }
+    if (!e.dead && e.posture > 0.5) this.postureBar(ctx, e.x, by - 7, bw, e.posture / e.maxPosture, e.state === 'broken', e.postureFlash > 0);
+    // 체간 붕괴: 붉은 처형 표식 + 안내
+    if (e.state === 'broken' && !e.dead) {
+      const t = (Game.frame || 0);
+      const pulse = 1 + Math.sin(t * 0.25) * 0.15;
+      const my = by - 22;
+      ctx.save();
+      ctx.translate(e.x, my);
+      ctx.scale(pulse, pulse);
+      ctx.fillStyle = '#ff2a1a';
+      ctx.shadowColor = '#f00';
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.moveTo(0, -9); ctx.lineTo(7, 0); ctx.lineTo(0, 9); ctx.lineTo(-7, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(0, -4); ctx.lineTo(3, 0); ctx.lineTo(0, 4); ctx.lineTo(-3, 0);
+      ctx.fill();
+      ctx.restore();
+      const near = Math.abs(Game.player.x - e.x) <= CONFIG.posture.executeRange;
+      ctx.save();
+      ctx.font = 'bold 11px "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = near ? '#fff' : 'rgba(255,255,255,0.6)';
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 3;
+      const txt = `${Input.label('light')} 처형`;
+      ctx.strokeText(txt, e.x, e.y + 16);
+      ctx.fillText(txt, e.x, e.y + 16);
+      ctx.restore();
+    }
+  },
+
+  // 예고 색 (색 = 정보)
+  TELE: {
+    red: { glow: '#ff1a1a', body: '#2a0505', back: '#4a1010', mark: '#ff2a2a' },
+    yellow: { glow: '#ffd21a', body: '#2a2205', back: '#4a3e10', mark: '#ffd21a' },
+    white: { glow: '#ffffff', body: '#5a5a5a', back: '#8a8a8a', mark: '#ffffff' },
+  },
+
+  // 체간 바: 가운데에서 양옆으로. 찰수록 노랑 → 주황 → 빨강
+  postureBar(ctx, x, y, w, t, broken, flash) {
+    t = clamp01(t);
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(x - w / 2 - 1, y - 1, w + 2, 4);
+    const r = 255, g = Math.round(210 - 170 * t), b = Math.round(60 - 50 * t);
+    ctx.fillStyle = broken ? ((Game.frame >> 2) % 2 ? '#ff3020' : '#ffd0a0') : flash ? '#fff2c0' : `rgb(${r},${g},${b})`;
+    ctx.fillRect(x - (w / 2) * t, y, w * t, 2);
+    // 가운데 눈금
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillRect(x - 0.5, y - 1, 1, 4);
+  },
+
+  // 처형 대상: 붉은 일섬 표시 → 두 동강
+  executionTarget(ctx, ex) {
+    const e = ex.target, X = CONFIG.execution;
+    const slashAt = X.prepFrames, splitAt = slashAt + X.stillFrames;
+    if (ex.f < splitAt) {
+      this.enemy(ctx, e);
+    } else {
+      // 위/아래로 나뉘어 벌어지며 사라짐
+      const k = ex.f - splitAt;
+      const a = Math.max(0, 1 - k / X.splitFrames);
+      const sep = ex.split;
+      const cy = ex.cutY;
+      for (const half of [0, 1]) {
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.beginPath();
+        if (half === 0) ctx.rect(e.x - 200, cy - 300, 400, 300);
+        else ctx.rect(e.x - 200, cy, 400, 300);
+        ctx.clip();
+        if (half === 0) {
+          ctx.translate(ex.dir * sep * 0.8, -sep * 0.35 + k * k * 0.01);
+          ctx.translate(e.x, cy); ctx.rotate(ex.dir * sep * 0.012); ctx.translate(-e.x, -cy);
+        } else {
+          ctx.translate(-ex.dir * sep * 0.25, 0);
+        }
+        this.enemy(ctx, e);
+        ctx.restore();
+      }
+    }
+    // 붉은 일섬 표시 (예고)
+    if (ex.f < slashAt + 4) {
+      const t = clamp01(ex.f / (slashAt * 0.7));
+      const len = 70 * ease.outCubic(t);
+      ctx.save();
+      ctx.strokeStyle = '#ff2a1a';
+      ctx.shadowColor = '#f00';
+      ctx.shadowBlur = 16;
+      ctx.lineCap = 'round';
+      ctx.lineWidth = 3 + 2 * Math.sin(ex.f * 0.6);
+      ctx.beginPath();
+      ctx.moveTo(e.x - len * 0.7, ex.cutY - len * 0.25);
+      ctx.lineTo(e.x + len * 0.7, ex.cutY + len * 0.25);
+      ctx.stroke();
+      ctx.restore();
     }
   },
 

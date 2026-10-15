@@ -93,6 +93,13 @@ const Anim = (() => {
     diveWind: P({ torso: -20, head: -20, thF: 40, shF: -70, thB: 20, shB: -60, arB1: -150, arB2: 20, arF1: -150, arF2: 20 }),
     dive: P({ torso: 70, head: -40, thF: -20, shF: -20, thB: -30, shB: -20, arB1: 40, arB2: 30, arF1: 30, arF2: 30 }),
     flyIdle: P({ torso: 10, head: -5, thF: 25, shF: -50, thB: 5, shB: -60, arB1: 20, arB2: 50, arF1: 30, arF2: 50 }),
+    // 가드: 낮게 버티며 칼을 앞으로
+    guard: P({ torso: 6, head: 2, thF: 46, shF: -62, thB: -30, shB: -34, arB1: -20, arB2: 80 }),
+    // 처형: 칼 털어내기
+    flick: P({ torso: 12, head: 8, thF: 40, shF: -40, thB: -30, shB: -20, arB1: -30, arB2: 40 }),
+    // 적: 퍼펙트 패링 당해 휘청 / 체간 붕괴로 무릎 꿇음
+    gDeflect: P({ torso: -34, head: -30, thF: 30, shF: -18, thB: -24, shB: -36, arB1: -120, arB2: 20, wpn: -120 }),
+    gKneel: P({ torso: 34, head: 34, thF: 85, shF: -150, thB: -40, shB: -100, arB1: 10, arB2: 10, arF1: 20, arF2: 10, wpn: 105 }),
     // 플레이어 패링 자세: 칼을 세워 막음
     parry: P({ torso: -8, head: -4, thF: 34, shF: -40, thB: -26, shB: -24, arB1: -40, arB2: 70 }),
   };
@@ -208,6 +215,22 @@ const Anim = (() => {
       case 'parry':
         r.pose = lerpPose(p.onGround ? breathe(POSES.idle, t) : airBase(), POSES.parry, ease.outCubic(clamp01(f / 3)));
         break;
+      case 'guard':
+        r.pose = lerpPose(POSES.parry, POSES.guard, ease.outCubic(clamp01(f / 6)));
+        if (p.guardFlash > 0) { r.pose = Object.assign({}, r.pose); r.pose.torso -= p.guardFlash * 1.5; }   // 받을 때 밀림
+        break;
+      case 'guardBreak':
+        // 자세 붕괴: 뒤로 휘청
+        r.pose = Object.assign({}, POSES.hurt);
+        r.pose.torso += Math.sin(f * 0.35) * 10;
+        r.pose.head += Math.sin(f * 0.35 + 1) * 12;
+        break;
+      case 'execute':
+        if (p.execPose === 'wind') r.pose = lerpPose(breathe(POSES.idle, t), POSES.cutWind, ease.outCubic(clamp01(f / 10)));
+        else if (p.execPose === 'strike') r.pose = POSES.thrustStrike;
+        else r.pose = lerpPose(POSES.thrustStrike, POSES.flick, ease.outCubic(clamp01(f / 10)));
+        r.grounded = true;
+        break;
       case 'dead':
         r.pose = POSES.dead;
         r.rot = -90 * ease.outQuad(clamp01(f / 20));
@@ -284,6 +307,20 @@ const Anim = (() => {
         break;
       case 'hurt':
         r.pose = lerpPose(POSES.gHurt, base, clamp01((f - e.hitstun * 0.5) / (e.hitstun * 0.5)));
+        break;
+      case 'deflected': {
+        // 퍼펙트 패링 당함: 크게 젖혀졌다 돌아옴
+        const k = clamp01(f / CONFIG.parry.deflectStagger);
+        r.pose = lerpPose(POSES.gDeflect, base, ease.inOut(Math.max(0, (k - 0.4) / 0.6)));
+        r.pose.torso += Math.sin(f * 0.6) * 4 * (1 - k);
+        break;
+      }
+      case 'broken':
+        // 체간 붕괴: 무릎 꿇고 비틀거림
+        r.pose = lerpPose(POSES.gDeflect, POSES.gKneel, ease.outCubic(clamp01(f / 10)));
+        r.pose.torso += Math.sin(t * 0.15) * 6;
+        r.pose.head += Math.sin(t * 0.15 + 1.2) * 8;
+        r.grounded = e.onGround;
         break;
       case 'stun':
         // 그로기: 고개 숙이고 휘청휘청

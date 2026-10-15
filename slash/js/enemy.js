@@ -1,8 +1,10 @@
 'use strict';
 // 적 6종 공통 클래스. 종류별 차이는 config.js 의 enemies.* (특성 플래그 + attacks 목록)
-//  상태: idle | chase | windup | attack | recover | hurt | stun | launched | down | getup | dead
+//  상태: idle | chase | windup | attack | recover | hurt | stun | deflected | broken | launched | down | getup | dead
 //   windup : 공격 예고 (노랑 = 패링 가능 / 빨강 = 패링 불가)
-//   stun   : 그로기 (패링 당함 / 벽에 박음). 아무것도 못 함
+//   stun   : 그로기 (벽에 박음). 아무것도 못 함
+//   deflected: 퍼펙트 패링 당해 휘청 (짧은 경직)
+//   broken : 체간 붕괴. 무릎 꿇고 비틀거림 → 이때 처형 가능
 //   launched: 공중에 떠 있음 (공격 불가) → 바닥에 닿으면 down → getup → chase
 //  특성: shield(정면 방어) / flying(공중 부유) / superArmor(경직 무시, 패링으로 해제)
 
@@ -32,6 +34,11 @@ class Enemy {
     this.slammed = false;         // 내려찍기로 바닥에 꽂히는 중
     this.hitstun = 0;
     this.stunTimer = 0;           // 그로기 남은 시간
+    this.maxPosture = T.posture;  // 체간: 가득 차면 붕괴(처형 가능)
+    this.posture = 0;
+    this.postureDelay = 0;
+    this.postureFlash = 0;
+    this.executed = false;        // 처형 연출 중 (일반 렌더 대신 처형 연출이 그림)
     this.armorBroken = 0;         // 슈퍼아머 해제 남은 시간
     this.turnTimer = 0;           // 방패병: 뒤돌아보기까지 누적
     this.diveVX = 0; this.diveVY = 0;
@@ -65,10 +72,16 @@ class Enemy {
     return !!this.cfg.shield && (this.state === 'idle' || this.state === 'chase' || this.state === 'windup');
   }
 
+  // 공격 예고 색: white(간파, 보스) / yellow(패링 가능) / red(패링 불가)
+  get telegraphColor() {
+    if (this.atk.telegraph === 'white') return 'white';
+    return this.atk.parryable ? 'yellow' : 'red';
+  }
+
   // 공중에 떠서 움직이는 중인가 (중력 무시)
   get hovering() {
     return !!this.cfg.flying && !this.dead &&
-      this.state !== 'launched' && this.state !== 'down' && this.state !== 'getup' &&
+      this.state !== 'launched' && this.state !== 'down' && this.state !== 'getup' && this.state !== 'broken' &&
       !(this.state === 'recover' && this.grounded);
   }
 
@@ -86,7 +99,16 @@ class Enemy {
     if (this.hpShow > 0) this.hpShow--;
     if (this.cooldown > 0) this.cooldown--;
     if (this.armorBroken > 0) this.armorBroken--;
+    if (this.postureFlash > 0) this.postureFlash--;
     this.stateFrame++;
+
+    // 체간 회복: 한동안 안 맞으면 천천히 (체력이 적을수록 느리게)
+    const PO = CONFIG.posture;
+    if (this.postureDelay > 0) this.postureDelay--;
+    else if (this.posture > 0 && this.state !== 'broken') {
+      const hpK = 1 - PO.regenHpFactor * (1 - this.hp / this.maxHp);
+      this.posture = Math.max(0, this.posture - PO.enemyRegen * hpK);
+    }
 
     const dx = p.x - this.x;
     const dist = Math.abs(dx);
@@ -134,6 +156,23 @@ class Enemy {
         if (this.stateFrame >= this.hitstun && (this.onGround || this.hovering)) this.afterHurt();
         break;
 
+      case 'deflected':
+        // 퍼펙트 패링 당함: 뒤로 휘청
+        this.vx *= 0.85;
+        if (this.hovering) this.vy *= 0.9;
+        if (this.stateFrame >= CONFIG.parry.deflectStagger) this.afterHurt();
+        break;
+
+      case 'broken':
+        // 체간 붕괴: 무릎 꿇고 비틀거림. 시간이 지나면 체간 일부를 남기고 회복
+        this.vx *= 0.8;
+        if (this.stateFrame >= PO.breakFrames) {
+          this.posture = this.maxPosture * PO.resetRatio;
+          this.cooldown = Math.max(this.cooldown, 30);
+          this.setState('chase');
+        }
+        break;
+
       case 'stun':
         // 그로기: 제자리에서 휘청
         this.vx *= 0.85;
@@ -164,7 +203,11 @@ class Enemy {
 
       case 'down':
         this.vx *= this.onGround ? 0.8 : 0.97;
-        if (this.stateFrame >= CONFIG.air.downFrames && this.onGround) this.setState('getup');
+        if (this.stateFrame >= CONFIG.air.downFrames && this.onGround) {
+          // 떠 있는 동안 체간이 가득 찼으면 일어나자마자 붕괴
+          if (this.posture >= this.maxPosture) this.breakPosture(game);
+          else this.setState('getup');
+        }
         break;
 
       case 'getup':
@@ -207,9 +250,10 @@ class Enemy {
     else if (this.hovering) this.walkPhase += 0.25;   // 날갯짓
   }
 
-  // 경직/기상 후: 그로기가 남아 있으면 다시 그로기로
+  // 경직/기상 후: 체간이 가득이면 붕괴, 그로기가 남아 있으면 다시 그로기로
   afterHurt() {
-    if (this.stunTimer > 0) this.setState('stun');
+    if (this.posture >= this.maxPosture) this.breakPosture(Game);
+    else if (this.stunTimer > 0) this.setState('stun');
     else {
       this.cooldown = Math.max(this.cooldown, 20);
       this.setState('chase');
@@ -256,7 +300,7 @@ class Enemy {
         this.atk = a;
         this.facing = dir;
         this.setState('windup');
-        Sound.play(a.parryable ? 'telegraphYellow' : 'telegraph');
+        Sound.play(a.telegraph === 'white' ? 'telegraphWhite' : a.parryable ? 'telegraphYellow' : 'telegraph');
       }
     }
   }
@@ -364,18 +408,46 @@ class Enemy {
     this.setState('hurt');
   }
 
-  // 패링 당함: 그로기 (중갑병은 슈퍼아머 해제)
+  // 퍼펙트 패링 당함: 휘청 (중갑병은 슈퍼아머 해제). 체간은 combat 에서 더함
   parried(dir) {
     const PR = CONFIG.parry;
     this.hitPlayer = true;
-    this.stunTimer = PR.stunFrames;
-    this.vx = dir * 3 / this.cfg.weight;
-    if (this.cfg.superArmor) {
+    this.vx = dir * PR.deflectPush / this.cfg.weight;
+    if (this.cfg.superArmor && this.armorBroken <= 0) {
       this.armorBroken = PR.armorBreakFrames;
-      Effects.popText(this.x, this.y - this.h - 26, 'ARMOR BREAK', '#ffe070', 20);
+      Effects.popText(this.x, this.y - this.h - 26, 'ARMOR BREAK', '#ffe070', 18);
       Effects.shards(this.x, this.y - this.h * 0.7, dir, 12, '#8d97a3');
     }
-    this.setState('stun');
+    if (this.state !== 'launched' && this.state !== 'down' && this.state !== 'broken') this.setState('deflected');
+  }
+
+  // 체간 증가. 가득 차면 붕괴 (공중/다운 중이면 착지 후)
+  addPosture(n, game) {
+    if (this.dead || this.state === 'broken' || n <= 0) return;
+    this.posture = Math.min(this.maxPosture, this.posture + n);
+    this.postureDelay = CONFIG.posture.enemyRegenDelay;
+    this.postureFlash = 6;
+    if (this.posture >= this.maxPosture &&
+        this.state !== 'launched' && this.state !== 'down' && this.state !== 'getup') {
+      this.breakPosture(game);
+    }
+  }
+
+  // 체간 붕괴: 무릎 꿇고 비틀거림 → 처형 가능
+  breakPosture(game) {
+    this.posture = this.maxPosture;
+    this.slammed = false;
+    this.stunTimer = 0;
+    this.hitPlayer = true;
+    this.vx = 0;
+    if (this.cfg.superArmor) this.armorBroken = Math.max(this.armorBroken, CONFIG.posture.breakFrames + 30);
+    this.setState('broken');
+    Effects.popText(this.x, this.y - this.h - 30, '체간 붕괴', '#ff5040', 20);
+    Effects.sparks(this.x, this.y - this.h * 0.7, 1, 12, '#ff6040');
+    Effects.sparks(this.x, this.y - this.h * 0.7, -1, 12, '#ff6040');
+    Effects.addShake(8);
+    Sound.play('postureBreak');
+    if (game) game.slowmo(CONFIG.posture.breakSlowmoMs);
   }
 
   // 정면에서 맞았는가 (방패 판정용). attackerX: 공격 위치
@@ -406,6 +478,12 @@ class Enemy {
       this.vy = -5;
       this.setState('dead');
       return 'kill';
+    }
+
+    // 체간 붕괴 중: 데미지만 받고 그대로 무릎 꿇고 있음 (처형 기회 유지)
+    if (this.state === 'broken') {
+      this.vx += info.dir * 0.4;
+      return 'hit';
     }
 
     // 슈퍼아머: 데미지만 받고 행동은 계속

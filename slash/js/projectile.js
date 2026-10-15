@@ -66,15 +66,16 @@ class Projectile {
     if (this.owner === 'enemy') {
       const p = game.player;
       if (p.dead || !Combat.overlap(b, Combat.bodyBox(p, Combat._bb))) return;
-      // 패링 창 안: 반사
+      // 퍼펙트 패링: 반사 / 가드: 막고 사라짐 / 대시: 통과
       if (p.isParrying() && this.parryable) {
         this.reflect(p.facing);
-        Combat.parrySuccess(game, p, null, this.x, this.y);
+        Combat.perfectParry(game, p, null, this.x, this.y, false);
         return;
       }
-      if (p.isInvulnerable()) return;   // 대시로 통과
-      this.dead = true;
-      Combat.damagePlayer(game, p, this.damage, Math.sign(this.vx) || 1, { x: 4, y: -3 });
+      if (p.isInvulnerable()) return;
+      const shooterX = this.x - this.vx * 10;   // 날아온 쪽
+      const res = Combat.resolveIncoming(game, p, this.damage, Math.sign(this.vx) || 1, { x: 4, y: -3 }, this.atk, null, shooterX);
+      if (res !== 'dodge') this.dead = true;
     } else {
       for (const e of game.enemies) {
         if (e.dead || !Combat.overlap(b, Combat.bodyBox(e, Combat._bb))) continue;
@@ -83,6 +84,7 @@ class Projectile {
         Combat.applyHit(game, e, this.damage, false, {
           dir, knockX: 5, knockY: -3, hitstun: 34, attackerX: this.x - dir * 20,
         }, { hitstop: 7, shake: 5, heavy: true, x: this.x, y: this.y });
+        e.addPosture(this.damage * CONFIG.posture.hitMult, game);
         return;
       }
     }

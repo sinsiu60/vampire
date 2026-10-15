@@ -7,6 +7,9 @@ const Effects = {
   trail: [],       // 검기 리본: 칼 안쪽~칼끝 샘플 점들
   waves: [],       // 충격파 고리
   rings: [],       // 부딪힘 섬광
+  cRings: [],      // 퍼펙트 패링 충격파 원
+  streaks: [],     // 순간이동 궤적 선
+  mono: 0,         // >0 이면 흑백 반전 프레임
   afterimages: [],
   numbers: [],
   shake: 0,
@@ -21,6 +24,9 @@ const Effects = {
     this.trail.length = 0;
     this.waves.length = 0;
     this.rings.length = 0;
+    this.cRings.length = 0;
+    this.streaks.length = 0;
+    this.mono = 0;
     this.afterimages.length = 0;
     this.numbers.length = 0;
     this.shake = 0;
@@ -94,6 +100,35 @@ const Effects = {
     this.rings.push({ x, y, life: 10, max: 10 });
   },
 
+  // 퍼펙트 패링: 충돌 지점에서 사방으로 튀는 불꽃 (tier 가 높을수록 빠르고 길게)
+  radialSparks(x, y, count, color, tier) {
+    const sp = 5 + (tier || 0) * 2.5;
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * Math.PI * 2 + Math.random() * 0.3;
+      const s = sp * (0.5 + Math.random() * 0.8);
+      this.particles.push({
+        x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+        life: 16 + Math.random() * 12 + tier * 4, max: 28 + tier * 4, size: 2 + Math.random() * 2 + tier * 0.6,
+        color, grav: 0.12, drag: 0.9, kind: 'spark',
+      });
+    }
+  },
+
+  // 충격파 원 (퍼져나가며 사라짐)
+  ring(x, y, color, radius) {
+    this.cRings.push({ x, y, color, r: radius, life: 18, max: 18 });
+  },
+
+  // 한 프레임 흑백 반전
+  monoInvert(frames) {
+    this.mono = Math.max(this.mono, frames || 1);
+  },
+
+  // 순간이동 궤적 (청록 직선이 남았다 사라짐)
+  streak(x1, y1, x2, y2, color) {
+    this.streaks.push({ x1, y1, x2, y2, color, life: 16, max: 16 });
+  },
+
   // 내려찍기 착지 충격파
   shockwave(x, y, radius) {
     this.waves.push({ x, y, r: radius, life: 22, max: 22 });
@@ -102,8 +137,9 @@ const Effects = {
   },
 
   // 대시 잔상: 그 순간의 골격을 반투명 분신으로 (기본 청록)
-  afterimage(fig, color) {
-    this.afterimages.push({ fig, life: 16, max: 16, color: color || 'rgb(70,230,255)' });
+  afterimage(fig, color, life) {
+    life = life || 16;
+    this.afterimages.push({ fig, life, max: life, color: color || 'rgb(70,230,255)' });
   },
 
   // 떠오르는 글자 (PARRY!, ARMOR BREAK 등)
@@ -145,6 +181,7 @@ const Effects = {
       this.shake = 0; this.shakeX = 0; this.shakeY = 0;
     }
     if (this.impact > 0) this.impact--;
+    if (this.mono > 0) this.mono--;
     if (this.flash && --this.flash.life <= 0) this.flash = null;
 
     const ps = this.particles;
@@ -161,6 +198,10 @@ const Effects = {
       const tr = this.trail;
       for (let i = tr.length - 1; i >= 0; i--) if (--tr[i].life <= 0) tr.splice(i, 1);
     }
+    const cr = this.cRings;
+    for (let i = cr.length - 1; i >= 0; i--) if (--cr[i].life <= 0) cr.splice(i, 1);
+    const st = this.streaks;
+    for (let i = st.length - 1; i >= 0; i--) if (--st[i].life <= 0) st.splice(i, 1);
     const rs = this.rings;
     for (let i = rs.length - 1; i >= 0; i--) if (--rs[i].life <= 0) rs.splice(i, 1);
     const ws = this.waves;
@@ -265,6 +306,33 @@ const Effects = {
       ctx.fill();
       ctx.restore();
     }
+
+    // 퍼펙트 패링 충격파 원
+    for (const r of this.cRings) {
+      const t = 1 - r.life / r.max;
+      ctx.globalAlpha = (1 - t) * 0.9;
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth = 5 * (1 - t) + 1;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, 8 + r.r * ease.outCubic(t), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // 순간이동 궤적
+    for (const s of this.streaks) {
+      const t = s.life / s.max;
+      ctx.save();
+      ctx.globalAlpha = t;
+      ctx.strokeStyle = s.color;
+      ctx.shadowColor = s.color;
+      ctx.shadowBlur = 12;
+      ctx.lineWidth = 1 + 6 * t;
+      ctx.beginPath();
+      ctx.moveTo(s.x1, s.y1);
+      ctx.lineTo(s.x2, s.y2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
 
     // 부딪힘 섬광
     for (const r of this.rings) {

@@ -1,7 +1,11 @@
 'use strict';
 // 플레이어: 이동, 점프(코요테/버퍼/2단/가변 높이), 대시, 지상 콤보, 차지 강공격,
 //          런처, 공중 3타, 공중 강공, 내려찍기
-// 상태: free | attack | charge | slam | dash | parry | hurt | dead
+// 상태: free | attack | charge | slam | dash | parry | guard | guardBreak | execute | hurt | dead
+//  parry     : F 를 누른 직후. perfectWindow 동안 퍼펙트 패링 판정, 실패하면 후딜
+//  guard     : F 를 계속 누르고 있음. 데미지 감소, 대신 체간 증가
+//  guardBreak: 체간이 가득 차 경직
+//  execute   : 처형 연출 중 (main.js 가 진행)
 
 // (DEG, ease, nearestAngle 는 anim.js)
 
@@ -59,8 +63,17 @@ class Player {
     this.invuln = 0;
     this.flash = 0;
     this.landSquash = 0;
-    this.critReady = 0;           // 패링 성공 후 다음 공격 크리티컬 확정 남은 시간
-    this.parryFlash = 0;          // 패링 성공 연출
+    this.critReady = 0;           // 퍼펙트 패링 후 다음 공격 크리티컬 확정 남은 시간
+    this.parryFlash = 0;          // 퍼펙트 패링 연출
+    this.parryChain = 0;          // 연속 퍼펙트 패링 횟수 (피격 시 리셋)
+    this.chainShow = 0;           // 체인 표시 남은 시간
+    this.counterTimer = 0;        // 퍼펙트 패링 후 반격 입력 가능 시간
+    this.counterTarget = null;
+    this.guardFlash = 0;          // 가드로 막은 연출
+
+    // 체간
+    this.posture = 0;
+    this.postureDelay = 0;
 
     // 애니메이션
     this.runPhase = 0;            // 달리기 주기
@@ -131,9 +144,29 @@ class Player {
     return f >= m.startup && f < m.startup + m.active;
   }
 
-  // 패링 판정 창 안인가 (F 를 누른 직후 window 프레임)
+  // 퍼펙트 패링 판정 창 안인가 (F 를 누른 직후 perfectWindow 프레임)
   isParrying() {
-    return this.state === 'parry' && this.stateFrame <= CONFIG.parry.window;
+    return this.state === 'parry' && this.stateFrame <= CONFIG.parry.perfectWindow;
+  }
+
+  isGuarding() {
+    return this.state === 'guard';
+  }
+
+  // 체간 증가. 가득 차면 경직 (가드 브레이크)
+  addPosture(n) {
+    const PP = CONFIG.posture.player;
+    this.posture = Math.min(PP.max, this.posture + n);
+    this.postureDelay = PP.regenDelay;
+    if (this.posture >= PP.max && this.state !== 'guardBreak' && !this.dead) {
+      this.move = null;
+      this.vx = -this.facing * PP.breakKnock;
+      this.setState('guardBreak');
+      Effects.popText(this.x, this.y - this.h - 24, '자세 붕괴', '#ff8a5a', 18);
+      Effects.sparks(this.x, this.y - this.h * 0.6, -this.facing, 16, '#ffb070');
+      Effects.addShake(7);
+      Sound.play('guardBreak');
+    }
   }
 
   isInvulnerable() {
@@ -192,6 +225,9 @@ class Player {
       case 'dash': pose.ang = 160; break;
       case 'hurt': pose.ang = -70; break;
       case 'parry': pose.ang = -55; break;   // 칼을 비스듬히 세워 막는 자세
+      case 'guard': pose.ang = -35; break;   // 칼을 앞으로 눕혀 받치는 자세
+      case 'guardBreak': pose.ang = 110 + Math.sin(this.stateFrame * 0.5) * 10; break;
+      case 'execute': pose.ang = this.execPose === 'flick' ? 40 + 50 * Math.max(0, 1 - this.stateFrame / 8) : this.execPose === 'strike' ? 20 : 160; break;
       case 'slam':
         // 머리 위로 들었다가 → 아래로 내리꽂기
         pose.ang = this.slamPhase === 'hang' && this.stateFrame < 4 ? -100 : 90;
@@ -236,6 +272,7 @@ class Player {
   update(game, input) {
     const P = CONFIG.player, A = CONFIG.air;
     const ax = input.axisX();
+    this.game = game;
 
     // 버퍼 / 타이머 감소
     for (const k in this.buf) if (this.buf[k] > 0) this.buf[k]--;
@@ -248,6 +285,16 @@ class Player {
     if (this.flipTimer > 0) this.flipTimer--;
     if (this.critReady > 0) this.critReady--;
     if (this.parryFlash > 0) this.parryFlash--;
+    if (this.guardFlash > 0) this.guardFlash--;
+    if (this.chainShow > 0) this.chainShow--;
+    if (this.counterTimer > 0 && --this.counterTimer === 0) this.counterTarget = null;
+
+    // 체간 회복 (가드 중엔 더 빨리)
+    const PP = CONFIG.posture.player;
+    if (this.postureDelay > 0) this.postureDelay--;
+    else if (this.posture > 0 && this.state !== 'guardBreak') {
+      this.posture = Math.max(0, this.posture - PP.regen * (this.state === 'guard' ? PP.guardRegenMult : 1));
+    }
 
     // 스태미나 회복
     if (this.staminaDelay > 0) this.staminaDelay--;
@@ -271,12 +318,15 @@ class Player {
       case 'slam': this.updateSlam(game, input, ax); break;
       case 'dash': this.updateDash(game, input, ax); break;
       case 'parry': this.updateParry(game, input, ax); break;
+      case 'guard': this.updateGuard(game, input, ax); break;
+      case 'guardBreak': this.updateGuardBreak(game); break;
+      case 'execute': this.vx *= 0.8; break;
       case 'hurt': this.updateHurt(game); break;
       case 'dead': this.updateDead(game); break;
     }
 
     // 중력 (대시/내려찍기 중엔 직접 제어)
-    const noGravity = this.state === 'dash' || (this.state === 'slam' && this.slamPhase !== 'land');
+    const noGravity = this.state === 'dash' || this.state === 'execute' || (this.state === 'slam' && this.slamPhase !== 'land');
     if (!noGravity) {
       let g = CONFIG.physics.gravity;
       // 공중 공격 중엔 살짝 체공
@@ -370,6 +420,35 @@ class Player {
   tryAttack(ax, input) {
     const M = CONFIG.moves;
     const downHeld = this.heavyDown || input.isDown('down');
+    const game = this.game;
+
+    // 처형: 체간이 무너진 적이 가까이 있으면 좌클릭으로 처형
+    if (this.buf.light > 0 && game) {
+      const t = game.findExecutable(this);
+      if (t) {
+        this.buf.light = 0;
+        game.startExecution(t);
+        return true;
+      }
+    }
+    // 패링 반격: 퍼펙트 패링 직후 좌클릭 = 순간이동 베기 / 우클릭 = 카운터 런처
+    const ct = this.counterTarget;
+    if (this.counterTimer > 0 && ct && !ct.dead && ct.state !== 'broken') {
+      if (this.buf.light > 0) {
+        this.buf.light = 0;
+        this.startCounter(ct);
+        return true;
+      }
+      if (this.buf.heavy > 0) {
+        this.buf.heavy = 0;
+        this.counterTimer = 0;
+        this.counterTarget = null;
+        this.facing = Math.sign(ct.x - this.x) || this.facing;
+        this.startAttack('COUNTER_LAUNCH', 0);
+        Effects.popText(this.x, this.y - this.h - 20, 'COUNTER', '#7ff', 16);
+        return true;
+      }
+    }
 
     // ----- 공중 -----
     if (!this.onGround) {
@@ -434,6 +513,29 @@ class Player {
     if (move.air && this.vy > 0) this.vy *= 0.3;   // 공중 공격 시작 시 낙하 멈칫
   }
 
+  // 반격 일섬: 적의 반대편으로 순간이동하며 벤다
+  startCounter(enemy) {
+    const m = CONFIG.moves.COUNTER;
+    const dir = Math.sign(enemy.x - this.x) || this.facing;
+    const lvl = this.game.level;
+    const fromX = this.x;
+    let tx = enemy.x + dir * m.teleport;
+    if (tx < 20 || tx > lvl.width - 20) tx = enemy.x - dir * m.teleport;   // 벽이면 이쪽에서
+    // 지나가는 길에 청록 분신
+    for (let i = 1; i <= 5; i++) {
+      this.x = fromX + (tx - fromX) * (i / 6);
+      this.addAfterimage();
+    }
+    this.x = tx;
+    Effects.streak(fromX, this.y - this.h * 0.55, tx, this.y - this.h * 0.55, '#7ff');
+    this.counterTimer = 0;
+    this.counterTarget = null;
+    this.facing = Math.sign(enemy.x - this.x) || -dir;
+    this.startAttack('COUNTER', 0);
+    Effects.popText(this.x, this.y - this.h - 20, 'COUNTER', '#7ff', 16);
+    Sound.play('teleport');
+  }
+
   startSlam(ax) {
     if (ax !== 0) this.facing = ax;
     this.move = CONFIG.moves.SLAM;
@@ -490,8 +592,8 @@ class Player {
     if (f > m.startup) this.vx *= this.onGround ? 0.82 : 0.92;
     else this.vx *= 0.7;
 
-    // 런처: 강공 버튼을 누르고 있으면 판정 직후 같이 떠오름
-    if (m.launch && f === m.startup + 2 && input.isDown('heavy')) {
+    // 런처: 강공 버튼을 누르고 있으면 판정 직후 같이 떠오름 (카운터 런처는 자동)
+    if (m.launch && f === m.startup + 2 && (m.autoFollow || input.isDown('heavy'))) {
       this.vy = CONFIG.air.launcherFollowVy;
       this.onGround = false;
       this.coyote = 0;
@@ -616,17 +718,57 @@ class Player {
     return true;
   }
 
+  // 탭: 판정 창이 지나도 F 를 누르고 있으면 가드로, 떼었으면 후딜
   updateParry(game, input, ax) {
+    const PR = CONFIG.parry;
     this.vx *= 0.8;
-    if (!this.onGround && this.stateFrame <= CONFIG.parry.window) this.vy = Math.min(this.vy, 1.5);  // 공중에선 잠깐 멈칫
-    if (this.stateFrame >= CONFIG.parry.whiffFrames) this.setState('free');
+    if (!this.onGround && this.stateFrame <= PR.perfectWindow) this.vy = Math.min(this.vy, 1.5);  // 공중에선 잠깐 멈칫
+    if (this.stateFrame > PR.perfectWindow) {
+      if (input.isDown('parry')) { this.setState('guard'); return; }
+      if (this.stateFrame >= PR.perfectWindow + PR.whiffRecovery) this.setState('free');
+    }
   }
 
-  onParrySuccess(enemy) {
+  // 가드: 누르고 있는 동안 유지. 방향 전환만 가능
+  updateGuard(game, input, ax) {
+    this.vx *= 0.75;
+    if (ax !== 0) this.facing = ax;
+    // 가드 중에도 대시 / 공격으로 바로 전환 가능
+    if (this.tryDash(ax)) return;
+    if ((this.buf.light > 0 || this.buf.heavy > 0) && this.tryAttack(ax, input)) return;
+    if (!input.isDown('parry')) this.setState('free');
+  }
+
+  updateGuardBreak(game) {
+    this.vx *= this.onGround ? 0.85 : 0.95;
+    if (this.stateFrame >= CONFIG.posture.player.breakFrames) {
+      this.posture = 0;
+      this.setState('free');
+    }
+  }
+
+  // 가드로 막음: 데미지 감소, 체간 증가, 밀려남
+  onGuardBlock(dmg, dir) {
+    const PR = CONFIG.parry;
+    const taken = dmg * PR.guardDamageMult;
+    this.hp = Math.max(0, this.hp - taken);
+    this.vx = dir * PR.guardPush;
+    this.guardFlash = 8;
+    this.addPosture(dmg * PR.guardPostureMult + PR.guardPostureFlat);
+    if (this.hp <= 0) { this.dead = true; this.setState('dead'); }
+    return taken;
+  }
+
+  onPerfectParry(enemy) {
     const PR = CONFIG.parry;
     this.invuln = PR.invulnFrames;
     this.critReady = PR.critReadyFrames;
     this.parryFlash = 14;
+    this.parryChain++;
+    this.chainShow = PR.chain.displayFrames;
+    this.counterTimer = enemy ? PR.counterWindow : 0;
+    this.counterTarget = enemy;
+    this.posture = Math.min(CONFIG.posture.player.max - 1, this.posture + PR.perfectSelfPosture);
     if (enemy) this.facing = Math.sign(enemy.x - this.x) || this.facing;
     this.setState('free');
   }
@@ -649,6 +791,9 @@ class Player {
 
   takeHit(dmg, dir, knock) {
     const P = CONFIG.player;
+    this.parryChain = 0;          // 피격 시 연속 패링 체인 리셋
+    this.counterTimer = 0;
+    this.counterTarget = null;
     this.hp = Math.max(0, this.hp - dmg);
     this.flash = CONFIG.feel.flashFrames;
     this.invuln = P.hurtInvuln;

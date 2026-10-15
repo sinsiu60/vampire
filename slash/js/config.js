@@ -240,6 +240,25 @@ const CONFIG = {
       name: '충격파', damage: 12, radius: 110, height: 50,
       knock: { x: 4, y: -5 }, hitstun: 30, hitstop: 9, shake: 11,
     },
+
+    // ----- 패링 반격 (퍼펙트 패링 후 counterWindow 안에) -----
+    // 좌클릭: 적 반대편으로 순간이동하며 베기
+    COUNTER: {
+      name: '반격 일섬', startup: 2, active: 4, recovery: 16,
+      damage: 24, posture: 26, hitbox: { x: -10, y: -60, w: 80, h: 60 },
+      knock: { x: 4, y: -1 }, hitstun: 30, hitstop: 8, shake: 6,
+      lunge: 2, sfx: 'swingHeavy', heavy: true,
+      swing: { from: 170, to: -60, r: 76, squash: 0.45, py: -30 },
+      teleport: 64,            // 적 중심에서 반대편으로 이 거리만큼
+    },
+    // 우클릭: 카운터 런처 (같이 떠올라 공중 콤보로)
+    COUNTER_LAUNCH: {
+      name: '반격 런처', startup: 3, active: 5, recovery: 16,
+      damage: 14, posture: 18, hitbox: { x: -6, y: -100, w: 70, h: 100 },
+      knock: { x: 0.8, y: -12.8 }, hitstun: 30, hitstop: 7, shake: 6,
+      lunge: 2, sfx: 'launcher', launch: true, autoFollow: true,
+      swing: { from: 100, to: -105, r: 82, squash: 1 },
+    },
   },
 
   // ---------- 공중 전투 ----------
@@ -268,30 +287,92 @@ const CONFIG = {
     moveSpeedMult: 0,          // 차지 중 이동 (0 = 제자리)
   },
 
-  // ---------- 패링 ----------
+  // ---------- 패링 / 가드 (세키로식 검극) ----------
+  // F 탭: 누른 직후 perfectWindow 프레임 안에 노랑 공격이 닿으면 퍼펙트 패링 (데미지 0, 적 체간 크게 증가)
+  // F 유지: 가드 (데미지 감소, 대신 내 체간 증가). 빨강 공격은 가드·패링 모두 불가
   parry: {
-    window: 12,                // F 를 누른 뒤 이 프레임 안에 노랑 공격이 닿으면 성공 (0.2초)
-    whiffFrames: 24,           // 실패(헛방) 시 전체 동작 시간
-    stunFrames: 110,           // 성공 시 적 그로기 시간
-    slowmoMs: 300,             // 슬로모션 시간 (실제 시간 ms)
-    slowmoScale: 0.25,         // 슬로모션 속도 배율
-    invulnFrames: 24,          // 성공 직후 무적
-    critReadyFrames: 300,      // 다음 공격 크리티컬 확정 유지 시간
+    perfectWindow: 6,          // 퍼펙트 패링 판정: 누른 프레임 포함 7프레임 ≈ 0.12초
+    whiffRecovery: 18,         // 퍼펙트 패링 실패(F 를 떼었을 때) 후딜 (0.3초) — 난사 방지
+    guardDamageMult: 0.3,      // 가드 시 받는 데미지 배율 (70% 감소)
+    guardPostureMult: 1.8,     // 가드로 받은 공격 데미지 → 내 체간 증가 배율
+    guardPostureFlat: 6,       // 가드로 받을 때 추가 체간
+    guardPush: 3.5,            // 가드로 받을 때 밀려남
+    perfectSelfPosture: 2,     // 퍼펙트 패링 시 내 체간 (아주 조금)
+    hitstop: 9,                // 칼이 맞닿은 채 멈추는 시간 (0.15초)
+    shake: 6,
+    enemyPosture: 34,          // 퍼펙트 패링 시 적 체간 증가
+    whitePostureMult: 3,       // 흰색 섬광(간파) 공격을 퍼펙트 패링하면 체간 배율
+    deflectStagger: 34,        // 퍼펙트 패링 당한 적의 휘청 경직
+    deflectPush: 3,            // 휘청일 때 밀려남
+    counterWindow: 30,         // 퍼펙트 패링 후 반격 입력 시간 (0.5초)
+    critReadyFrames: 300,      // 퍼펙트 패링 후 다음 공격 크리티컬 확정 유지 시간
     armorBreakFrames: 420,     // 중갑병 슈퍼아머 해제 시간
-    hitstop: 6,
+    invulnFrames: 10,          // 퍼펙트 패링 직후 무적
+    slowmoMs: 0,               // 퍼펙트 패링 슬로모션 (0 = 없음, 히트스톱으로 대신함)
+    slowmoScale: 0.25,         // 슬로모션 속도 배율 (체간 붕괴·처형 등에서 사용)
+    // 연속 퍼펙트 패링 체인
+    chain: {
+      tier2: 3,                // 3회부터: 노란 불꽃 + 살짝 줌인
+      tier3: 5,                // 5회부터: 주황 불꽃 폭발 + 배경 어두워짐 + 체간 증가 2배
+      tier3PostureMult: 2,
+      zoom2: 0.05,             // 줌인 세기 (화면 배율 +5%)
+      zoom3: 0.09,
+      zoomDecay: 0.92,
+      dim3: 0.55,              // 배경 어두워지는 정도 (0~1)
+      dimDecay: 0.985,
+      sparks: [14, 22, 34],    // 단계별 불꽃 개수
+      colors: ['#ffffff', '#ffd23a', '#ff8a1a'],
+      displayFrames: 240,      // 화면에 체인 수가 남아 있는 시간
+    },
+  },
+
+  // ---------- 체간 ----------
+  posture: {
+    hitMult: 0.45,             // 내 공격 데미지 → 적 체간 증가 배율 (기술에 posture 값이 있으면 그 값)
+    blockMult: 0.8,            // 방패에 막힌 공격 → 방패병 체간 증가 배율
+    enemyRegenDelay: 90,       // 체간이 오른 뒤 회복 시작까지
+    enemyRegen: 0.3,           // 프레임당 회복량
+    regenHpFactor: 0.6,        // 체력이 적을수록 체간 회복이 느려짐 (0 = 영향 없음)
+    breakFrames: 120,          // 체간 붕괴: 무릎 꿇고 비틀거리는 시간 (2초)
+    breakSlowmoMs: 220,        // 체간 붕괴 순간 슬로모션
+    resetRatio: 0.35,          // 붕괴에서 회복하면 체간이 이 비율로
+    executeRange: 120,         // 처형 가능 거리
+    // 플레이어 체간
+    player: {
+      max: 100,
+      regenDelay: 50,
+      regen: 0.4,
+      guardRegenMult: 1.6,     // 가드 중엔 더 빨리 회복
+      breakFrames: 60,         // 가득 차면 1초 경직
+      breakKnock: 3,
+    },
+  },
+
+  // ---------- 처형 연출 ----------
+  execution: {
+    prepFrames: 26,            // 암전 + 붉은 일섬 표시
+    stillFrames: 30,           // 일섬 후 정적 (0.5초)
+    splitFrames: 50,           // 두 동강 → 파편
+    outroFrames: 34,           // 배경 복귀
+    dashOffset: 70,            // 일섬 후 적 반대편 거리
+    splitSpeed: 2.2,           // 두 동강 난 몸이 벌어지는 속도
+    shards: 46,
+    shake: 14,
+    hitstop: 0,
   },
 
   // ---------- 적 ----------
-  // 공통: hp, speed(이동), accel, aggroRange(인식 거리), weight(넉백 저항), friction
+  // 공통: hp, posture(체간 최대치), speed(이동), accel, aggroRange(인식 거리), weight(넉백 저항), friction
   // attacks: 공격 목록. AI 가 사거리 안의 공격 중 하나를 고른다
   //   kind: melee(근접) | rush(돌진) | dive(급강하) | shoot(투사체)
-  //   parryable: true = 노랑 예고(패링 가능) / false = 빨강 예고(패링 불가, 피해야 함)
+  //   parryable: true = 노랑 예고(패링·가드 가능) / false = 빨강 예고(패링·가드 불가, 피해야 함)
+  //   telegraph: 'white' = 흰색 섬광 간파 공격 (보스 전용, 퍼펙트 패링 시 체간 대폭 증가)
   //   range: 이 거리 안이면 시작, windup: 예고 시간, active: 판정 시간, recovery: 후딜, cooldown: 다음 공격까지
   // look: 그래픽 (체형 / 무기)
   enemies: {
     grunt: {
       name: '근접 잡몹',
-      width: 26, height: 46, hp: 70,
+      width: 26, height: 46, hp: 70, posture: 100,
       speed: 1.7, accel: 0.25, aggroRange: 520, weight: 1, friction: 0.82,
       look: { body: 'grunt', weapon: 'blade' },
       attacks: [
@@ -303,7 +384,7 @@ const CONFIG = {
     // 방패병: 정면 공격을 막음 → 런처로 띄우거나 등 뒤로 넘어가서 공략
     shield: {
       name: '방패병',
-      width: 28, height: 48, hp: 90,
+      width: 28, height: 48, hp: 90, posture: 130,
       speed: 1.2, accel: 0.2, aggroRange: 480, weight: 1.6, friction: 0.8,
       shield: true,            // 정면 공격 막음 (런처·내려찍기·등 뒤 공격은 통함)
       turnDelay: 40,           // 등 뒤로 넘어간 플레이어를 돌아보기까지 걸리는 시간
@@ -318,7 +399,7 @@ const CONFIG = {
     // 비행형: 공중에 떠 있음 → 점프해서 공중 콤보로
     flyer: {
       name: '비행형',
-      width: 24, height: 36, hp: 50,
+      width: 24, height: 36, hp: 50, posture: 80,
       speed: 2.4, accel: 0.18, aggroRange: 560, weight: 0.8, friction: 0.9,
       flying: true,
       hoverHeight: 150,        // 바닥에서 떠 있는 높이
@@ -333,7 +414,7 @@ const CONFIG = {
     // 중갑병: 슈퍼아머 (경직·넉백 없음). 노랑 공격을 패링하면 슈퍼아머 해제
     heavy: {
       name: '중갑병',
-      width: 34, height: 58, hp: 260,
+      width: 34, height: 58, hp: 260, posture: 220,
       speed: 0.9, accel: 0.12, aggroRange: 480, weight: 2.5, friction: 0.78,
       superArmor: true,
       look: { body: 'heavy', weapon: 'hammer' },
@@ -349,7 +430,7 @@ const CONFIG = {
     // 원거리형: 거리를 벌리고 투사체. 투사체를 베거나 패링하면 반사
     archer: {
       name: '원거리형',
-      width: 22, height: 44, hp: 45,
+      width: 22, height: 44, hp: 45, posture: 70,
       speed: 1.6, accel: 0.22, aggroRange: 620, weight: 0.9, friction: 0.82,
       keepMin: 200, keepMax: 360,   // 이 거리를 유지하려 함
       look: { body: 'slim', weapon: 'bow' },
@@ -362,7 +443,7 @@ const CONFIG = {
     // 돌진형: 직선 돌진, 벽에 박으면 기절
     charger: {
       name: '돌진형',
-      width: 30, height: 46, hp: 110,
+      width: 30, height: 46, hp: 110, posture: 140,
       speed: 1.3, accel: 0.2, aggroRange: 640, weight: 1.4, friction: 0.82,
       look: { body: 'grunt', weapon: 'horns' },
       // 돌진은 벽에 박거나 active 프레임이 끝날 때까지 계속된다
