@@ -68,6 +68,7 @@ const Combat = {
     if (sure) player.critReady = 0;
     const dmg = move.damage * (crit ? P.critMult : 1);
     const dir = player.facing;
+    const wasDeflected = enemy.state === 'deflected' || enemy.state === 'stun';
 
     const res = this.applyHit(game, enemy, dmg, crit, {
       dir,
@@ -84,7 +85,8 @@ const Combat = {
 
     // 체간: 공격이 들어갈수록 차오름 (방패에 막혀도 조금)
     const PO = CONFIG.posture;
-    const pd = move.posture !== undefined ? move.posture : move.damage * PO.hitMult;
+    let pd = move.posture !== undefined ? move.posture : move.damage * PO.hitMult;
+    if (wasDeflected) pd *= PO.deflectedHitMult;   // 휘청이는 빈틈을 공략하면 더 크게
     if (res === 'blocked') enemy.addPosture(move.damage * PO.blockMult, game);
     else if (res !== 'kill') enemy.addPosture(pd, game);
 

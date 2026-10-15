@@ -300,7 +300,7 @@ const CONFIG = {
     perfectSelfPosture: 2,     // 퍼펙트 패링 시 내 체간 (아주 조금)
     hitstop: 9,                // 칼이 맞닿은 채 멈추는 시간 (0.15초)
     shake: 6,
-    enemyPosture: 34,          // 퍼펙트 패링 시 적 체간 증가
+    enemyPosture: 50,          // 퍼펙트 패링 시 적 체간 증가 (잡몹 2번이면 붕괴)
     whitePostureMult: 3,       // 흰색 섬광(간파) 공격을 퍼펙트 패링하면 체간 배율
     deflectStagger: 34,        // 퍼펙트 패링 당한 적의 휘청 경직
     deflectPush: 3,            // 휘청일 때 밀려남
@@ -328,15 +328,16 @@ const CONFIG = {
 
   // ---------- 체간 ----------
   posture: {
-    hitMult: 0.45,             // 내 공격 데미지 → 적 체간 증가 배율 (기술에 posture 값이 있으면 그 값)
+    hitMult: 0.6,              // 내 공격 데미지 → 적 체간 증가 배율 (기술에 posture 값이 있으면 그 값)
+    deflectedHitMult: 1.6,     // 패링으로 휘청이는 적을 때리면 체간 배율 (빈틈 공략)
     blockMult: 0.8,            // 방패에 막힌 공격 → 방패병 체간 증가 배율
-    enemyRegenDelay: 90,       // 체간이 오른 뒤 회복 시작까지
-    enemyRegen: 0.3,           // 프레임당 회복량
+    enemyRegenDelay: 200,      // 체간이 오른 뒤 회복 시작까지 (휘청·경직 중엔 회복 안 함)
+    enemyRegen: 0.12,          // 프레임당 회복량
     regenHpFactor: 0.6,        // 체력이 적을수록 체간 회복이 느려짐 (0 = 영향 없음)
     breakFrames: 120,          // 체간 붕괴: 무릎 꿇고 비틀거리는 시간 (2초)
     breakSlowmoMs: 220,        // 체간 붕괴 순간 슬로모션
     resetRatio: 0.35,          // 붕괴에서 회복하면 체간이 이 비율로
-    executeRange: 120,         // 처형 가능 거리
+    executeRange: 150,         // 처형 가능 거리
     // 플레이어 체간
     player: {
       max: 100,
@@ -419,6 +420,7 @@ const CONFIG = {
   //   parryable: true = 노랑 예고(패링·가드 가능) / false = 빨강 예고(패링·가드 불가, 피해야 함)
   //   telegraph: 'white' = 흰색 섬광 간파 공격 (보스 전용, 퍼펙트 패링 시 체간 대폭 증가)
   //   range: 이 거리 안이면 시작, windup: 예고 시간, active: 판정 시간, recovery: 후딜, cooldown: 다음 공격까지
+  //   weight: 고를 확률 가중치 (기본 1). 빨강 공격은 두 번 연속으로 쓰지 않음 (노랑이 있으면)
   // look: 그래픽 (체형 / 무기)
   enemies: {
     grunt: {
@@ -435,7 +437,7 @@ const CONFIG = {
     // 방패병: 정면 공격을 막음 → 런처로 띄우거나 등 뒤로 넘어가서 공략
     shield: {
       name: '방패병',
-      width: 28, height: 48, hp: 90, posture: 130,
+      width: 28, height: 48, hp: 90, posture: 110,
       speed: 1.2, accel: 0.2, aggroRange: 480, weight: 1.6, friction: 0.8,
       shield: true,            // 정면 공격 막음 (런처·내려찍기·등 뒤 공격은 통함)
       turnDelay: 40,           // 등 뒤로 넘어간 플레이어를 돌아보기까지 걸리는 시간
@@ -465,16 +467,17 @@ const CONFIG = {
     // 중갑병: 슈퍼아머 (경직·넉백 없음). 노랑 공격을 패링하면 슈퍼아머 해제
     heavy: {
       name: '중갑병',
-      width: 34, height: 58, hp: 260, posture: 220,
+      width: 34, height: 58, hp: 260, posture: 150,
       speed: 0.9, accel: 0.12, aggroRange: 480, weight: 2.5, friction: 0.78,
       superArmor: true,
       look: { body: 'heavy', weapon: 'hammer' },
       attacks: [
-        { id: 'smash', kind: 'melee', parryable: true, range: 72,
+        // 노랑 내려찍기가 주력 (weight 3), 빨강 휩쓸기는 가끔 + 연속으로는 안 씀
+        { id: 'smash', kind: 'melee', parryable: true, range: 84, weight: 3,
           windup: 40, active: 7, recovery: 40, cooldown: 70, lunge: 3,
           damage: 22, hitbox: { x: 0, y: -70, w: 80, h: 70 }, knock: { x: 9, y: -5 } },
-        { id: 'sweep', kind: 'melee', parryable: false, range: 84,
-          windup: 46, active: 9, recovery: 44, cooldown: 80, lunge: 2,
+        { id: 'sweep', kind: 'melee', parryable: false, range: 84, weight: 1,
+          windup: 50, active: 9, recovery: 44, cooldown: 80, lunge: 2,
           damage: 26, hitbox: { x: -20, y: -34, w: 120, h: 34 }, knock: { x: 11, y: -6 } },
       ],
     },
@@ -494,13 +497,14 @@ const CONFIG = {
     // 돌진형: 직선 돌진, 벽에 박으면 기절
     charger: {
       name: '돌진형',
-      width: 30, height: 46, hp: 110, posture: 140,
+      width: 30, height: 46, hp: 110, posture: 120,
       speed: 1.3, accel: 0.2, aggroRange: 640, weight: 1.4, friction: 0.82,
       look: { body: 'grunt', weapon: 'horns' },
       // 돌진은 벽에 박거나 active 프레임이 끝날 때까지 계속된다
       attacks: [
         { id: 'rush', kind: 'rush', parryable: false, range: 420,
           windup: 45, active: 150, recovery: 36, cooldown: 100, rushSpeed: 10.5, wallStun: 150,
+          wallPosture: 0.6,       // 벽에 박으면 체간 최대치의 이 비율만큼 증가
           damage: 18, hitbox: { x: -6, y: -44, w: 36, h: 42 }, knock: { x: 10, y: -5 } },
       ],
     },

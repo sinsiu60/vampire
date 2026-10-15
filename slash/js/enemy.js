@@ -85,11 +85,19 @@ class Enemy {
       !(this.state === 'recover' && this.grounded);
   }
 
-  // 사거리 안의 공격 중 하나 고르기
+  // 사거리 안의 공격 중 가중치로 하나 고르기. 빨강(패링 불가) 공격은 연속으로 쓰지 않음
   pickAttack(dist) {
-    const list = this.cfg.attacks.filter((a) => dist <= a.range);
+    let list = this.cfg.attacks.filter((a) => dist <= a.range);
+    if (this.lastRed) {
+      const yellow = list.filter((a) => a.parryable);
+      if (yellow.length) list = yellow;
+    }
     if (!list.length) return null;
-    return list[(Math.random() * list.length) | 0];
+    let total = 0;
+    for (const a of list) total += a.weight || 1;
+    let r = Math.random() * total;
+    for (const a of list) { r -= a.weight || 1; if (r <= 0) return a; }
+    return list[list.length - 1];
   }
 
   update(game) {
@@ -104,8 +112,11 @@ class Enemy {
 
     // 체간 회복: 한동안 안 맞으면 천천히 (체력이 적을수록 느리게)
     const PO = CONFIG.posture;
-    if (this.postureDelay > 0) this.postureDelay--;
-    else if (this.posture > 0 && this.state !== 'broken') {
+    // 휘청·경직·그로기·공중 상태에선 회복하지 않음 (빈틈을 공략할 시간)
+    const neutral = this.state === 'idle' || this.state === 'chase' || this.state === 'windup' ||
+      this.state === 'attack' || this.state === 'recover';
+    if (this.postureDelay > 0) { if (neutral) this.postureDelay--; }
+    else if (this.posture > 0 && neutral) {
       const hpK = 1 - PO.regenHpFactor * (1 - this.hp / this.maxHp);
       this.posture = Math.max(0, this.posture - PO.enemyRegen * hpK);
     }
@@ -298,6 +309,7 @@ class Enemy {
       const a = canSee ? this.pickAttack(dist) : null;
       if (a && (!T.shield || dir === this.facing)) {
         this.atk = a;
+        this.lastRed = !a.parryable;
         this.facing = dir;
         this.setState('windup');
         Sound.play(a.telegraph === 'white' ? 'telegraphWhite' : a.parryable ? 'telegraphYellow' : 'telegraph');
@@ -371,6 +383,7 @@ class Enemy {
           this.vy = -3;
           this.stunTimer = A.wallStun;
           this.setState('stun');
+          if (A.wallPosture) this.addPosture(this.maxPosture * A.wallPosture, game);
           Effects.addShake(9);
           Effects.sparks(this.x + this.facing * this.w / 2, this.y - this.h * 0.6, -this.facing, 14, '#fff3c0');
           Effects.popText(this.x, this.y - this.h - 20, '기절!', '#ffe070', 18);
