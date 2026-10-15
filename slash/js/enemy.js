@@ -8,6 +8,17 @@
 //   launched: 공중에 떠 있음 (공격 불가) → 바닥에 닿으면 down → getup → chase
 //  특성: shield(정면 방어) / flying(공중 부유) / superArmor(경직 무시, 패링으로 해제)
 
+// 공격 예고 프레임(windup)은 config 의 telegraphMs 로 계산: 예고 시작 → 타격까지 항상 같은 시간
+// (windup 이 끝난 다음 스텝이 공격 첫 판정 → windup + 1 스텝 = telegraphMs)
+(function () {
+  const STEP = 1000 / CONFIG.fps;
+  for (const k in CONFIG.enemies) {
+    for (const a of CONFIG.enemies[k].attacks) {
+      if (a.telegraphMs !== undefined) a.windup = Math.max(1, Math.round(a.telegraphMs / STEP) - 1);
+    }
+  }
+})();
+
 class Enemy {
   constructor(type, x, y) {
     const T = CONFIG.enemies[type];
@@ -143,6 +154,11 @@ class Enemy {
         if (this.hovering) { this.vx *= 0.9; this.vy *= 0.85; this.vy += Math.sin(this.stateFrame * 0.9) * 0.2; }
         // 돌진형/급강하는 예고 동안 계속 플레이어를 노려봄
         if (A.kind === 'rush' || A.kind === 'dive' || A.kind === 'shoot') this.facing = dirToPlayer;
+        // 타격 직전 "슉"
+        if ((A.kind === 'melee' || A.kind === 'dive') &&
+            this.stateFrame === A.windup + 1 - Math.round(CONFIG.enemyTiming.whooshLeadMs * CONFIG.fps / 1000)) {
+          Sound.play(A.id === 'smash' || A.id === 'sweep' ? 'whooshHeavy' : 'whoosh');
+        }
         if (this.stateFrame >= A.windup) this.startAttack(game, p);
         break;
       }

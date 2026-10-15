@@ -287,6 +287,10 @@ const Anim = (() => {
         const k = ease.outCubic(clamp01(f / (A.windup * 0.6)));
         r.pose = lerpPose(base, wind, k);
         if (f > A.windup * 0.6) r.pose.torso += Math.sin(f * 2.1) * 1.5;
+        // 타격 직전 swingLeadMs 부터 휘두르기 시작 → 무기가 닿는 모습 = 실제 타격 순간
+        const lead = Math.round(CONFIG.enemyTiming.swingLeadMs * CONFIG.fps / 1000);
+        const s0 = A.windup + 1 - lead;
+        if (A.kind === 'melee' && f > s0) r.pose = lerpPose(r.pose, strike, ease.inOut(clamp01((f - s0) / lead)) * 0.85);
         if (A.kind === 'rush') r.pose.thF += Math.sin(f * 0.6) * 18;   // 앞발 구르기
         r.sy = 1 - 0.05 * k;
         break;
@@ -299,7 +303,8 @@ const Anim = (() => {
           r.pose = strike;
           r.rot = 25;
         } else {
-          r.pose = lerpPose(wind, strike, ease.outCubic(clamp01((f + 1) / 3)));
+          // 예고 막판에 85% 까지 휘두른 상태에서 이어서 끝까지
+          r.pose = lerpPose(wind, strike, 0.85 + 0.15 * ease.outCubic(clamp01((f + 1) / 2)));
         }
         break;
       case 'recover':

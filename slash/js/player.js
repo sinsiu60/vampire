@@ -2,7 +2,7 @@
 // 플레이어: 이동, 점프(코요테/버퍼/2단/가변 높이), 대시, 지상 콤보, 차지 강공격,
 //          런처, 공중 3타, 공중 강공, 내려찍기
 // 상태: free | attack | charge | slam | dash | parry | guard | guardBreak | execute | hurt | dead
-//  parry     : F 를 누른 직후. perfectWindow 동안 퍼펙트 패링 판정, 실패하면 후딜
+//  parry     : F 를 누른 직후. windowMs(게임 시간) 동안 퍼펙트 패링 판정
 //  guard     : F 를 계속 누르고 있음. 데미지 감소, 대신 체간 증가
 //  guardBreak: 체간이 가득 차 경직
 //  execute   : 처형 연출 중 (main.js 가 진행)
@@ -70,6 +70,11 @@ class Player {
     this.counterTimer = 0;        // 퍼펙트 패링 후 반격 입력 가능 시간
     this.counterTarget = null;
     this.guardFlash = 0;          // 가드로 막은 연출
+    this.parryStart = -1e9;       // 패링 활성 시작 시각 (게임 시간 ms)
+    this.parryPress = 0;          // F 를 누른 시각 (게임 시간 ms)
+    this.lastParryPress = -1e9;
+    this.parryLockedUntil = -1e9; // 이 시각까지 패링 불가 (실패 후)
+    this.pendingHits = [];        // 늦은 패링 보정을 위해 잠시 보류 중인 피격
 
     // 체간
     this.posture = 0;
@@ -124,7 +129,7 @@ class Player {
   }
 
   // ---------- 입력 수집 (히트스톱 중에도 매 스텝 호출) ----------
-  readInput(input) {
+  readInput(input, game) {
     const P = CONFIG.player;
     if (input.isPressed('jump')) this.buf.jump = P.jumpBufferFrames;
     if (input.isPressed('light')) this.buf.light = P.attackBufferFrames;
@@ -133,7 +138,29 @@ class Player {
       this.heavyDown = input.isDown('down');
     }
     if (input.isPressed('dash')) this.buf.dash = 6;
-    if (input.isPressed('parry')) this.buf.parry = 4;
+    if (input.isPressed('parry')) {
+      // 누른 정확한 시각(게임 시간)을 기록
+      const tp = game ? game.realToSim(input.pressTime('parry')) : 0;
+      this.lastParryPress = tp;
+      // 늦은 입력 보정: 방금 맞은(보류 중인) 공격이 있으면 바로 퍼펙트 패링으로 처리
+      if (game && !this.dead && this.parryLockedUntil <= tp && Combat.tryLateParry(game, this, tp)) return;
+      if (game && this.parryLockedUntil > tp) {
+        if (CONFIG.debug.parry) game.logParry(0, false, '재입력 금지 중');
+        return;
+      }
+      this.parryPress = tp;
+      this.buf.parry = 4;
+      // 늦게 누른 실패 (디버그 표시)
+      if (game && tp - game.lastParryHitSim <= CONFIG.parry.debugReportMs) {
+        game.logParry(tp - game.lastParryHitSim, false);
+        game.lastParryHitSim = -1e9;
+      }
+    }
+  }
+
+  // 패링 불가(실패 후) 상태인가
+  parryLocked() {
+    return this.parryLockedUntil > Game.simTime;
   }
 
   isActiveFrame() {
@@ -144,9 +171,9 @@ class Player {
     return f >= m.startup && f < m.startup + m.active;
   }
 
-  // 퍼펙트 패링 판정 창 안인가 (F 를 누른 직후 perfectWindow 프레임)
+  // 퍼펙트 패링 판정 창 안인가 (F 를 누른 시각부터 windowMs, 게임 시간 기준)
   isParrying() {
-    return this.state === 'parry' && this.stateFrame <= CONFIG.parry.perfectWindow;
+    return this.state === 'parry' && Game.simTime - this.parryStart <= CONFIG.parry.windowMs;
   }
 
   isGuarding() {
@@ -324,6 +351,8 @@ class Player {
       case 'hurt': this.updateHurt(game); break;
       case 'dead': this.updateDead(game); break;
     }
+
+    this.updatePendingHits(game);
 
     // 중력 (대시/내려찍기 중엔 직접 제어)
     const noGravity = this.state === 'dash' || this.state === 'execute' || (this.state === 'slam' && this.slamPhase !== 'land');
@@ -561,6 +590,8 @@ class Player {
   updateFree(game, input, ax) {
     const P = CONFIG.player;
     if (this.tryParry()) return;
+    // 패링 불가 시간에 F 를 누르고 있으면 가드
+    if (this.parryLocked() && input.isDown('parry')) { this.setState('guard'); return; }
     if (this.tryDash(ax)) return;
     if (this.tryJump(input)) { /* 점프 후에도 이동은 계속 */ }
     if (this.tryAttack(ax, input)) return;
@@ -581,6 +612,8 @@ class Player {
     const m = this.move;
     const f = this.stateFrame;
     const end = m.startup + m.active;
+    // 패링은 공격 도중 언제든 끊고 나갈 수 있음 (반응이 늦어지지 않게)
+    if (this.buf.parry > 0 && this.tryParry()) return;
 
     // 예비동작 → 판정 시작 순간에 전진
     if (f === m.startup) {
@@ -708,24 +741,41 @@ class Player {
   tryParry() {
     if (this.buf.parry <= 0) return false;
     this.buf.parry = 0;
+    if (this.parryLocked()) return false;
     this.move = null;
     this.chargeLevel = 0;
     this.launchFollow = false;
     this.vx *= 0.3;
     if (this.vy > 0) this.vy *= 0.3;
     this.setState('parry');
+    // 창은 F 를 누른 순간부터 (버퍼로 몇 프레임 늦게 시작해도 누른 시각 기준)
+    this.parryStart = this.parryPress;
     Sound.play('parryStance');
     return true;
   }
 
-  // 탭: 판정 창이 지나도 F 를 누르고 있으면 가드로, 떼었으면 후딜
+  // 판정 창이 끝나면: F 를 누르고 있으면 가드, 아니면 실패 → lockoutMs 동안 패링 불가
   updateParry(game, input, ax) {
     const PR = CONFIG.parry;
     this.vx *= 0.8;
-    if (!this.onGround && this.stateFrame <= PR.perfectWindow) this.vy = Math.min(this.vy, 1.5);  // 공중에선 잠깐 멈칫
-    if (this.stateFrame > PR.perfectWindow) {
+    const t = game.simTime - this.parryStart;
+    if (!this.onGround && t <= PR.windowMs) this.vy = Math.min(this.vy, 1.5);  // 공중에선 잠깐 멈칫
+    if (t > PR.windowMs) {
       if (input.isDown('parry')) { this.setState('guard'); return; }
-      if (this.stateFrame >= PR.perfectWindow + PR.whiffRecovery) this.setState('free');
+      this.parryLockedUntil = game.simTime + PR.lockoutMs;
+      this.setState('free');
+    }
+  }
+
+  // 보류 중인 피격: lateGraceMs 가 지나도 F 가 안 눌렸으면 확정
+  updatePendingHits(game) {
+    const PR = CONFIG.parry;
+    for (let i = this.pendingHits.length - 1; i >= 0; i--) {
+      const h = this.pendingHits[i];
+      if (game.simTime - h.time > PR.lateGraceMs) {
+        this.pendingHits.splice(i, 1);
+        Combat.applyPendingHit(game, this, h);
+      }
     }
   }
 
@@ -761,6 +811,8 @@ class Player {
 
   onPerfectParry(enemy) {
     const PR = CONFIG.parry;
+    this.parryLockedUntil = -1e9;
+    this.pendingHits.length = 0;
     this.invuln = PR.invulnFrames;
     this.critReady = PR.critReadyFrames;
     this.parryFlash = 14;

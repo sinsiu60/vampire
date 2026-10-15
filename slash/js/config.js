@@ -25,6 +25,7 @@ const KEYBINDS = {
   pause: ['Escape'],
   restart: ['Enter', 'NumpadEnter'],   // 게임오버 / 일시정지에서 재시작
   debug: ['KeyH'],              // 히트박스 표시 (개발용)
+  debugMode: ['Backquote'],     // ` 키: 패링 디버그 (패링 창 원, 적 공격 판정, 입력 타이밍 표시)
   theme: ['KeyT'],              // 배경 테마 미리보기 (개발용: 노을 → 달밤 → 불타는 성)
   // 적 소환 (개발용): 1 잡몹 / 2 방패병 / 3 비행형 / 4 중갑병 / 5 원거리형 / 6 돌진형
   spawn1: ['Digit1'], spawn2: ['Digit2'], spawn3: ['Digit3'],
@@ -47,6 +48,7 @@ const CONFIG = {
 
   debug: {
     showHitboxes: false,       // H 키로 토글
+    parry: false,              // ` 키로 토글: 패링 디버그
   },
 
   // ---------- 물리 ----------
@@ -288,11 +290,20 @@ const CONFIG = {
   },
 
   // ---------- 패링 / 가드 (세키로식 검극) ----------
-  // F 탭: 누른 직후 perfectWindow 프레임 안에 노랑 공격이 닿으면 퍼펙트 패링 (데미지 0, 적 체간 크게 증가)
-  // F 유지: 가드 (데미지 감소, 대신 내 체간 증가). 빨강 공격은 가드·패링 모두 불가
+  // 판정은 모두 "게임 시간(ms)" 기준: 히트스톱 중엔 멈추고, 슬로모션 중엔 같이 느려짐
+  // 키 입력은 keydown 이벤트 시각(타임스탬프)으로 기록해서 프레임 단위 오차 없이 비교
+  //  · F 를 누른 순간부터 windowMs 동안 패링 활성 → 이 동안 노랑/흰색 공격이 닿으면 퍼펙트 패링
+  //    (데미지 0, 적 체간 크게 증가)
+  //  · 늦은 입력 보정: 노랑/흰색 공격에 맞은 뒤 lateGraceMs 안에 F 를 누르면 퍼펙트 패링으로 처리
+  //    (그래서 패링 가능한 공격의 데미지·경직은 lateGraceMs 만큼 보류했다가 확정)
+  //  · 창이 끝난 뒤에도 F 를 누르고 있으면 가드 (데미지 감소, 대신 내 체간 증가)
+  //  · 창 안에 공격이 안 오면 lockoutMs 동안 다시 패링 불가 (난사 방지)
+  //  · 빨강 공격은 가드·패링 모두 불가
   parry: {
-    perfectWindow: 6,          // 퍼펙트 패링 판정: 누른 프레임 포함 7프레임 ≈ 0.12초
-    whiffRecovery: 18,         // 퍼펙트 패링 실패(F 를 떼었을 때) 후딜 (0.3초) — 난사 방지
+    windowMs: 180,             // PARRY_WINDOW: 패링 활성 시간 (0.18초)
+    lateGraceMs: 70,           // LATE_PARRY_GRACE: 맞은 뒤 늦게 눌러도 인정하는 시간 (0.07초)
+    lockoutMs: 250,            // 퍼펙트 실패 후 다시 패링 불가 시간 (0.25초)
+    debugReportMs: 1000,       // 디버그: 이 시간 안의 입력/타격을 "몇 초 일찍/늦게" 로 비교
     guardDamageMult: 0.3,      // 가드 시 받는 데미지 배율 (70% 감소)
     guardPostureMult: 1.8,     // 가드로 받은 공격 데미지 → 내 체간 증가 배율
     guardPostureFlat: 6,       // 가드로 받을 때 추가 체간
@@ -419,9 +430,17 @@ const CONFIG = {
   //   kind: melee(근접) | rush(돌진) | dive(급강하) | shoot(투사체)
   //   parryable: true = 노랑 예고(패링·가드 가능) / false = 빨강 예고(패링·가드 불가, 피해야 함)
   //   telegraph: 'white' = 흰색 섬광 간파 공격 (보스 전용, 퍼펙트 패링 시 체간 대폭 증가)
-  //   range: 이 거리 안이면 시작, windup: 예고 시간, active: 판정 시간, recovery: 후딜, cooldown: 다음 공격까지
+  //   range: 이 거리 안이면 시작
+  //   telegraphMs: 예고 시작 → 실제 타격까지 시간 (공격마다 고정, ms). 예고 프레임(windup)은 여기서 자동 계산
+  //   active: 판정 프레임, recovery: 후딜, cooldown: 다음 공격까지
   //   weight: 고를 확률 가중치 (기본 1). 빨강 공격은 두 번 연속으로 쓰지 않음 (노랑이 있으면)
   // look: 그래픽 (체형 / 무기)
+  // 적 공격 공통 연출 타이밍
+  enemyTiming: {
+    whooshLeadMs: 110,         // 타격 이만큼 전에 "슉" 바람 가르는 소리
+    swingLeadMs: 90,           // 타격 이만큼 전부터 무기를 휘두르기 시작 (칼이 닿는 모습 = 실제 타격 시점)
+  },
+
   enemies: {
     grunt: {
       name: '근접 잡몹',
@@ -430,7 +449,7 @@ const CONFIG = {
       look: { body: 'grunt', weapon: 'blade' },
       attacks: [
         { id: 'slash', kind: 'melee', parryable: true, range: 56,
-          windup: 30, active: 6, recovery: 32, cooldown: 55, lunge: 3.5,
+          telegraphMs: 500, active: 6, recovery: 32, cooldown: 55, lunge: 3.5,
           damage: 12, hitbox: { x: 4, y: -40, w: 50, h: 32 }, knock: { x: 6, y: -3.5 } },
       ],
     },
@@ -445,7 +464,7 @@ const CONFIG = {
       look: { body: 'grunt', weapon: 'shield' },
       attacks: [
         { id: 'bash', kind: 'melee', parryable: true, range: 50,
-          windup: 28, active: 6, recovery: 34, cooldown: 70, lunge: 4.5,
+          telegraphMs: 480, active: 6, recovery: 34, cooldown: 70, lunge: 4.5,
           damage: 10, hitbox: { x: 4, y: -46, w: 40, h: 44 }, knock: { x: 9, y: -2 } },
       ],
     },
@@ -460,7 +479,7 @@ const CONFIG = {
       look: { body: 'flyer', weapon: 'claws' },
       attacks: [
         { id: 'dive', kind: 'dive', parryable: false, range: 230,
-          windup: 36, active: 40, recovery: 40, cooldown: 90, diveSpeed: 9,
+          telegraphMs: 600, active: 40, recovery: 40, cooldown: 90, diveSpeed: 9,
           damage: 12, hitbox: { x: -14, y: -40, w: 28, h: 44 }, knock: { x: 6, y: -4 } },
       ],
     },
@@ -474,10 +493,10 @@ const CONFIG = {
       attacks: [
         // 노랑 내려찍기가 주력 (weight 3), 빨강 휩쓸기는 가끔 + 연속으로는 안 씀
         { id: 'smash', kind: 'melee', parryable: true, range: 84, weight: 3,
-          windup: 40, active: 7, recovery: 40, cooldown: 70, lunge: 3,
+          telegraphMs: 680, active: 7, recovery: 40, cooldown: 70, lunge: 3,
           damage: 22, hitbox: { x: 0, y: -70, w: 80, h: 70 }, knock: { x: 9, y: -5 } },
         { id: 'sweep', kind: 'melee', parryable: false, range: 84, weight: 1,
-          windup: 50, active: 9, recovery: 44, cooldown: 80, lunge: 2,
+          telegraphMs: 850, active: 9, recovery: 44, cooldown: 80, lunge: 2,
           damage: 26, hitbox: { x: -20, y: -34, w: 120, h: 34 }, knock: { x: 11, y: -6 } },
       ],
     },
@@ -490,7 +509,7 @@ const CONFIG = {
       look: { body: 'slim', weapon: 'bow' },
       attacks: [
         { id: 'shot', kind: 'shoot', parryable: true, range: 460,
-          windup: 40, active: 4, recovery: 30, cooldown: 80,
+          telegraphMs: 680, active: 4, recovery: 30, cooldown: 80,
           damage: 11, projectile: { speed: 6.5, radius: 6, life: 150, reflectMult: 1.6, reflectDamage: 30 } },
       ],
     },
@@ -503,7 +522,7 @@ const CONFIG = {
       // 돌진은 벽에 박거나 active 프레임이 끝날 때까지 계속된다
       attacks: [
         { id: 'rush', kind: 'rush', parryable: false, range: 420,
-          windup: 45, active: 150, recovery: 36, cooldown: 100, rushSpeed: 10.5, wallStun: 150,
+          telegraphMs: 760, active: 150, recovery: 36, cooldown: 100, rushSpeed: 10.5, wallStun: 150,
           wallPosture: 0.6,       // 벽에 박으면 체간 최대치의 이 비율만큼 증가
           damage: 18, hitbox: { x: -6, y: -44, w: 36, h: 42 }, knock: { x: 10, y: -5 } },
       ],

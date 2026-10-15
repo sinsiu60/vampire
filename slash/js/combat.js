@@ -201,6 +201,7 @@ const Combat = {
     // 퍼펙트 패링: 노랑/흰색 공격만. 방향 상관없이 (자동으로 돌아봄)
     if (player.isParrying() && parryable) {
       const x = enemy ? (player.x + enemy.x) / 2 : srcX;
+      game.logParry(player.parryStart - game.simTime, true);
       this.perfectParry(game, player, enemy, x, player.y - player.h * 0.6, attack.telegraph === 'white');
       return 'perfect';
     }
@@ -221,8 +222,55 @@ const Combat = {
       if (player.dead) game.onPlayerHurt();
       return 'guard';
     }
+    // 늦은 입력 보정: 패링 가능한 공격은 데미지·경직을 lateGraceMs 동안 보류
+    // (그 사이 F 를 누르면 퍼펙트 패링으로 바뀜. 패링 불가 시간엔 보류 안 함)
+    if (parryable && !player.parryLocked()) {
+      player.pendingHits.push({ dmg, dir, knock, attack, enemy, srcX, time: game.simTime });
+      return 'pending';
+    }
+    if (parryable) this.noteParryMiss(game, player, game.simTime);
     this.damagePlayer(game, player, dmg, dir, knock);
     return 'hit';
+  },
+
+  // F 를 누른 순간(tp) 보류 중인 피격이 있으면 퍼펙트 패링으로 처리
+  // (같은 프레임 안에서 맞은 직후 처리된 입력도 인정: tp 가 타격보다 조금 앞서도 됨)
+  tryLateParry(game, player, tp) {
+    const PR = CONFIG.parry;
+    for (let i = 0; i < player.pendingHits.length; i++) {
+      const h = player.pendingHits[i];
+      if (tp >= h.time - PR.windowMs && tp <= h.time + PR.lateGraceMs) {
+        player.pendingHits.splice(i, 1);
+        const e = h.enemy && !h.enemy.dead ? h.enemy : null;
+        const x = e ? (player.x + e.x) / 2 : h.srcX;
+        game.logParry(tp - h.time, true, tp > h.time ? '늦은 입력 보정' : '');
+        this.perfectParry(game, player, e, x, player.y - player.h * 0.6, h.attack.telegraph === 'white');
+        return true;
+      }
+    }
+    return false;
+  },
+
+  // 디버그: 패링 가능한 공격에 맞음 → 너무 일찍 눌렀으면 기록, 이후 늦게 누르면 readInput 에서 기록
+  noteParryMiss(game, player, hitTime) {
+    const early = hitTime - player.lastParryPress;
+    if (early > 0 && early <= CONFIG.parry.debugReportMs) {
+      game.logParry(-early, false, player.parryLocked() ? '재입력 금지 중' : '');
+      player.lastParryPress = -1e9;
+    }
+    game.lastParryHitSim = hitTime;
+  },
+
+  // 보류했던 피격 확정
+  applyPendingHit(game, player, h) {
+    if (player.dead) return;
+    this.noteParryMiss(game, player, h.time);
+    if (player.isInvulnerable()) return;
+    if (player.isGuarding() && (h.srcX - player.x) * player.facing >= 0) {
+      this.resolveIncoming(game, player, h.dmg, h.dir, h.knock, h.attack, h.enemy, h.srcX);
+      return;
+    }
+    this.damagePlayer(game, player, h.dmg, h.dir, h.knock);
   },
 
   damagePlayer(game, player, dmg, dir, knock) {

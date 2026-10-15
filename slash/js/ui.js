@@ -48,6 +48,7 @@ const UI = {
 
     this.parryHud(ctx, game);
     this.styleHud(ctx, game);
+    if (CONFIG.debug.parry) this.parryDebugPanel(ctx, game);
 
     // 현재 기술 이름 (테스트용)
     if (p.state === 'attack' && p.move) {
@@ -75,7 +76,7 @@ const UI = {
         `${k('light')} 약공 4타   ${k('heavy')} 강공(길게=차지)   약공 2타 후 ${k('heavy')} 찌르기   후딜 중 ${k('dash')}/${k('jump')} 캔슬`,
         `${k('down')}+${k('heavy')} 런처(${k('heavy')} 유지 = 같이 점프)   공중 ${k('light')} 3타   공중 ${k('heavy')} 날려베기   공중 ${k('down')}+${k('heavy')} 내려찍기`,
         `${k('parry')} 탭 = 퍼펙트 패링   ${k('parry')} 누르기 = 가드   패링 직후 ${k('light')} 반격 일섬 / ${k('heavy')} 반격 런처   체간 붕괴 시 ${k('light')} 처형`,
-        `${k('spawn1')}~${k('spawn6')} 적 소환(잡몹/방패/비행/중갑/원거리/돌진)   ${k('debug')} 히트박스   ${k('help')} 도움말 숨기기   ${k('pause')} 일시정지`,
+        `${k('spawn1')}~${k('spawn6')} 적 소환   ${k('debug')} 히트박스   ${k('debugMode')} 패링 디버그   ${k('help')} 도움말 숨기기   ${k('pause')} 일시정지`,
       ];
       ctx.textAlign = 'center';
       ctx.font = '12px "Segoe UI", sans-serif';
@@ -86,6 +87,29 @@ const UI = {
         ctx.fillText(lines[i], 480, 470 + i * 14);
       }
     }
+  },
+
+  // 패링 디버그 패널 (왼쪽): 설정값 + 최근 시도 기록 (일찍/늦게 몇 초)
+  parryDebugPanel(ctx, game) {
+    const PR = CONFIG.parry;
+    const x = 20, y = 96;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(x - 6, y - 14, 250, 34 + game.parryLog.length * 15);
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ff0';
+    ctx.fillText(`PARRY DEBUG (${Input.label('debugMode')})`, x, y);
+    ctx.fillStyle = '#ccc';
+    ctx.font = '10px monospace';
+    ctx.fillText(`창 ${PR.windowMs}ms  보정 ${PR.lateGraceMs}ms  금지 ${PR.lockoutMs}ms`, x, y + 14);
+    ctx.font = 'bold 11px monospace';
+    game.parryLog.forEach((l, i) => {
+      ctx.globalAlpha = Math.min(1, l.life / 40);
+      ctx.fillStyle = l.ok ? '#7f7' : '#f77';
+      ctx.fillText(l.text, x, y + 30 + i * 15);
+    });
+    ctx.restore();
   },
 
   // ---------- 스타일 랭크 (오른쪽 위) ----------

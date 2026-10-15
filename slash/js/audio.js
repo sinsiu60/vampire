@@ -203,6 +203,12 @@ const Sound = {
         this._tone(0.25, 'triangle', 659, 659, 0.18, 0.12, 0.3);
         this._tone(0.5, 'triangle', 784, 784, 0.2, 0.24, 0.5);
         break;
+      case 'whoosh':            // 타격 직전 바람 가르는 소리
+        this._noise(0.13, 'bandpass', 700, 3200, 0.45, 1.6);
+        break;
+      case 'whooshHeavy':
+        this._noise(0.2, 'bandpass', 380, 1800, 0.6, 1.2);
+        break;
       case 'telegraphWhite':
         this._tone(0.3, 'sine', 2600, 2600, 0.12, 0, 0.6);
         break;

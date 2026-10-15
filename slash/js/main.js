@@ -5,6 +5,9 @@ const Game = {
   state: 'playing',     // playing | paused | gameover
   stateTime: 0,
   frame: 0,             // 전체 프레임 카운터 (애니메이션용)
+  simTime: 0,           // 게임 시간 (ms). 히트스톱 중엔 멈추고 슬로모션 중엔 느리게 흐름 → 패링 판정 기준
+  stepRealTime: 0,      // 지금 처리 중인 스텝이 해당하는 실제 시각 (performance.now 기준)
+  parryLog: [],         // 디버그: 패링 시도 기록 { text, ok, life }
   hitstop: 0,           // >0 이면 엔티티 정지 (역경직)
   timeScale: 1,         // 슬로모션용 (패링 등, 4단계)
   cam: { x: 0, y: 0 },
@@ -53,6 +56,8 @@ const Game = {
     this.hitstop = 0;
     this.timeScale = 1;
     this.slowmoMs = 0;
+    this.parryLog = [];
+    this.lastParryHitSim = -1e9;   // 디버그: 마지막으로 맞은(패링 가능한) 공격 시각
     this.zoomPulse = 0;     // 퍼펙트 패링 체인 줌인 (화면 배율 +)
     this.dim = 0;           // 배경 어두워짐 (0~1)
     this.exec = null;       // 처형 연출 진행 상태
@@ -95,6 +100,27 @@ const Game = {
     this.waveCleared = false;
     Effects.dust(x, A.groundY, 6, 0);
     return e;
+  },
+
+  // 실제 시각(이벤트 타임스탬프) → 게임 시간. 같은 프레임 안에서 먼저 눌린 입력은 그만큼 앞당겨 기록
+  // 히트스톱 중엔 게임 시간이 멈춰 있으므로 현재 게임 시간 그대로
+  realToSim(tReal) {
+    if (tReal === null || tReal === undefined || !this.stepRealTime || this.hitstop > 0) return this.simTime;
+    const age = Math.max(0, Math.min(50, this.stepRealTime - tReal));
+    return this.simTime - age * this.timeScale;
+  },
+
+  // 디버그: 패링 시도 결과 기록 (delta: 누른 시각 - 타격 시각, ms. 음수 = 일찍, 양수 = 늦게)
+  logParry(delta, ok, kind) {
+    const sec = Math.abs(delta / 1000).toFixed(3);
+    const when = Math.abs(delta) < 5 ? '정확히' : delta < 0 ? `${sec}초 일찍` : `${sec}초 늦게`;
+    const text = `${ok ? '성공' : '실패'} ${when}${kind ? ' (' + kind + ')' : ''}`;
+    this.parryLog.unshift({ text, ok, life: 600 });
+    if (this.parryLog.length > 6) this.parryLog.length = 6;
+    if (CONFIG.debug.parry) {
+      const p = this.player;
+      Effects.popText(p.x, p.y - p.h - 46, `${delta >= 0 ? '+' : ''}${(delta / 1000).toFixed(3)}s`, ok ? '#7f7' : '#f77', 15);
+    }
   },
 
   // 슬로모션 (실제 시간 기준)
@@ -256,6 +282,8 @@ const Game = {
 
     if (Input.isPressed('help')) UI.showHelp = !UI.showHelp;
     if (Input.isPressed('debug')) CONFIG.debug.showHitboxes = !CONFIG.debug.showHitboxes;
+    if (Input.isPressed('debugMode')) CONFIG.debug.parry = !CONFIG.debug.parry;
+    for (let i = this.parryLog.length - 1; i >= 0; i--) if (--this.parryLog[i].life <= 0) this.parryLog.splice(i, 1);
     if (Input.isPressed('theme')) Render.setTheme((Render.themeIndex + 1) % THEMES.length);
     // 개발용: 숫자키로 적 소환
     if (this.state === 'playing') {
@@ -288,7 +316,9 @@ const Game = {
     const p = this.player;
     // 처형 연출 중엔 다른 것들은 멈춤
     if (this.exec) { this.updateExecution(); return; }
-    p.readInput(Input);
+    // 게임 시간: 히트스톱이 아닐 때만 흐름 (이번 스텝의 "지금")
+    if (this.hitstop <= 0) this.simTime += 1000 / CONFIG.fps;
+    p.readInput(Input, this);
     Effects.update(this.hitstop > 0);
 
     // 히트스톱: 엔티티는 멈추고 이펙트만 진행
@@ -361,6 +391,8 @@ const Game = {
     }
     this._acc += dt * this.timeScale;
     while (this._acc >= STEP) {
+      // 이 스텝이 해당하는 실제 시각 (뒤로 밀린 스텝일수록 과거)
+      this.stepRealTime = now - (this._acc - STEP) / this.timeScale;
       this.step();
       this._acc -= STEP;
     }
@@ -421,6 +453,7 @@ const Game = {
     Effects.drawFront(ctx);
     Render.lit = 0;
     if (CONFIG.debug.showHitboxes) Render.hitboxes(ctx, this);
+    if (CONFIG.debug.parry) Render.parryDebug(ctx, this);
     ctx.restore();
     // 처형 일섬: 화면을 가로지르는 하얀 선
     if (ex && ex.line > 0) {

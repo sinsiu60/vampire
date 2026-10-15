@@ -287,7 +287,7 @@ const Render = {
 
     // 패링 판정 창: 칼날 가운데 노란 반짝임
     if (p.isParrying() || p.parryFlash > 0) {
-      const k = p.parryFlash > 0 ? p.parryFlash / 14 : 1 - p.stateFrame / (CONFIG.parry.perfectWindow + 1);
+      const k = p.parryFlash > 0 ? p.parryFlash / 14 : 1 - (Game.simTime - p.parryStart) / CONFIG.parry.windowMs;
       const mx = (b.hand.x + b.tip.x) / 2, my = (b.hand.y + b.tip.y) / 2;
       ctx.save();
       ctx.globalAlpha = clamp01(k);
@@ -624,6 +624,83 @@ const Render = {
     };
     draw(1, back, 0.85);
     draw(1, col, 1);
+  },
+
+  // ---------- 패링 디버그 (` 키) ----------
+  // 플레이어 주변 원: 초록 = 패링 활성 (남은 시간만큼 호), 주황 = 늦은 입력 보정 대기, 빨강 = 패링 불가
+  // 적: 공격 판정 박스 (예고 중엔 점선 + 타격까지 남은 시간, 판정 중엔 실선)
+  parryDebug(ctx, game) {
+    const p = game.player, PR = CONFIG.parry, now = game.simTime;
+    const cx = p.x, cy = p.y - p.h * 0.5;
+    const arc = (r, t, color, w, dash) => {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = w;
+      if (dash) ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamp01(t));
+      ctx.stroke();
+      ctx.restore();
+    };
+    ctx.save();
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    if (p.isParrying()) {
+      const left = PR.windowMs - (now - p.parryStart);
+      ctx.fillStyle = 'rgba(80,255,120,0.12)';
+      ctx.beginPath(); ctx.arc(cx, cy, 40, 0, Math.PI * 2); ctx.fill();
+      arc(40, left / PR.windowMs, '#5f8', 3);
+      ctx.fillStyle = '#7fa';
+      ctx.fillText(`PARRY ${Math.max(0, left).toFixed(0)}ms`, cx, cy - 46);
+    } else {
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(cx, cy, 40, 0, Math.PI * 2); ctx.stroke();
+    }
+    for (const h of p.pendingHits) {
+      const left = PR.lateGraceMs - (now - h.time);
+      arc(48, left / PR.lateGraceMs, '#ffa040', 3);
+      ctx.fillStyle = '#fb6';
+      ctx.fillText(`보정 ${Math.max(0, left).toFixed(0)}ms`, cx, cy + 58);
+    }
+    if (p.parryLocked()) {
+      const left = p.parryLockedUntil - now;
+      arc(34, left / PR.lockoutMs, '#f55', 2, true);
+      ctx.fillStyle = '#f88';
+      ctx.fillText(`금지 ${left.toFixed(0)}ms`, cx, cy + 46);
+    }
+    if (p.state === 'guard') {
+      ctx.fillStyle = '#9cf';
+      ctx.fillText('GUARD', cx, cy - 46);
+    }
+    // 적 공격 판정
+    const STEP = 1000 / CONFIG.fps;
+    for (const e of game.enemies) {
+      if (e.dead || !e.atk || !e.atk.hitbox) continue;
+      const col = Render.TELE[e.telegraphColor].mark;
+      if (e.state === 'windup') {
+        const hb = Combat.worldBox(e, e.atk.hitbox);
+        ctx.save();
+        ctx.strokeStyle = col;
+        ctx.globalAlpha = 0.7;
+        ctx.setLineDash([3, 3]);
+        ctx.strokeRect(hb.x, hb.y, hb.w, hb.h);
+        ctx.restore();
+        const toHit = (e.atk.windup + 1 - e.stateFrame) * STEP;
+        ctx.fillStyle = col;
+        ctx.fillText(`${(toHit / 1000).toFixed(2)}s`, hb.x + hb.w / 2, hb.y - 4);
+      } else if (e.state === 'attack') {
+        const hb = Combat.worldBox(e, e.atk.hitbox);
+        ctx.fillStyle = col;
+        ctx.globalAlpha = 0.35;
+        ctx.fillRect(hb.x, hb.y, hb.w, hb.h);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(hb.x, hb.y, hb.w, hb.h);
+      }
+    }
+    ctx.restore();
   },
 
   hitboxes(ctx, game) {
