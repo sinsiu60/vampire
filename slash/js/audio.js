@@ -468,6 +468,14 @@ const Sound = {
         this._noise(0.12, 'highpass', 3000, 7000, 0.3);
         this._metal(2200, 0.12, 0.08, 0.3, [1, 1.9]);
         break;
+      case 'sheathe':           // 납도: 칼집에 넣는 딸깍
+        this._metal(3200, 0.05, 0.06, 0.2, [1, 1.6]);
+        this._tone(0.04, 'square', 900, 700, 0.03, 0.03);
+        break;
+      case 'chain':             // 사슬: 쇠사슬 촤르륵
+        for (let i = 0; i < 4; i++) this._tone(0.04, i % 2 ? 'triangle' : 'square', 2600 + i * 300, 2300 + i * 300, 0.03, i * 0.025, 0.2);
+        this._noise(0.14, 'highpass', 2500, 5000, 0.18);
+        break;
       case 'iaiCut':            // 일섬 터짐
         this._noise(0.25, 'bandpass', 5000, 1500, 0.6, 2, 0.4);
         this._tone(0.25, 'sawtooth', 600, 80, 0.15);

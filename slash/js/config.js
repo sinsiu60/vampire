@@ -36,6 +36,7 @@ const KEYBINDS = {
   spawn1: ['Digit1'], spawn2: ['Digit2'], spawn3: ['Digit3'],
   spawn4: ['Digit4'], spawn5: ['Digit5'], spawn6: ['Digit6'],
   spawn7: ['Digit7'],           // 보스 소환 (개발용)
+  spawn9: ['Digit9'],           // 지금 무기의 변형 바꾸기 (개발용)
   spawn8: ['Digit8'],           // 무작위 각인 받기 (개발용)
   discard: ['KeyX'],            // 인벤토리: 아이템 버리기
   help: ['F1'],                 // 게임 중 조작 도움말 표시/숨기기
@@ -1019,6 +1020,11 @@ const CONFIG = {
     // 전설 각인 등장 확률: 보스 보상은 카드 한 장이 전설로 (층별), 엘리트 보상은 고정 확률
     legendChance: { boss: [0.12, 0.18, 0.24, 0.3, 0.36], elite: 0.04 },
     curseColor: '#d0304a',     // 저주 각인 카드·칸 색
+  },
+
+  // ---------- 무기 변형 (데이터: data/transforms.js) ----------
+  transform: {
+    bossChance: 0.4,           // 보스 보상 카드 중 한 장이 변형 카드일 확률 (변형이 없는 무기가 있을 때)
   },
 
   // 정예: 층 배율 위에 추가로 곱함. 처치하면 희귀 이상 장비 확정

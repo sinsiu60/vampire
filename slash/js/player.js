@@ -119,6 +119,13 @@ class Player {
     this.trinityTimer = 0;        // 전설 '삼위일체': 쿨타임 없음 남은 시간
     this.bonusMaxHp = 0;          // 피 6세트: 처형으로 늘어난 최대 체력 (런 동안)
     this.elem = null;             // 속성 개수 (recalcStats)
+    this.trans = Transform.emptySlots();   // 무기 변형: { sword: id|null, ... }
+    this.sheathed = true;         // 발도술: 납도 상태
+    this.drawnT = 0;
+    this.dualRamp = 0;            // 쌍검: 연속 적중 가속 단계
+    this.dualT = 0;
+    this.chainRun = null;         // 발도술 E: 일섬 연쇄 진행
+    this.zip = null;              // 사슬검: 벽·적으로 날아가기
     this.res = { level: 0, timer: 0, cdCut: 0, hit: false };   // 공명 (단계 / 남은 시간 / 다음 스킬 쿨감% / 스왑 후 적중 여부)
     this.stanceTimer = 0;         // 검 Q: 간파 자세
     this.stanceCfg = null;
@@ -140,7 +147,8 @@ class Player {
   // ---------- 장비 / 무기 ----------
   weaponItem() { return this.gear.weapons[this.activeWeapon]; }
   weaponType() { return WEAPON_ORDER[this.activeWeapon]; }
-  weaponCfg() { return CONFIG.weapons[this.weaponType()]; }
+  // 무기 설정 (변형이 있으면 덮어쓴 것)
+  weaponCfg() { return Transform.cfg(this.weaponType(), this.trans && this.trans[this.weaponType()]); }
   // 현재 무기의 기술 데이터 (없으면 기본 검 기술)
   moveData(id) { return this.weaponCfg().moves[id] || CONFIG.moves[id]; }
 
@@ -303,7 +311,7 @@ class Player {
       if (S.kind === 'stance') this.startStance(S);
       else if (S.kind === 'meteor') this.startMeteor(S, ax, id);
       else {
-        const m = Object.assign({}, S.move, { iai: S.iai, ironWall: S.ironWall });
+        const m = Object.assign({}, S.move, { iai: S.iai, ironWall: S.ironWall, skillCfg: S });
         if (!this.onGround) m.air = true;
         this.startAttack(id, ax, m);
       }
@@ -859,9 +867,11 @@ class Player {
 
   startAttack(id, ax, moveData) {
     let move = moveData || this.moveData(id);
+    move = Transform.onAttackStart(this, id, move);   // 발도술: 칼집에서 뽑는 첫 타 보너스
     // 공격 속도: 선딜·후딜이 짧아짐 (스킬 제외)
     // 공격 속도 (각인 '무중력': 공중에서 더 빠르게)
-    const sp = 1 + (this.stats.aspd + (this.onGround ? 0 : Engrave.v(this, 'gt_zero_g', 'aspd'))) / 100;
+    // 쌍검: 연속 적중 가속
+    const sp = 1 + (this.stats.aspd + Transform.aspd(this) + (this.onGround ? 0 : Engrave.v(this, 'gt_zero_g', 'aspd'))) / 100;
     if (sp > 1.001 && !move.skill) {
       move = Object.assign({}, move);
       move.startup = Math.max(1, Math.round(move.startup / sp));
@@ -872,7 +882,7 @@ class Player {
     this.move = move;
     this.moveId = id;
     // 스타일 랭크용 이름: 무기가 다르면 다른 기술로 취급 (다양성)
-    const pre = { greatsword: 'GS_', gauntlet: 'GT_' }[this.weaponType()];
+    const pre = ({ greatsword: 'GS_', gauntlet: 'GT_' }[this.weaponType()] || '') + Transform.stylePrefix(this);
     this.styleId = pre && !move.skill && !/^(SWAP|COUNTER)/.test(id) ? pre + id : id;
     this.hitIndex = 0;
     this.swapAttackPending = false;
@@ -926,6 +936,7 @@ class Player {
   }
 
   endMove() {
+    Transform.onMoveEnd(this, this.move);   // 발도술: 납도
     this.lastMoveId = this.moveId;
     this.comboGrace = CONFIG.player.comboGraceFrames;
     this.move = null;
@@ -983,8 +994,10 @@ class Player {
         Effects.ring(this.x, this.y - this.h * 0.5, '#ffb050', 70);
       }
       if (m.iai) Skills.iai(game, this, m.iai);
+      Transform.onActive(game, this, m);
       Sound.play(m.sfx);
     }
+    if (Transform.onMoveFrame(game, this, m, f)) return;
     // 선딜 동안 힘 모으기 (대지 분쇄)
     if (m.chargeFx && f < m.startup && f % 3 === 0) {
       const a = Math.random() * Math.PI * 2;
@@ -1241,6 +1254,7 @@ class Player {
       const mu = Engrave.get(this, 'sword_mushin');
       if (mu) { this.stanceTimer += Math.round(Engrave.val(mu, 'sec') * 60); Effects.popText(this.x, this.y - this.h - 40, '무념', '#8fd8ff', 13); }
     }
+    Transform.onPerfectParry(this, enemy);   // 발도술: 납도 중이면 자동 거합 반격
   }
 
   updateHurt(game) {

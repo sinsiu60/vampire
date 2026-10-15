@@ -53,7 +53,7 @@ DATA.engravings = [
   },
   {
     "id": "sword_blood_dance", "name": "혈무", "weapon": "sword", "element": "blood", "scope": "held",
-    "desc": "약공 4타째·질풍 베기 적중 시\n체력 {heal} 회복",
+    "desc": "약공 마지막 타·전환기 적중 시\n체력 {heal} 회복",
     "values": { "heal": 3 }, "perLevel": { "heal": 1 }, "weight": 1
   },
   {

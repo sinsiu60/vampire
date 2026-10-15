@@ -121,6 +121,7 @@ const Combat = {
     if (res === 'blocked') enemy.addPosture(move.damage * PO.blockMult, game);
     else if (res !== 'kill') enemy.addPosture(pd, game);
     if (res !== 'blocked') this.engraveOnHit(game, player, enemy, move, res);
+    if (res !== 'blocked') Transform.onHit(game, player, enemy, move, res);   // 쌍검 가속 / 사슬 당기기·포박
     if (res !== 'blocked' && res !== 'kill') {
       // 점화 전환: 전환기 적중 시 화상
       const ig = swapIn && Engrave.get(player, 'common_ignite_swap');
@@ -142,8 +143,8 @@ const Combat = {
   // 무기 각인 적중 효과 (회복, 둔화 등)
   engraveOnHit(game, p, e, move, res) {
     const id = p.moveId, t = p.weaponType();
-    // 혈무: 검 4타째·질풍 베기
-    if (t === 'sword' && (id === 'L4' || id === 'SWAPIN_SWORD')) {
+    // 혈무: 검 약공 마지막 타(변형마다 콤보 길이가 다름)·전환기
+    if (t === 'sword' && ((/^L\d$/.test(id) && !move.next) || id === 'SWAPIN_SWORD')) {
       const h = Engrave.v(p, 'sword_blood_dance', 'heal');
       if (h > 0) { p.heal(h); Effects.popText(p.x, p.y - p.h - 26, `+${Math.round(h)}`, '#f66', 12); }
     }

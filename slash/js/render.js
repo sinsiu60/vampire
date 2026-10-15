@@ -466,7 +466,9 @@ const Render = {
     if (p.critReady > 0) { ctx.shadowColor = '#ffc830'; ctx.shadowBlur = 10 + Math.sin(p.critReady * 0.3) * 4; }
     else if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = 10; }
     else if (p.swapFlash > 0) { ctx.shadowColor = pal.glow; ctx.shadowBlur = p.swapFlash; }
-    if (B.fist) {
+    if (Transform.drawWeapon(ctx, p, fig, col)) {
+      // 변형이 칼을 직접 그림 (납도 / 사슬)
+    } else if (B.fist) {
       // 건틀릿: 양손에 쇠주먹 (판정 중엔 앞주먹이 빛남)
       const hot = p.isActiveFrame();
       if (hot) { ctx.shadowColor = pal.glow; ctx.shadowBlur = 14; }

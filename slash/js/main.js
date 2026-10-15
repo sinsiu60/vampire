@@ -76,6 +76,7 @@ const Game = {
     Style.reset();
     Skills.reset();
     Synergy.reset();
+    Transform.reset();
     if (this.mode === 'practice') {
       Render.setTheme(0);
       const level = Dungeon.buildArena();
@@ -104,6 +105,7 @@ const Game = {
     Effects.reset();
     Skills.reset();
     Synergy.reset();
+    Transform.reset();
     Menu.enter(this, 'title');
   },
 
@@ -142,6 +144,7 @@ const Game = {
     Run.coins.length = 0;
     Skills.reset();
     Synergy.reset();
+    Transform.reset();
     room.visited = true;
     Run.makePortals(this, room);   // 갈림길 문 (클리어 전엔 닫혀 있음)
     if (!room.cleared) {
@@ -593,6 +596,13 @@ const Game = {
       if (Input.isPressed('spawn7') && !this.boss) {
         this.spawnBoss(this.mode === 'dungeon' ? this.floorCfg.boss : 'dusk', this.player.x + this.player.facing * 300);
       }
+      // 9: 지금 무기의 변형 바꾸기 (기본 → 변형1 → 변형2 → … → 기본)
+      if (Input.isPressed('spawn9')) {
+        const p = this.player, t = p.weaponType(), list = [null].concat(Transform.forWeapon(t).map((d) => d.id));
+        const next = list[(list.indexOf(p.trans[t]) + 1) % list.length];
+        Transform.set(p, t, next);
+        Effects.popText(p.x, p.y - p.h - 40, `${CONFIG.weapons[t].name}: ${next ? Transform.def(next).name : '기본 형태'}`, '#fff', 16);
+      }
       // 8: 무작위 각인 받기 (개발용 — 전설·저주 포함 전체에서)
       if (Input.isPressed('spawn8')) {
         const owned = new Set(Engrave.all(this.player).map((a) => a.inst.id));
@@ -688,6 +698,7 @@ const Game = {
     this.projectiles = this.projectiles.filter((pr) => !pr.dead);
     Skills.update(this);
     Synergy.update(this);
+    Transform.update(this);
     Loot.updateDrops(this);
 
     // 히트 수
@@ -812,6 +823,7 @@ const Game = {
     }
     Loot.drawDrops(ctx, this);
     Skills.draw(ctx);
+    Transform.draw(ctx, this);
     for (const e of this.enemies) if (e.isBoss) Render.bossHazards(ctx, e);
     for (const e of this.enemies) if (!e.executed) Render.enemy(ctx, e);
     if (!ex) for (const e of this.enemies) Render.weakIcon(ctx, e, this.player);

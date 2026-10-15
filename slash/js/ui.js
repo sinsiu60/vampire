@@ -155,7 +155,7 @@ const UI = {
         ctx.fillStyle = `rgb(${W.trail.inner})`;
         ctx.font = 'bold 10px "Segoe UI", sans-serif';
         ctx.textAlign = 'left';
-        if (g <= 0) ctx.fillText(W.name, x, y - 5);
+        if (g <= 0) ctx.fillText(W.name + (Transform.def(p.trans[t]) ? ' · ' + Transform.def(p.trans[t]).name : ''), x, y - 5);
       }
       // Q / E 쿨타임
       ['q', 'e'].forEach((sl, k) => {
@@ -213,6 +213,7 @@ const UI = {
     ctx.font = '10px "Segoe UI", sans-serif';
     ctx.fillText(`${Input.label('skill1')} ${SK.q.name}   ${Input.label('skill2')} ${SK.e.name}`, 14, yb - 96);
     ctx.restore();
+    Transform.drawHud(ctx, game, 14, yb - 112);   // 쌍검 가속 / 발도술 납도
   },
 
   iconBox(ctx, x, y, s, item, glow, alpha) {

@@ -147,10 +147,19 @@ const Engrave = {
     const E = CONFIG.engrave;
     const L = E.legendChance.boss;
     const cards = this.offer(game, E.bossCards, E.bossLuck, L[Math.min(game.floorIndex || 0, L.length - 1)]);
-    if (!cards.length) return;
+    const options = cards.map((inst) => this.cardOption(game, inst));
+    // 확률로 한 장은 변형 카드 (변형이 없는 무기의 것)
+    const tf = Transform.available(game.player);
+    if (tf.length && Math.random() < CONFIG.transform.bossChance) {
+      const d = tf[(Math.random() * tf.length) | 0];
+      const at = (Math.random() * Math.max(1, options.length)) | 0;
+      if (options.length >= E.bossCards) options[at] = Transform.cardOption(game, d);
+      else options.splice(at, 0, Transform.cardOption(game, d));
+    }
+    if (!options.length) return;
     Choice.open(game, {
-      title: '보스 보상', sub: '각인 하나를 고른다', color: '#ff3b3b', closable: false,
-      options: cards.map((inst) => this.cardOption(game, inst)),
+      title: '보스 보상', sub: '각인 또는 무기 변형 하나를 고른다', color: '#ff3b3b', closable: false,
+      options,
     });
   },
 
@@ -320,23 +329,27 @@ const EngraveUI = {
     const k = (a) => Input.isPressed(a);
     if (c.mode === 'view' && (k('inventory') || k('back') || k('pause'))) { this.close(game); Sound.play('invClose'); return; }
     if ((c.mode === 'upgrade' || c.cancelable) && (k('back') || k('pause'))) { this.close(game, 'cancel'); Sound.play('menuBack'); return; }
-    // 이동
-    const S = CONFIG.engrave.slots, s = this.sel;
+    // 이동 (s.s = -1: 변형 칸)
+    const S = CONFIG.engrave.slots, s = this.sel, N = S + 1;
     if (k('menuLeft')) { s.w = (s.w + 2) % 3; Sound.play('menuMove'); }
     if (k('menuRight')) { s.w = (s.w + 1) % 3; Sound.play('menuMove'); }
-    if (k('menuUp')) { s.s = (s.s + S - 1) % S; Sound.play('menuMove'); }
-    if (k('menuDown')) { s.s = (s.s + 1) % S; Sound.play('menuMove'); }
+    if (k('menuUp')) { s.s = (s.s + 1 + N - 1) % N - 1; Sound.play('menuMove'); }
+    if (k('menuDown')) { s.s = (s.s + 1 + 1) % N - 1; Sound.play('menuMove'); }
     const click = Input.pressed.Mouse0 !== undefined, rclick = Input.pressed.Mouse2 !== undefined;
     if (Input.mouseMoved || click || rclick) {
       Input.mouseMoved = false;
       const h = Menu.hit(this.rects);
-      if (h >= 0) { const nw = Math.floor(h / S), ns = h % S; if (nw !== s.w || ns !== s.s) Sound.play('menuMove'); s.w = nw; s.s = ns; }
+      if (h >= 0) { const nw = Math.floor(h / N), ns = h % N - 1; if (nw !== s.w || ns !== s.s) Sound.play('menuMove'); s.w = nw; s.s = ns; }
       if (h < 0 && (click || rclick)) return;
     }
     if (this.t < 6) return;
-    const t = WEAPON_ORDER[s.w], cur = p.engr[t][s.s];
+    const t = WEAPON_ORDER[s.w], cur = s.s >= 0 ? p.engr[t][s.s] : null;
     const M = CONFIG.engrave.maxLevel;
     if (c.mode === 'view') return;
+    if (s.s < 0) {
+      if (k('confirm') || click || k('upgrade') || rclick) { this.say('변형 칸입니다 (변형은 대장간에서 바꾼다)'); Sound.play('deny'); }
+      if (c.mode === 'upgrade' || !k('discard')) return;
+    }
     if (c.mode === 'upgrade') {
       if (k('confirm') || click) {
         if (!cur) { this.say('빈 칸입니다'); Sound.play('deny'); return; }
@@ -403,10 +416,16 @@ const EngraveUI = {
       const ok = c.mode !== 'equip' || this.canEquip(p, c.inst, wi);
       ctx.globalAlpha = ok ? 1 : 0.4;
       Menu.text(ctx, W.name + (held ? ' (사용 중)' : ''), x + 8, 84, 'bold 15px "Segoe UI", sans-serif', `rgb(${W.trail.inner})`, 'left');
-      // 변형 칸 (5단계)
-      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-      ctx.strokeRect(x + 8.5, 94.5, colW - 24, 28);
-      Menu.text(ctx, '변형: 기본 형태', x + 16, 113, '11px "Segoe UI", sans-serif', 'rgba(255,255,255,0.45)', 'left');
+      // 변형 칸
+      const td = Transform.def(p.trans[t]), tr = { x: x + 8, y: 94, w: colW - 24, h: 30 }, tsel = this.sel.w === wi && this.sel.s === -1;
+      this.rects.push(tr);
+      ctx.fillStyle = tsel ? 'rgba(255,255,255,0.1)' : td ? 'rgba(80,200,220,0.08)' : 'rgba(255,255,255,0.02)';
+      ctx.fillRect(tr.x, tr.y, tr.w, tr.h);
+      ctx.strokeStyle = td ? W.trail.glow : 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = tsel ? 2 : 1;
+      ctx.strokeRect(tr.x + 0.5, tr.y + 0.5, tr.w - 1, tr.h - 1);
+      if (tsel) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(tr.x - 2.5, tr.y - 2.5, tr.w + 5, tr.h + 5); }
+      Menu.text(ctx, td ? `◆ 변형: ${td.name}` : '변형: 기본 형태', x + 16, 113, td ? 'bold 12px "Segoe UI", sans-serif' : '11px "Segoe UI", sans-serif', td ? `rgb(${W.trail.inner})` : 'rgba(255,255,255,0.45)', 'left');
       for (let si = 0; si < S; si++) {
         const r = { x: x + 8, y: 134 + si * 66, w: colW - 24, h: 56 };
         this.rects.push(r);
@@ -415,9 +434,11 @@ const EngraveUI = {
       ctx.globalAlpha = 1;
     });
     // 선택한 칸 설명
-    const st = WEAPON_ORDER[this.sel.w], inst = p.engr[st][this.sel.s];
+    const st = WEAPON_ORDER[this.sel.w], inst = this.sel.s >= 0 ? p.engr[st][this.sel.s] : null;
     const by = 330;
-    if (inst) {
+    if (this.sel.s < 0) {
+      this.drawTransformInfo(ctx, game, st, gx + 8, by, V.width - gx - 46);
+    } else if (inst) {
       const d = Engrave.def(inst);
       ctx.fillStyle = 'rgba(255,255,255,0.05)';
       ctx.fillRect(gx + 8, by, V.width - gx - 46, 56);
@@ -427,7 +448,7 @@ const EngraveUI = {
       Engrave.pips(ctx, inst, V.width - 70, by + 18);
     }
     // 속성 세트 효과
-    Synergy.drawPanel(ctx, p, gx + 8, by + 72, V.width - gx - 46);
+    if (this.sel.s >= 0) Synergy.drawPanel(ctx, p, gx + 8, by + 72, V.width - gx - 46);
     // 안내
     const kk = (a) => Input.label(a);
     const help = c.mode === 'equip'
@@ -441,6 +462,29 @@ const EngraveUI = {
     }
     ctx.restore();
   },
+};
+
+// (EngraveUI) 변형 칸 설명: 이름·바뀌는 점 + 움직이는 미리보기
+EngraveUI.drawTransformInfo = function (ctx, game, t, x, y, w) {
+  const p = game.player, d = Transform.def(p.trans[t]), W = CONFIG.weapons[t];
+  ctx.fillStyle = 'rgba(255,255,255,0.05)';
+  ctx.fillRect(x, y, w, 160);
+  if (!d) {
+    Menu.text(ctx, `${W.name} — 기본 형태`, x + 14, y + 24, 'bold 13px "Segoe UI", sans-serif', `rgb(${W.trail.inner})`, 'left');
+    Menu.text(ctx, '변형이 없다. 보스 보상(변형 카드)이나 대장간에서 얻는다', x + 14, y + 46, '12px "Segoe UI", sans-serif', 'rgba(232,240,250,0.7)', 'left');
+    return;
+  }
+  Menu.text(ctx, `◆ ${d.name}  ·  ${d.tagline}`, x + 14, y + 22, 'bold 13px "Segoe UI", sans-serif', `rgb(${W.trail.inner})`, 'left');
+  const pw = Math.min(220, w * 0.34);
+  ctx.font = '11px "Segoe UI", sans-serif';
+  let ly = y + 44;
+  for (const l of d.changes) {
+    for (const ln of Choice.wrap(ctx, '· ' + l, w - pw - 40)) {
+      Menu.text(ctx, ln, x + 14, ly, '11px "Segoe UI", sans-serif', 'rgba(232,240,250,0.88)', 'left');
+      ly += 15;
+    }
+  }
+  Transform.drawPreview(ctx, d, x + w - pw - 10, y + 34, pw, 116, this.t);
 };
 
 function p_recalc(game) { if (game.player) game.player.recalcStats(); }

@@ -208,7 +208,7 @@ const Anim = (() => {
         break;
       }
       case 'charge': {
-        r.pose = lerpPose(breathe(POSES.idle, t), POSES.charge, ease.outCubic(clamp01(f / 10)));
+        r.pose = lerpPose(breathe(POSES.idle, t), POSES[p.weaponCfg().chargePose] || POSES.charge, ease.outCubic(clamp01(f / 10)));
         if (p.chargeLevel > 0) {
           const k = p.chargeLevel;
           r.pose.torso += Math.sin(f * 1.7) * k * 1.2;  // 힘이 차서 떨림
