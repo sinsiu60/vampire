@@ -118,7 +118,7 @@ const Game = {
 
     const p = this.player;
     p.readInput(Input);
-    Effects.update();
+    Effects.update(this.hitstop > 0);
 
     // 히트스톱: 엔티티는 멈추고 이펙트만 진행
     if (this.hitstop > 0) {

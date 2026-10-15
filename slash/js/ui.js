@@ -67,16 +67,17 @@ const UI = {
     if (this.showHelp) {
       const lines = [
         'A/D 이동   스페이스 점프(2단, 길게=높이)   S+스페이스 발판 내려가기',
-        'J 약공 4타   K 강공(길게=차지)   J,J 후 K 전진 찌르기   L 대시(무적)',
-        '후딜 중 L/스페이스로 캔슬   H 히트박스 표시   F1 도움말 숨기기   Esc 일시정지',
+        'J 약공 4타   K 강공(길게=차지)   J,J 후 K 찌르기   L 대시(무적)   후딜 중 L/스페이스 캔슬',
+        'S+K 런처(K 유지 = 같이 점프)   공중 J 3타   공중 K 날려베기   공중 S+K 내려찍기',
+        'H 히트박스   F1 도움말 숨기기   Esc 일시정지',
       ];
       ctx.textAlign = 'center';
       ctx.font = '12px "Segoe UI", sans-serif';
       for (let i = 0; i < lines.length; i++) {
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.fillText(lines[i], 481, 497 + i * 16);
+        ctx.fillText(lines[i], 481, 481 + i * 16);
         ctx.fillStyle = 'rgba(255,255,255,0.75)';
-        ctx.fillText(lines[i], 480, 496 + i * 16);
+        ctx.fillText(lines[i], 480, 480 + i * 16);
       }
     }
   },

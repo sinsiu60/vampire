@@ -8,9 +8,9 @@ const Render = {
   buildLayers() {
     const layers = [];
     const specs = [
-      { factor: 0.15, base: 330, amp: 70, step: 120, color: '#5a3a44' },
-      { factor: 0.35, base: 380, amp: 50, step: 80, color: '#3a2630' },
-      { factor: 0.6, base: 420, amp: 30, step: 50, color: '#24161c' },
+      { factor: 0.15, base: 330, amp: 70, step: 120, color: '#d7a089' },
+      { factor: 0.35, base: 380, amp: 50, step: 80, color: '#b97f70' },
+      { factor: 0.6, base: 420, amp: 30, step: 50, color: '#93605a' },
     ];
     for (const s of specs) {
       const pts = [];
@@ -25,14 +25,15 @@ const Render = {
   background(ctx, cam) {
     const V = CONFIG.view;
     const g = ctx.createLinearGradient(0, 0, 0, V.height);
-    g.addColorStop(0, '#2d2236');
-    g.addColorStop(0.55, '#8a5a52');
-    g.addColorStop(1, '#c98a5c');
+    // 밝은 노을: 검은 실루엣이 잘 보이도록 배경은 밝게
+    g.addColorStop(0, '#8e7a96');
+    g.addColorStop(0.5, '#e8a983');
+    g.addColorStop(1, '#f7d39a');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, V.width, V.height);
 
     // 해
-    ctx.fillStyle = 'rgba(255,200,140,0.35)';
+    ctx.fillStyle = 'rgba(255,240,200,0.75)';
     ctx.beginPath();
     ctx.arc(V.width * 0.7 - cam.x * 0.05, 300, 70, 0, Math.PI * 2);
     ctx.fill();
@@ -107,23 +108,6 @@ const Render = {
       ctx.fillRect(w / 2 - 9, -h + 9, 7, 3);
       ctx.shadowBlur = 0;
     }
-    // 검 (임시: 막대)
-    ctx.strokeStyle = white ? '#fff' : '#111';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    let ang = 0.9;   // 기본: 아래로 늘어뜨림
-    if (p.state === 'attack' && p.move) {
-      const f = p.stateFrame, m = p.move;
-      const a0 = (m.arc.from) * Math.PI / 180, a1 = (m.arc.to) * Math.PI / 180;
-      if (f < m.startup) ang = a0;
-      else if (f < m.startup + m.active) ang = a0 + (a1 - a0) * ((f - m.startup + 1) / m.active);
-      else ang = a1;
-    } else if (p.state === 'charge') ang = -2.4;
-    const len = 34;
-    ctx.moveTo(4, -28);
-    ctx.lineTo(4 + Math.cos(ang) * len, -28 + Math.sin(ang) * len);
-    ctx.stroke();
-
     // 차지 글로우
     if (p.state === 'charge') {
       ctx.strokeStyle = p.chargeLevel >= 2 ? '#fff' : '#3ff';
@@ -134,7 +118,45 @@ const Render = {
       ctx.stroke();
     }
     ctx.restore();
+    this.playerBlade(ctx, p, white);
     ctx.globalAlpha = 1;
+  },
+
+  // 칼: 플레이어의 bladePose 를 그대로 사용 (검기 리본과 정확히 일치)
+  playerBlade(ctx, p, white) {
+    const pose = p.bladePose();
+    const L = CONFIG.player.bladeLength;
+    const base = p.bladePoint(pose, 0, {});
+    const grip = p.bladePoint(pose, 8, {});
+    const tip = p.bladePoint(pose, L, {});
+    ctx.lineCap = 'round';
+    // 팔 (어깨 → 손잡이)
+    ctx.strokeStyle = white ? '#fff' : '#0a0a0c';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y - 34);
+    ctx.lineTo(grip.x, grip.y);
+    ctx.stroke();
+    // 칼날
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.moveTo(base.x, base.y);
+    ctx.lineTo(tip.x, tip.y);
+    ctx.stroke();
+    // 판정 중: 칼끝에서 검기가 뻗어나감
+    if (p.isActiveFrame() && p.state === 'attack' && !p.move.swing.thrust) {
+      const far = p.bladePoint(pose, pose.r, {});
+      ctx.save();
+      ctx.shadowColor = '#3ff';
+      ctx.shadowBlur = 14;
+      ctx.strokeStyle = 'rgba(200,255,255,0.95)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(grip.x, grip.y);
+      ctx.lineTo(far.x, far.y);
+      ctx.stroke();
+      ctx.restore();
+    }
   },
 
   // ---------- 적 (임시 도형) ----------
@@ -143,6 +165,21 @@ const Render = {
     if (e.dead) ctx.globalAlpha = Math.max(0, 1 - e.stateFrame / 24);
     ctx.translate(e.x, e.y);
     ctx.scale(e.facing, 1);
+    // 띄워짐: 몸이 뒤로 젖혀지며 회전 / 다운: 누움 / 기상: 일어남
+    if (e.state === 'launched' || (e.state === 'dead' && !e.onGround)) {
+      const rot = Math.max(-1.3, Math.min(0.6, -0.6 + e.vy * 0.08));
+      ctx.translate(0, -e.h / 2);
+      ctx.rotate(rot);
+      ctx.translate(0, e.h / 2);
+    } else if (e.state === 'down') {
+      // 회전된 좌표에서 +x 는 화면 위쪽 → 몸 두께 절반만큼 올려서 바닥 위에 눕힘
+      ctx.rotate(-Math.PI / 2);
+      ctx.translate(e.w / 2, 0);
+    } else if (e.state === 'getup') {
+      const t = e.stateFrame / CONFIG.air.getupFrames;
+      ctx.rotate(-Math.PI / 2 * (1 - t));
+      ctx.translate(e.w / 2 * (1 - t), 0);
+    }
     let lean = 0;
     if (e.state === 'windup') lean = -0.3 * Math.min(1, e.stateFrame / 10);
     else if (e.state === 'attack') lean = 0.35;

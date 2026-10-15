@@ -51,7 +51,11 @@ const Combat = {
       knockX: move.knock.x,
       knockY: move.knock.y,
       hitstun: move.hitstun,
+      launch: !!move.launch,
+      slam: !!move.slam,
     });
+    // 공중 공격 적중: 플레이어도 공중에 살짝 머무름 (적의 저글링 감쇠를 같이 따름)
+    if (move.air) player.airHang(enemy.juggleMult());
 
     // 히트 위치: 적 몸 중앙쯤
     const hx = enemy.x - dir * enemy.w * 0.2;
@@ -71,11 +75,39 @@ const Combat = {
       Sound.play('kill');
       game.onEnemyKilled(enemy);
     } else {
-      Sound.play(move.heavy ? 'heavyHit' : 'hit');
+      Sound.play(move.launch ? 'launchHit' : move.heavy ? 'heavyHit' : 'hit');
     }
     if (crit) Sound.play('crit');
 
     game.registerHit();
+  },
+
+  // 내려찍기 착지 충격파: 주변 바닥의 적을 띄움
+  slamWave(game, player) {
+    const W = CONFIG.moves.SLAM_WAVE;
+    Effects.shockwave(player.x, player.y, W.radius);
+    Effects.addShake(W.shake);
+    Effects.impactFrame(1);
+    game.hitstop = Math.max(game.hitstop, 4);
+    Sound.play('slam');
+    for (const e of game.enemies) {
+      if (e.dead) continue;
+      const dx = e.x - player.x;
+      if (Math.abs(dx) > W.radius || Math.abs(e.y - player.y) > W.height) continue;
+      const dir = dx === 0 ? player.facing : Math.sign(dx);
+      const crit = Math.random() < CONFIG.player.critChance;
+      const dmg = W.damage * (crit ? CONFIG.player.critMult : 1);
+      e.takeHit(dmg, { dir, knockX: W.knock.x, knockY: W.knock.y, hitstun: W.hitstun, launch: true });
+      Effects.damageNumber(e.x, e.y - e.h - 8, dmg, crit);
+      Effects.sparks(e.x, e.y - e.h * 0.4, dir, 6, '#ffffff');
+      game.hitstop = Math.max(game.hitstop, W.hitstop);
+      if (e.hp <= 0) {
+        Effects.shards(e.x, e.y - e.h / 2, dir, 18, '#0c0a0b');
+        Sound.play('kill');
+        game.onEnemyKilled(e);
+      }
+      game.registerHit();
+    }
   },
 
   // 적 공격 판정

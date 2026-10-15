@@ -4,6 +4,8 @@
 const Effects = {
   particles: [],
   slashes: [],
+  trail: [],       // 검기 리본: 칼 안쪽~칼끝 샘플 점들
+  waves: [],       // 충격파 고리
   afterimages: [],
   numbers: [],
   shake: 0,
@@ -14,6 +16,8 @@ const Effects = {
   reset() {
     this.particles.length = 0;
     this.slashes.length = 0;
+    this.trail.length = 0;
+    this.waves.length = 0;
     this.afterimages.length = 0;
     this.numbers.length = 0;
     this.shake = 0;
@@ -70,12 +74,22 @@ const Effects = {
     }
   },
 
-  // 베기 궤적 (호)
-  slash(owner, arc, facing, life, color, width) {
-    this.slashes.push({
-      owner, ox: 0, oy: -28, r: arc.r, from: arc.from, to: arc.to, thrust: !!arc.thrust,
-      facing, life: life, max: life, color: color || '#4ff', width: width || 10,
-    });
+  // 찌르기 궤적 (가시 모양)
+  thrust(owner, r, facing, life, color) {
+    this.slashes.push({ owner, r, facing, life, max: life, color: color || '#5ff' });
+  },
+
+  // 검기 리본 점 하나 추가. id 가 같은 점끼리 이어서 그린다 (한 번의 휘두르기 = 한 id)
+  // (ix,iy) 칼 안쪽, (ox,oy) 칼끝 바깥
+  trailPoint(id, ix, iy, ox, oy, life, heavy) {
+    this.trail.push({ id, ix, iy, ox, oy, life, max: life, heavy: !!heavy });
+  },
+
+  // 내려찍기 착지 충격파
+  shockwave(x, y, radius) {
+    this.waves.push({ x, y, r: radius, life: 22, max: 22 });
+    this.dust(x - 20, y, 10, 1);
+    this.dust(x + 20, y, 10, -1);
   },
 
   // 대시 잔상
@@ -93,7 +107,8 @@ const Effects = {
   },
 
   // ---------- 갱신 (히트스톱 중에도 돌아감) ----------
-  update() {
+  // frozen: 히트스톱 중 (검기/궤적은 멈춘 채로 유지)
+  update(frozen) {
     const F = CONFIG.feel;
     // 흔들림
     if (this.shake > 0.2) {
@@ -113,8 +128,14 @@ const Effects = {
       if (p.rot !== undefined) p.rot += p.vr;
       if (--p.life <= 0) ps.splice(i, 1);
     }
-    const ss = this.slashes;
-    for (let i = ss.length - 1; i >= 0; i--) if (--ss[i].life <= 0) ss.splice(i, 1);
+    if (!frozen) {
+      const ss = this.slashes;
+      for (let i = ss.length - 1; i >= 0; i--) if (--ss[i].life <= 0) ss.splice(i, 1);
+      const tr = this.trail;
+      for (let i = tr.length - 1; i >= 0; i--) if (--tr[i].life <= 0) tr.splice(i, 1);
+    }
+    const ws = this.waves;
+    for (let i = ws.length - 1; i >= 0; i--) if (--ws[i].life <= 0) ws.splice(i, 1);
     const as = this.afterimages;
     for (let i = as.length - 1; i >= 0; i--) if (--as[i].life <= 0) as.splice(i, 1);
     const ns = this.numbers;
@@ -127,6 +148,56 @@ const Effects = {
   },
 
   // ---------- 그리기 (월드 좌표, 카메라 변환 적용된 상태) ----------
+  // 검기 리본: 연속된 두 샘플 사이를 사각형으로 채움. 오래된 점일수록 투명 + 가늘게
+  drawTrail(ctx) {
+    const tr = this.trail;
+    let i = 0;
+    while (i < tr.length) {
+      let j = i;
+      while (j + 1 < tr.length && tr[j + 1].id === tr[i].id) j++;
+      if (j > i) this._drawRibbon(ctx, tr, i, j);
+      i = j + 1;
+    }
+  },
+
+  // 한 번의 휘두르기를 하나의 다각형으로: 오래된 쪽일수록 안쪽 가장자리가 칼끝으로 모여 꼬리가 가늘어짐
+  _drawRibbon(ctx, tr, i0, i1) {
+    const newest = tr[i1].life / tr[i1].max;
+    const heavy = tr[i1].heavy;
+    const band = (k, frac) => {
+      const p = tr[k];
+      const t = p.life / p.max;
+      const w = t * t * frac;                       // 남은 두께 비율
+      return [p.ox + (p.ix - p.ox) * w, p.oy + (p.iy - p.oy) * w];
+    };
+    const layer = (frac, color) => {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(tr[i0].ox, tr[i0].oy);
+      for (let k = i0 + 1; k <= i1; k++) ctx.lineTo(tr[k].ox, tr[k].oy);
+      for (let k = i1; k >= i0; k--) { const q = band(k, frac); ctx.lineTo(q[0], q[1]); }
+      ctx.closePath();
+      ctx.fill();
+    };
+    ctx.save();
+    ctx.shadowColor = '#3ff';
+    ctx.shadowBlur = 16;
+    layer(1, `rgba(90,230,255,${((heavy ? 0.5 : 0.4) * newest).toFixed(3)})`);
+    ctx.shadowBlur = 0;
+    layer(0.35, `rgba(200,255,255,${(0.85 * newest).toFixed(3)})`);
+    // 칼끝 가장자리 선
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = `rgba(255,255,255,${newest.toFixed(3)})`;
+    ctx.lineWidth = heavy ? 3 : 2;
+    ctx.beginPath();
+    const start = Math.max(i0, i1 - Math.ceil((i1 - i0) * 0.7));
+    ctx.moveTo(tr[start].ox, tr[start].oy);
+    for (let k = start + 1; k <= i1; k++) ctx.lineTo(tr[k].ox, tr[k].oy);
+    ctx.stroke();
+    ctx.restore();
+  },
+
   drawBack(ctx) {
     // 잔상
     for (const a of this.afterimages) {
@@ -138,37 +209,50 @@ const Effects = {
   },
 
   drawFront(ctx) {
-    // 베기 궤적
+    this.drawTrail(ctx);
+
+    // 찌르기 궤적
     for (const s of this.slashes) {
       const t = s.life / s.max;
-      const cx = s.owner.x, cy = s.owner.y + s.oy;
       ctx.save();
-      ctx.translate(cx, cy);
+      ctx.translate(s.owner.x, s.owner.y - 34);
       ctx.scale(s.facing, 1);
       ctx.globalAlpha = t;
       ctx.shadowColor = s.color;
       ctx.shadowBlur = 14;
       ctx.fillStyle = s.color;
-      if (s.thrust) {
-        ctx.beginPath();
-        ctx.moveTo(6, -4 * t);
-        ctx.lineTo(s.r + 10, 0);
-        ctx.lineTo(6, 4 * t);
-        ctx.closePath();
-        ctx.fill();
-      } else {
-        // 초승달 모양: 바깥 호 + 안쪽 호(중심 이동)
-        const a0 = s.from * Math.PI / 180, a1 = s.to * Math.PI / 180;
-        const ccw = a1 < a0;
-        const w = s.width * t;
-        ctx.beginPath();
-        ctx.arc(0, 0, s.r, a0, a1, ccw);
-        ctx.arc(-w * 0.6, 0, s.r - w, a1, a0, !ccw);
-        ctx.closePath();
-        ctx.fill();
-      }
+      ctx.beginPath();
+      ctx.moveTo(-30, -6 * t);
+      ctx.lineTo(s.r + 14, 0);
+      ctx.lineTo(-30, 6 * t);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(0, -2 * t);
+      ctx.lineTo(s.r + 8, 0);
+      ctx.lineTo(0, 2 * t);
+      ctx.fill();
       ctx.restore();
     }
+
+    // 충격파
+    for (const w of this.waves) {
+      const t = 1 - w.life / w.max;
+      const r = w.r * (0.3 + 0.7 * Math.sqrt(t));
+      ctx.globalAlpha = 1 - t;
+      ctx.strokeStyle = '#bff';
+      ctx.lineWidth = 8 * (1 - t) + 1;
+      ctx.beginPath();
+      ctx.ellipse(w.x, w.y - 2, r, r * 0.22, 0, Math.PI, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = 3 * (1 - t) + 1;
+      ctx.strokeStyle = '#fff';
+      ctx.beginPath();
+      ctx.ellipse(w.x, w.y - 2, r * 0.7, r * 0.15, 0, Math.PI, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
 
     // 파티클
     for (const p of this.particles) {

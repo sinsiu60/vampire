@@ -72,6 +72,20 @@ const Sound = {
         this._noise(0.2, 'lowpass', 2200, 200, 0.8);
         this._tone(0.22, 'sine', 140, 40, 0.7);
         break;
+      case 'launcher':
+        this._noise(0.22, 'bandpass', 500, 3800, 0.45, 0.8);
+        break;
+      case 'launchHit':
+        this._noise(0.14, 'lowpass', 2600, 400, 0.6);
+        this._tone(0.2, 'sine', 120, 380, 0.45);
+        break;
+      case 'slam':
+        this._noise(0.4, 'lowpass', 1600, 60, 1.0);
+        this._tone(0.4, 'sine', 110, 30, 0.9);
+        break;
+      case 'bounce':
+        this._tone(0.12, 'sine', 160, 60, 0.5);
+        break;
       case 'crit':
         this._tone(0.12, 'triangle', 1400, 900, 0.25);
         break;
