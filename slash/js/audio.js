@@ -118,6 +118,39 @@ const Sound = {
         this._tone(0.18, 'triangle', 800, 1600, 0.22);
         this._tone(0.18, 'triangle', 1200, 2000, 0.12, 0.05);
         break;
+      case 'telegraphYellow':
+        this._tone(0.08, 'triangle', 1300, 1500, 0.09);
+        break;
+      case 'parryStance':
+        this._noise(0.05, 'highpass', 4000, 6000, 0.12);
+        break;
+      case 'parry':
+        this._tone(0.5, 'triangle', 2200, 2100, 0.3);
+        this._tone(0.5, 'sine', 3300, 3250, 0.18);
+        this._tone(0.25, 'square', 600, 300, 0.12);
+        this._noise(0.12, 'highpass', 6000, 3000, 0.5);
+        break;
+      case 'block':
+        this._tone(0.12, 'square', 520, 380, 0.14);
+        this._noise(0.08, 'bandpass', 1500, 900, 0.35, 2);
+        break;
+      case 'armorHit':
+        this._tone(0.14, 'square', 340, 260, 0.14);
+        this._noise(0.08, 'lowpass', 2500, 800, 0.4);
+        break;
+      case 'reflect':
+        this._tone(0.15, 'triangle', 900, 1800, 0.2);
+        break;
+      case 'shoot':
+        this._noise(0.12, 'bandpass', 3000, 1500, 0.3, 3);
+        break;
+      case 'rush':
+        this._noise(0.35, 'lowpass', 400, 900, 0.5);
+        break;
+      case 'wallHit':
+        this._noise(0.3, 'lowpass', 1200, 80, 0.9);
+        this._tone(0.3, 'sine', 90, 35, 0.8);
+        break;
       case 'telegraph':
         this._tone(0.07, 'square', 900, 700, 0.06);
         break;

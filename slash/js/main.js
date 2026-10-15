@@ -45,12 +45,14 @@ const Game = {
     this.level = level;
     this.player = new Player(200, level.groundY);
     this.enemies = [];
+    this.projectiles = [];
     this.combo = { count: 0, timer: 0, pop: 0 };
     this.wave = 0;
     this.kills = 0;
     this.waveTimer = 30;
     this.hitstop = 0;
     this.timeScale = 1;
+    this.slowmoMs = 0;
     Effects.reset();
     this.setState('playing');
     this.updateCamera(true);
@@ -63,17 +65,32 @@ const Game = {
 
   spawnWave() {
     const A = CONFIG.arena;
-    const n = A.waveSizes[Math.min(this.wave, A.waveSizes.length - 1)];
-    this.wave++;
-    for (let i = 0; i < n; i++) {
-      // 플레이어와 떨어진 쪽에 스폰
-      const side = (i % 2 === 0) ? 1 : -1;
-      let x = this.player.x + side * (380 + i * 70 + Math.random() * 120);
-      x = Math.max(80, Math.min(A.width - 80, x));
-      const e = new Enemy('grunt', x, A.groundY);
-      this.enemies.push(e);
-      Effects.dust(x, A.groundY, 6, 0);
+    let types = A.waves[this.wave];
+    if (!types) {
+      const all = Object.keys(CONFIG.enemies);
+      types = [];
+      for (let i = 0; i < A.randomWaveSize; i++) types.push(all[(Math.random() * all.length) | 0]);
     }
+    this.wave++;
+    types.forEach((t, i) => {
+      // 플레이어와 떨어진 곳에 스폰
+      const side = (i % 2 === 0) ? 1 : -1;
+      this.spawnEnemy(t, this.player.x + side * (380 + i * 60 + Math.random() * 120));
+    });
+  },
+
+  spawnEnemy(type, x) {
+    const A = CONFIG.arena;
+    x = Math.max(80, Math.min(A.width - 80, x));
+    const e = new Enemy(type, x, A.groundY);
+    this.enemies.push(e);
+    Effects.dust(x, A.groundY, 6, 0);
+    return e;
+  },
+
+  // 슬로모션 (실제 시간 기준)
+  slowmo(ms) {
+    this.slowmoMs = Math.max(this.slowmoMs, ms);
   },
 
   // ---------- 이벤트 (전투에서 호출) ----------
@@ -86,6 +103,8 @@ const Game = {
   onEnemyKilled(enemy) {
     this.kills++;
   },
+
+  onParry(enemy) {},
 
   onPlayerHurt() {
     this.combo.count = 0;
@@ -102,6 +121,13 @@ const Game = {
     if (Input.isPressed('help')) UI.showHelp = !UI.showHelp;
     if (Input.isPressed('debug')) CONFIG.debug.showHitboxes = !CONFIG.debug.showHitboxes;
     if (Input.isPressed('theme')) Render.setTheme((Render.themeIndex + 1) % THEMES.length);
+    // 개발용: 숫자키로 적 소환
+    if (this.state === 'playing') {
+      const types = ['grunt', 'shield', 'flyer', 'heavy', 'archer', 'charger'];
+      for (let i = 0; i < types.length; i++) {
+        if (Input.isPressed('spawn' + (i + 1))) this.spawnEnemy(types[i], this.player.x + this.player.facing * 260);
+      }
+    }
 
     if (this.state === 'paused') {
       if (Input.isPressed('pause')) this.setState('playing');
@@ -131,6 +157,8 @@ const Game = {
     Combat.playerAttack(this, p);
     for (const e of this.enemies) e.update(this);
     this.enemies = this.enemies.filter((e) => !e.remove);
+    for (const pr of this.projectiles) pr.update(this);
+    this.projectiles = this.projectiles.filter((pr) => !pr.dead);
 
     // 히트 수
     if (this.combo.timer > 0 && --this.combo.timer === 0) this.combo.count = 0;
@@ -173,6 +201,13 @@ const Game = {
     let dt = now - this._last;
     this._last = now;
     if (dt > STEP * CONFIG.maxFrameSkip) dt = STEP * CONFIG.maxFrameSkip;
+    // 슬로모션: 실제 시간으로 줄어듦
+    if (this.slowmoMs > 0) {
+      this.slowmoMs -= dt;
+      this.timeScale = CONFIG.parry.slowmoScale;
+    } else {
+      this.timeScale = 1;
+    }
     this._acc += dt * this.timeScale;
     while (this._acc >= STEP) {
       this.step();
@@ -208,6 +243,7 @@ const Game = {
     Effects.drawBack(ctx);
     for (const e of this.enemies) Render.enemy(ctx, e);
     Render.player(ctx, this.player);
+    for (const pr of this.projectiles) pr.draw(ctx);
     Effects.drawFront(ctx);
     if (CONFIG.debug.showHitboxes) Render.hitboxes(ctx, this);
     ctx.restore();
@@ -218,6 +254,12 @@ const Game = {
       ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, CONFIG.view.width, CONFIG.view.height);
       ctx.globalCompositeOperation = 'source-over';
+    }
+    // 화면 번쩍 (패링 등)
+    if (Effects.flash) {
+      const f = Effects.flash;
+      ctx.fillStyle = f.color + (0.42 * f.life / f.max).toFixed(3) + ')';
+      ctx.fillRect(0, 0, CONFIG.view.width, CONFIG.view.height);
     }
 
     UI.hud(ctx, this);

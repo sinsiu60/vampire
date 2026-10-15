@@ -68,10 +68,10 @@ const UI = {
       // 키 이름은 KEYBINDS 에서 가져온다 (config.js 에서 바꾸면 도움말도 같이 바뀜)
       const k = (a) => Input.label(a);
       const lines = [
-        `${k('left')}/${k('right')} 이동   ${k('jump')} 점프(2단, 길게=높이)   ${k('down')}+${k('jump')} 발판 내려가기   ${k('dash')} 대시(무적)`,
+        `${k('left')}/${k('right')} 이동   ${k('jump')} 점프(2단, 길게=높이)   ${k('dash')} 대시(무적)   ${k('parry')} 패링(노랑 예고만, 빨강은 회피)`,
         `${k('light')} 약공 4타   ${k('heavy')} 강공(길게=차지)   약공 2타 후 ${k('heavy')} 찌르기   후딜 중 ${k('dash')}/${k('jump')} 캔슬`,
         `${k('down')}+${k('heavy')} 런처(${k('heavy')} 유지 = 같이 점프)   공중 ${k('light')} 3타   공중 ${k('heavy')} 날려베기   공중 ${k('down')}+${k('heavy')} 내려찍기`,
-        `${k('debug')} 히트박스   ${k('help')} 도움말 숨기기   ${k('pause')} 일시정지`,
+        `${k('spawn1')}~${k('spawn6')} 적 소환(잡몹/방패/비행/중갑/원거리/돌진)   ${k('debug')} 히트박스   ${k('help')} 도움말 숨기기   ${k('pause')} 일시정지`,
       ];
       ctx.textAlign = 'center';
       ctx.font = '12px "Segoe UI", sans-serif';

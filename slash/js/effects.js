@@ -13,6 +13,7 @@ const Effects = {
   shakeX: 0,
   shakeY: 0,
   impact: 0,       // >0 이면 색 반전 프레임
+  flash: null,     // 화면 번쩍 { color: 'rgba(r,g,b,', life, max }
 
   reset() {
     this.particles.length = 0;
@@ -24,6 +25,7 @@ const Effects = {
     this.numbers.length = 0;
     this.shake = 0;
     this.impact = 0;
+    this.flash = null;
   },
 
   // ---------- 생성 ----------
@@ -99,9 +101,26 @@ const Effects = {
     this.dust(x + 20, y, 10, -1);
   },
 
-  // 대시 잔상: 그 순간의 골격을 반투명 청록 분신으로
-  afterimage(fig) {
-    this.afterimages.push({ fig, life: 16, max: 16 });
+  // 대시 잔상: 그 순간의 골격을 반투명 분신으로 (기본 청록)
+  afterimage(fig, color) {
+    this.afterimages.push({ fig, life: 16, max: 16, color: color || 'rgb(70,230,255)' });
+  },
+
+  // 떠오르는 글자 (PARRY!, ARMOR BREAK 등)
+  popText(x, y, text, color, size) {
+    // 근처에 막 생긴 글자가 있으면 위로 쌓아서 겹치지 않게
+    for (const n of this.numbers) {
+      if (n.size && n.life > n.max - 20 && Math.abs(n.x - x) < 110 && Math.abs(n.y - y) < 22) y = n.y - 24;
+    }
+    this.numbers.push({
+      x, y, vx: 0, vy: -2.2, text, crit: false, color, size: size || 18,
+      life: 50, max: 50,
+    });
+  },
+
+  // 화면 전체 번쩍 (color 는 'rgba(r,g,b,' 형태)
+  screenFlash(color, frames) {
+    this.flash = { color, life: frames, max: frames };
   },
 
   damageNumber(x, y, value, crit) {
@@ -126,6 +145,7 @@ const Effects = {
       this.shake = 0; this.shakeX = 0; this.shakeY = 0;
     }
     if (this.impact > 0) this.impact--;
+    if (this.flash && --this.flash.life <= 0) this.flash = null;
 
     const ps = this.particles;
     for (let i = ps.length - 1; i >= 0; i--) {
@@ -211,7 +231,7 @@ const Effects = {
     for (const a of this.afterimages) {
       const t = a.life / a.max;
       ctx.globalAlpha = t * 0.5;
-      const col = 'rgb(70,230,255)';
+      const col = a.color;
       Anim.drawFigure(ctx, a.fig, { color: col, back: col });
       if (a.fig.blade) Anim.drawBlade(ctx, a.fig.blade.base, a.fig.blade.tip, 1.8, 1, col);
     }
@@ -314,13 +334,13 @@ const Effects = {
     for (const n of this.numbers) {
       const t = n.life / n.max;
       const pop = n.life > n.max - 6 ? 1 + (n.life - (n.max - 6)) * 0.12 : 1;
-      const size = (n.crit ? 30 : 18) * pop;
+      const size = (n.size || (n.crit ? 30 : 18)) * pop;
       ctx.globalAlpha = Math.min(1, t * 3);
       ctx.font = `bold ${size | 0}px "Segoe UI", sans-serif`;
       ctx.lineWidth = 4;
       ctx.strokeStyle = '#000';
       ctx.strokeText(n.text, n.x, n.y);
-      ctx.fillStyle = n.crit ? '#ffd83a' : '#ffffff';
+      ctx.fillStyle = n.color || (n.crit ? '#ffd83a' : '#ffffff');
       ctx.fillText(n.text, n.x, n.y);
     }
     ctx.globalAlpha = 1;

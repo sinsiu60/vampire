@@ -242,10 +242,11 @@ const Render = {
 
     Anim.drawFigure(ctx, fig, { color: col, back, glow, glowBlur: 8 + 5 * p.chargeLevel }, p.scarf);
 
-    // 칼: 검은 칼날 (궤적만 청록)
+    // 칼: 검은 칼날 (궤적만 청록). 패링 성공 후 크리티컬 확정 상태면 금빛
     const b = fig.blade;
     ctx.save();
-    if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = 10; }
+    if (p.critReady > 0) { ctx.shadowColor = '#ffc830'; ctx.shadowBlur = 10 + Math.sin(p.critReady * 0.3) * 4; }
+    else if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = 10; }
     Anim.drawBlade(ctx, b.base, b.tip, 2.4, 1.1, col);
     // 코등이
     const gx = b.guard.x, gy2 = b.guard.y;
@@ -277,6 +278,19 @@ const Render = {
 
     if (!white) Anim.drawEye(ctx, fig, '#bffcff', '#2ff', 2);
 
+    // 패링 판정 창: 칼날 가운데 노란 반짝임
+    if (p.isParrying() || p.parryFlash > 0) {
+      const k = p.parryFlash > 0 ? p.parryFlash / 14 : 1 - p.stateFrame / (CONFIG.parry.window + 1);
+      const mx = (b.hand.x + b.tip.x) / 2, my = (b.hand.y + b.tip.y) / 2;
+      ctx.save();
+      ctx.globalAlpha = clamp01(k);
+      ctx.fillStyle = '#fff6c0';
+      ctx.shadowColor = '#ffd21a';
+      ctx.shadowBlur = 14;
+      this.star(ctx, mx, my, 5 + (p.parryFlash > 0 ? 10 * k : 3 * k));
+      ctx.restore();
+    }
+
     // 차지 링
     if (p.state === 'charge' && p.chargeLevel > 0) {
       ctx.save();
@@ -295,51 +309,205 @@ const Render = {
 
   // ---------- 적 ----------
   enemy(ctx, e) {
-    const fig = Anim.gruntFigure(e);
+    const fig = Anim.enemyFigure(e);
+    const look = e.cfg.look;
     ctx.save();
     if (e.dead) ctx.globalAlpha = Math.max(0, 1 - e.stateFrame / 24);
     const white = e.flash > 0;
-    // 빨강 예고: 붉은 기운이 깜빡이며 차오름
     let col = '#060506', back = '#2b2225', glow = null, blur = 0;
+    // 예고: 빨강(패링 불가) / 노랑(패링 가능) 기운이 깜빡이며 차오름
     if (e.telegraphing) {
-      const k = clamp01(e.stateFrame / e.cfg.windup);
+      const yellow = e.atk.parryable;
+      const k = clamp01(e.stateFrame / e.atk.windup);
       const on = (e.stateFrame >> 2) % 2 === 0;
-      glow = '#ff1a1a';
+      glow = yellow ? '#ffd21a' : '#ff1a1a';
       blur = on ? 10 + 16 * k : 6;
-      if (on) { col = '#2a0505'; back = '#4a1010'; }
+      if (on) { col = yellow ? '#2a2205' : '#2a0505'; back = yellow ? '#4a3e10' : '#4a1010'; }
+    } else if (e.armored) {
+      // 슈퍼아머: 은빛 테두리
+      glow = 'rgba(190,205,225,0.9)';
+      blur = 5;
     }
     if (white) { col = '#ffffff'; back = '#e8e8e8'; glow = null; }
 
+    if (look.weapon === 'claws') this.wings(ctx, fig, e, col, back);
     Anim.drawFigure(ctx, fig, { color: col, back, glow, glowBlur: blur });
-    // 무기 (넓은 칼)
-    const w = fig.weapon;
     ctx.save();
     if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = blur; }
-    Anim.drawBlade(ctx, w.base, w.tip, 2.2, 4.2, col);
+    this.enemyGear(ctx, fig, e, col);
     ctx.restore();
-    if (!white) Anim.drawEye(ctx, fig, '#ff5050', '#f00', 2.2);
+    if (!white) Anim.drawEye(ctx, fig, '#ff5050', '#f00', look.body === 'heavy' ? 2.6 : 2.2);
     ctx.restore();
 
+    const headY = fig.j.head.y - fig.dim.headR;
     // 예고 표시 "!"
     if (e.telegraphing) {
-      const k = clamp01(e.stateFrame / e.cfg.windup);
+      const k = clamp01(e.stateFrame / e.atk.windup);
+      const c = e.atk.parryable ? '#ffd21a' : '#ff2a2a';
       ctx.save();
-      ctx.fillStyle = '#ff2a2a';
-      ctx.shadowColor = '#f00';
+      ctx.fillStyle = c;
+      ctx.shadowColor = c;
       ctx.shadowBlur = 8;
       ctx.font = `bold ${(18 + 8 * k) | 0}px sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText('!', e.x, fig.j.head.y - 14);
+      ctx.fillText('!', e.x, headY - 10);
+      ctx.restore();
+    }
+    // 그로기: 머리 위로 별이 빙글빙글
+    if (e.state === 'stun' && !e.dead) {
+      const t = (Game.frame || 0) * 0.12;
+      ctx.save();
+      ctx.fillStyle = '#ffe070';
+      ctx.shadowColor = '#ffb000';
+      ctx.shadowBlur = 6;
+      for (let i = 0; i < 3; i++) {
+        const a = t + i * (Math.PI * 2 / 3);
+        this.star(ctx, fig.j.head.x + Math.cos(a) * 14, headY - 6 + Math.sin(a) * 4, 3.5);
+      }
       ctx.restore();
     }
     // 체력바
     if (!e.dead && e.hpShow > 0) {
-      const bw = 40, by = Math.min(e.y - e.h - 12, fig.j.head.y - 12);
+      const bw = look.body === 'heavy' ? 56 : 40;
+      const by = Math.min(e.y - e.h - 12, headY - 10);
       ctx.fillStyle = 'rgba(0,0,0,0.7)';
       ctx.fillRect(e.x - bw / 2 - 1, by - 1, bw + 2, 5);
       ctx.fillStyle = '#d33';
       ctx.fillRect(e.x - bw / 2, by, bw * (e.hp / e.maxHp), 3);
     }
+  },
+
+  star(ctx, x, y, r) {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r;
+      ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+    }
+    ctx.closePath();
+    ctx.fill();
+  },
+
+  // 종류별 장비: 칼 / 방패 / 망치 / 활 / 뿔 / 투구
+  enemyGear(ctx, fig, e, col) {
+    const w = fig.weapon, j = fig.j, d = fig.dim, f = fig.facing;
+    ctx.fillStyle = col;
+    ctx.strokeStyle = col;
+    ctx.lineCap = 'round';
+    switch (e.cfg.look.weapon) {
+      case 'blade':
+        Anim.drawBlade(ctx, w.base, w.tip, 2.2, 4.2, col);
+        break;
+      case 'shield': {
+        // 몸 앞을 가리는 큰 방패
+        ctx.save();
+        ctx.translate(w.hand.x, w.hand.y);
+        ctx.rotate(f > 0 ? w.ang * 0.4 : -w.ang * 0.4);
+        ctx.beginPath();
+        ctx.moveTo(-3 * f, -22);
+        ctx.lineTo(4 * f, -20);
+        ctx.lineTo(5 * f, 14);
+        ctx.lineTo(0, 22);
+        ctx.lineTo(-4 * f, 14);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+        break;
+      }
+      case 'hammer': {
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        ctx.moveTo(w.base.x, w.base.y);
+        ctx.lineTo(w.tip.x, w.tip.y);
+        ctx.stroke();
+        // 망치 머리 (자루에 수직인 큰 덩어리)
+        const dx = w.tip.x - w.base.x, dy = w.tip.y - w.base.y, L = Math.hypot(dx, dy) || 1;
+        const nx = -dy / L, ny = dx / L, ux = dx / L, uy = dy / L;
+        const cx = w.tip.x - ux * 5, cy = w.tip.y - uy * 5;
+        ctx.beginPath();
+        ctx.moveTo(cx + nx * 12 - ux * 8, cy + ny * 12 - uy * 8);
+        ctx.lineTo(cx + nx * 12 + ux * 8, cy + ny * 12 + uy * 8);
+        ctx.lineTo(cx - nx * 9 + ux * 8, cy - ny * 9 + uy * 8);
+        ctx.lineTo(cx - nx * 9 - ux * 8, cy - ny * 9 - uy * 8);
+        ctx.closePath();
+        ctx.fill();
+        // 투구 볏
+        ctx.beginPath();
+        ctx.moveTo(j.head.x - f * 2, j.head.y - d.headR + 1);
+        ctx.lineTo(j.head.x - f * 12, j.head.y - d.headR - 7);
+        ctx.lineTo(j.head.x - f * 4, j.head.y - d.headR - 1);
+        ctx.fill();
+        // 어깨 갑옷
+        ctx.beginPath();
+        ctx.arc(j.shoulder.x, j.shoulder.y + 2, 8, Math.PI, 0);
+        ctx.fill();
+        break;
+      }
+      case 'bow': {
+        // 활: 손을 중심으로 세로 호, 시위는 뒷손으로
+        const bx = w.hand.x, by = w.hand.y;
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.ellipse(bx - f * 3, by, 6, 16, 0, f > 0 ? -Math.PI / 2 : Math.PI / 2, f > 0 ? Math.PI / 2 : Math.PI * 1.5);
+        ctx.stroke();
+        const drawing = e.state === 'windup' && e.atk.kind === 'shoot';
+        const sx = drawing ? j.handB.x : bx - f * 3;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(bx - f * 3, by - 16);
+        ctx.lineTo(sx, drawing ? j.handB.y : by);
+        ctx.lineTo(bx - f * 3, by + 16);
+        ctx.stroke();
+        if (drawing) {
+          // 화살 끝이 노랗게 빛남 (반사 가능)
+          ctx.save();
+          ctx.shadowColor = '#ffc830';
+          ctx.shadowBlur = 8;
+          ctx.fillStyle = '#ffe070';
+          ctx.beginPath();
+          ctx.arc(bx + f * 4, by, 2.5 + clamp01(e.stateFrame / e.atk.windup) * 2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+        // 두건
+        ctx.beginPath();
+        ctx.moveTo(j.head.x + f * 3, j.head.y - d.headR);
+        ctx.lineTo(j.head.x - f * 10, j.head.y + 2);
+        ctx.lineTo(j.head.x - f * 2, j.head.y + 4);
+        ctx.fill();
+        break;
+      }
+      case 'horns': {
+        // 앞으로 휜 뿔 두 개
+        ctx.lineWidth = 3;
+        for (const off of [-1, 1]) {
+          ctx.beginPath();
+          ctx.moveTo(j.head.x, j.head.y - d.headR * 0.6);
+          ctx.quadraticCurveTo(j.head.x - f * 4, j.head.y - d.headR - 10 + off * 2, j.head.x + f * (10 + off * 3), j.head.y - d.headR - 6 + off * 3);
+          ctx.stroke();
+        }
+        break;
+      }
+    }
+  },
+
+  // 비행형 날개: 어깨에서 퍼덕임
+  wings(ctx, fig, e, col, back) {
+    const s = fig.j.shoulder, f = fig.facing;
+    const flap = e.state === 'attack' ? -0.2 : Math.sin(e.walkPhase * 1.6);
+    const draw = (sign, color, scale) => {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      const tipX = s.x - f * 30 * scale, tipY = s.y - 22 * scale * flap - 4;
+      ctx.lineTo(tipX, tipY);
+      ctx.lineTo(s.x - f * 22 * scale, s.y + 4 + 6 * flap);
+      ctx.lineTo(s.x - f * 14 * scale, s.y + 2);
+      ctx.lineTo(s.x - f * 8 * scale, s.y + 8);
+      ctx.closePath();
+      ctx.fill();
+    };
+    draw(1, back, 0.85);
+    draw(1, col, 1);
   },
 
   hitboxes(ctx, game) {
@@ -357,8 +525,8 @@ const Render = {
       const eb = Combat.bodyBox(e);
       ctx.strokeStyle = '#0f0';
       ctx.strokeRect(eb.x, eb.y, eb.w, eb.h);
-      if (e.state === 'attack' || e.state === 'windup') {
-        const hb = Combat.worldBox(e, e.cfg.hitbox);
+      if ((e.state === 'attack' || e.state === 'windup') && e.atk.hitbox) {
+        const hb = Combat.worldBox(e, e.atk.hitbox);
         ctx.strokeStyle = e.state === 'attack' ? '#f00' : 'rgba(255,0,0,0.35)';
         ctx.strokeRect(hb.x, hb.y, hb.w, hb.h);
       }

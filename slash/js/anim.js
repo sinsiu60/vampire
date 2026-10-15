@@ -31,6 +31,9 @@ const Anim = (() => {
   const DIMS = {
     player: { thigh: 12, shin: 12, torso: 15, neck: 4, headR: 5.5, upper: 10, fore: 10, limbW: 4.2, torsoW: 8, foot: 4 },
     grunt: { thigh: 12, shin: 11, torso: 15, neck: 3, headR: 6.5, upper: 10.5, fore: 10, limbW: 5.5, torsoW: 12, foot: 5 },
+    heavy: { thigh: 14, shin: 13, torso: 19, neck: 2, headR: 7.5, upper: 12, fore: 12, limbW: 8, torsoW: 19, foot: 6 },
+    slim: { thigh: 12, shin: 12, torso: 15, neck: 4, headR: 5.5, upper: 10, fore: 10, limbW: 3.8, torsoW: 7, foot: 4 },
+    flyer: { thigh: 8, shin: 8, torso: 13, neck: 3, headR: 6, upper: 9, fore: 9, limbW: 4, torsoW: 9, foot: 3 },
   };
 
   // ---------- 포즈 라이브러리 ----------
@@ -71,6 +74,27 @@ const Anim = (() => {
     gHurt: P({ torso: -26, head: -26, thF: 24, shF: -14, thB: -14, shB: -30, arB1: -70, arB2: -20, wpn: -70 }),
     gDown: P({ torso: 0, head: 15, thF: 20, shF: -30, thB: -10, shB: -10, arB1: -150, arB2: 20, wpn: 140 }),
     gGetup: P({ torso: 40, head: 0, thF: 80, shF: -130, thB: 20, shB: -100, arB1: 30, arB2: 40, wpn: 80 }),
+    gStun: P({ torso: 30, head: 35, thF: 28, shF: -40, thB: -8, shB: -30, arB1: 5, arB2: 10, arF1: 10, arF2: 10, wpn: 95 }),
+    // 방패 밀치기
+    bashWind: P({ torso: -12, head: -6, thF: 30, shF: -30, thB: -24, shB: -24, arB1: -30, arB2: 40, wpn: 15 }),
+    bashStrike: P({ torso: 30, head: 8, thF: 55, shF: -50, thB: -45, shB: -8, arB1: -50, arB2: 20, wpn: -5 }),
+    // 중갑병: 내려찍기 / 휩쓸기
+    smashWind: P({ torso: -30, head: -20, thF: 26, shF: -18, thB: -26, shB: -22, arB1: -170, arB2: 10, wpn: -110 }),
+    smashStrike: P({ torso: 45, head: 18, thF: 55, shF: -60, thB: -40, shB: -20, arB1: 40, arB2: 20, wpn: 80 }),
+    sweepWind: P({ torso: 20, head: -10, thF: 50, shF: -80, thB: -20, shB: -60, arB1: 60, arB2: 20, wpn: 175 }),
+    sweepStrike: P({ torso: 26, head: 6, thF: 50, shF: -70, thB: -40, shB: -40, arB1: -80, arB2: 10, wpn: 15 }),
+    // 원거리형: 활 겨누기
+    aimWind: P({ torso: -4, head: 0, thF: 26, shF: -12, thB: -22, shB: -10, arB1: -80, arB2: -10, wpn: -6 }),
+    aimRelease: P({ torso: -10, head: -6, thF: 26, shF: -12, thB: -22, shB: -10, arB1: -130, arB2: 30, wpn: -6 }),
+    // 돌진형: 앞발 구르기 → 고개 숙이고 돌진
+    rushWind: P({ torso: 55, head: -30, thF: 60, shF: -90, thB: -30, shB: -50, arB1: -70, arB2: 20, arF1: 40, arF2: 40 }),
+    rushRun: P({ torso: 65, head: -40, thF: 60, shF: -60, thB: -50, shB: -40, arB1: -100, arB2: 10, arF1: -40, arF2: 30 }),
+    // 비행형: 급강하
+    diveWind: P({ torso: -20, head: -20, thF: 40, shF: -70, thB: 20, shB: -60, arB1: -150, arB2: 20, arF1: -150, arF2: 20 }),
+    dive: P({ torso: 70, head: -40, thF: -20, shF: -20, thB: -30, shB: -20, arB1: 40, arB2: 30, arF1: 30, arF2: 30 }),
+    flyIdle: P({ torso: 10, head: -5, thF: 25, shF: -50, thB: 5, shB: -60, arB1: 20, arB2: 50, arF1: 30, arF2: 50 }),
+    // 플레이어 패링 자세: 칼을 세워 막음
+    parry: P({ torso: -8, head: -4, thF: 34, shF: -40, thB: -26, shB: -24, arB1: -40, arB2: 70 }),
   };
 
   // 기술 → (예비, 휘두름) 포즈와 특수 연출
@@ -181,6 +205,9 @@ const Anim = (() => {
       case 'hurt':
         r.pose = POSES.hurt;
         break;
+      case 'parry':
+        r.pose = lerpPose(p.onGround ? breathe(POSES.idle, t) : airBase(), POSES.parry, ease.outCubic(clamp01(f / 3)));
+        break;
       case 'dead':
         r.pose = POSES.dead;
         r.rot = -90 * ease.outQuad(clamp01(f / 20));
@@ -207,32 +234,62 @@ const Anim = (() => {
     return r;
   }
 
-  // ---------- 잡몹 포즈 선택 ----------
-  function gruntPose(e) {
-    const r = { pose: null, rot: 0, sx: 1, sy: 1, grounded: e.onGround };
-    const f = e.stateFrame, T = e.cfg;
+  // ---------- 적 포즈 선택 ----------
+  // 공격별 (예비, 휘두름) 포즈
+  const ATTACK_POSES = {
+    slash: ['gWind', 'gStrike'],
+    bash: ['bashWind', 'bashStrike'],
+    smash: ['smashWind', 'smashStrike'],
+    sweep: ['sweepWind', 'sweepStrike'],
+    shot: ['aimWind', 'aimRelease'],
+    rush: ['rushWind', 'rushRun'],
+    dive: ['diveWind', 'dive'],
+  };
+
+  function enemyPose(e) {
+    const r = { pose: null, rot: 0, sx: 1, sy: 1, grounded: e.onGround && !e.hovering };
+    const f = e.stateFrame, A = e.atk;
     const t = (Game.frame || 0) + e.seed;
-    const base = breathe(POSES.gIdle, t);
+    const flying = e.hovering;
+    const idle = flying ? POSES.flyIdle : POSES.gIdle;
+    const base = breathe(idle, t);
+    const set = ATTACK_POSES[A.id] || ATTACK_POSES.slash;
+    const wind = POSES[set[0]], strike = POSES[set[1]];
     switch (e.state) {
       case 'chase':
-        r.pose = Math.abs(e.vx) > 0.3 ? walkPose(e.walkPhase, POSES.gIdle) : base;
+        r.pose = !flying && Math.abs(e.vx) > 0.3 ? walkPose(e.walkPhase, POSES.gIdle) : base;
         break;
       case 'windup': {
-        // 0.5초 예고: 무기를 크게 들어 올리고 뒤로 젖힘, 막판엔 부들부들
-        const k = ease.outCubic(clamp01(f / (T.windup * 0.6)));
-        r.pose = lerpPose(base, POSES.gWind, k);
-        if (f > T.windup * 0.6) r.pose.torso += Math.sin(f * 2.1) * 1.5;
+        // 예고: 크게 들어 올리고 뒤로 젖힘, 막판엔 부들부들
+        const k = ease.outCubic(clamp01(f / (A.windup * 0.6)));
+        r.pose = lerpPose(base, wind, k);
+        if (f > A.windup * 0.6) r.pose.torso += Math.sin(f * 2.1) * 1.5;
+        if (A.kind === 'rush') r.pose.thF += Math.sin(f * 0.6) * 18;   // 앞발 구르기
         r.sy = 1 - 0.05 * k;
         break;
       }
       case 'attack':
-        r.pose = lerpPose(POSES.gWind, POSES.gStrike, ease.outCubic(clamp01((f + 1) / 3)));
+        if (A.kind === 'rush') {
+          r.pose = runPose(f * 0.5);
+          r.pose = lerpPose(r.pose, strike, 0.6);
+        } else if (A.kind === 'dive') {
+          r.pose = strike;
+          r.rot = 25;
+        } else {
+          r.pose = lerpPose(wind, strike, ease.outCubic(clamp01((f + 1) / 3)));
+        }
         break;
       case 'recover':
-        r.pose = lerpPose(POSES.gStrike, base, ease.inOut(clamp01(f / T.recovery)));
+        r.pose = lerpPose(A.kind === 'rush' ? POSES.gStrike : strike, base, ease.inOut(clamp01(f / A.recovery)));
         break;
       case 'hurt':
         r.pose = lerpPose(POSES.gHurt, base, clamp01((f - e.hitstun * 0.5) / (e.hitstun * 0.5)));
+        break;
+      case 'stun':
+        // 그로기: 고개 숙이고 휘청휘청
+        r.pose = Object.assign({}, POSES.gStun);
+        r.pose.torso += Math.sin(t * 0.12) * 8;
+        r.pose.head += Math.sin(t * 0.12 + 1) * 10;
         break;
       case 'launched':
         r.pose = POSES.flail;
@@ -422,20 +479,35 @@ const Anim = (() => {
     return fig;
   }
 
-  function gruntFigure(e) {
-    const pa = gruntPose(e);
-    const fig = build(pa, DIMS.grunt, e.x, e.y, e.facing);
-    // 무기: 어깨 기준 wpn 각도로 손을 뻗고 칼날은 손에서 바깥으로
-    const a = (pa.pose.wpn + (pa.rot || 0)) * DEG;
-    const s = fig.j.shoulder;
-    const hand = { x: s.x + fig.facing * Math.cos(a) * 13, y: s.y + Math.sin(a) * 13 };
-    reach(fig, hand);
-    fig.weapon = {
-      hand,
-      base: { x: s.x + fig.facing * Math.cos(a) * 9, y: s.y + Math.sin(a) * 9 },
-      tip: { x: s.x + fig.facing * Math.cos(a) * 42, y: s.y + Math.sin(a) * 42 },
-      ang: a,
-    };
+  // 무기 종류별 손 위치 / 길이 (어깨 기준)
+  const WEAPONS = {
+    blade: { hand: 13, base: 9, tip: 42 },
+    shield: { hand: 15, base: 15, tip: 15 },
+    hammer: { hand: 16, base: 6, tip: 56 },
+    bow: { hand: 19, base: 19, tip: 19 },
+    horns: null,
+    claws: null,
+  };
+
+  function enemyFigure(e) {
+    const pa = enemyPose(e);
+    const look = e.cfg.look;
+    // 방패는 평소엔 몸 앞에 세워 듦
+    if (look.weapon === 'shield' && e.state !== 'windup' && e.state !== 'attack' && e.state !== 'recover') {
+      pa.pose = Object.assign({}, pa.pose, { wpn: 10 });
+    }
+    const fig = build(pa, DIMS[look.body] || DIMS.grunt, e.x, e.y, e.facing);
+    fig.look = look;
+    const W = WEAPONS[look.weapon];
+    if (W) {
+      // 무기: 어깨 기준 wpn 각도로 손을 뻗고 무기는 손에서 바깥으로
+      const a = (pa.pose.wpn + (pa.rot || 0)) * DEG;
+      const s = fig.j.shoulder;
+      const at = (r) => ({ x: s.x + fig.facing * Math.cos(a) * r * pa.sx, y: s.y + Math.sin(a) * r });
+      const hand = at(W.hand);
+      reach(fig, hand);
+      fig.weapon = { hand, base: at(W.base), tip: at(W.tip), ang: a };
+    }
     return fig;
   }
 
@@ -464,5 +536,5 @@ const Anim = (() => {
     return out;
   }
 
-  return { POSES, DIMS, playerFigure, gruntFigure, drawFigure, drawEye, drawBlade, drawScarf, snapshot, lerpPose };
+  return { POSES, DIMS, playerFigure, enemyFigure, drawFigure, drawEye, drawBlade, drawScarf, snapshot, lerpPose };
 })();

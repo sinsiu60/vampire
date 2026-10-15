@@ -1,7 +1,7 @@
 'use strict';
 // 플레이어: 이동, 점프(코요테/버퍼/2단/가변 높이), 대시, 지상 콤보, 차지 강공격,
 //          런처, 공중 3타, 공중 강공, 내려찍기
-// 상태: free | attack | charge | slam | dash | hurt | dead
+// 상태: free | attack | charge | slam | dash | parry | hurt | dead
 
 // (DEG, ease, nearestAngle 는 anim.js)
 
@@ -40,7 +40,7 @@ class Player {
     this.dashDir = 1;
 
     // 입력 버퍼 (남은 프레임)
-    this.buf = { jump: 0, light: 0, heavy: 0, dash: 0 };
+    this.buf = { jump: 0, light: 0, heavy: 0, dash: 0, parry: 0 };
     this.heavyDown = false;       // 강공을 누를 때 아래를 같이 눌렀는가
 
     // 공격
@@ -59,6 +59,8 @@ class Player {
     this.invuln = 0;
     this.flash = 0;
     this.landSquash = 0;
+    this.critReady = 0;           // 패링 성공 후 다음 공격 크리티컬 확정 남은 시간
+    this.parryFlash = 0;          // 패링 성공 연출
 
     // 애니메이션
     this.runPhase = 0;            // 달리기 주기
@@ -118,6 +120,7 @@ class Player {
       this.heavyDown = input.isDown('down');
     }
     if (input.isPressed('dash')) this.buf.dash = 6;
+    if (input.isPressed('parry')) this.buf.parry = 4;
   }
 
   isActiveFrame() {
@@ -126,6 +129,11 @@ class Player {
     if (this.state !== 'attack') return false;
     const f = this.stateFrame, m = this.move;
     return f >= m.startup && f < m.startup + m.active;
+  }
+
+  // 패링 판정 창 안인가 (F 를 누른 직후 window 프레임)
+  isParrying() {
+    return this.state === 'parry' && this.stateFrame <= CONFIG.parry.window;
   }
 
   isInvulnerable() {
@@ -183,6 +191,7 @@ class Player {
       case 'charge': pose.ang = -165 + Math.sin(this.stateFrame * 0.6) * 3; break;
       case 'dash': pose.ang = 160; break;
       case 'hurt': pose.ang = -70; break;
+      case 'parry': pose.ang = -55; break;   // 칼을 비스듬히 세워 막는 자세
       case 'slam':
         // 머리 위로 들었다가 → 아래로 내리꽂기
         pose.ang = this.slamPhase === 'hang' && this.stateFrame < 4 ? -100 : 90;
@@ -237,6 +246,8 @@ class Player {
     if (this.comboGrace > 0) this.comboGrace--; else if (this.state === 'free') this.lastMoveId = null;
     if (this.landSquash > 0) this.landSquash--;
     if (this.flipTimer > 0) this.flipTimer--;
+    if (this.critReady > 0) this.critReady--;
+    if (this.parryFlash > 0) this.parryFlash--;
 
     // 스태미나 회복
     if (this.staminaDelay > 0) this.staminaDelay--;
@@ -259,6 +270,7 @@ class Player {
       case 'charge': this.updateCharge(game, input, ax); break;
       case 'slam': this.updateSlam(game, input, ax); break;
       case 'dash': this.updateDash(game, input, ax); break;
+      case 'parry': this.updateParry(game, input, ax); break;
       case 'hurt': this.updateHurt(game); break;
       case 'dead': this.updateDead(game); break;
     }
@@ -446,6 +458,7 @@ class Player {
   // ---------- 상태별 ----------
   updateFree(game, input, ax) {
     const P = CONFIG.player;
+    if (this.tryParry()) return;
     if (this.tryDash(ax)) return;
     if (this.tryJump(input)) { /* 점프 후에도 이동은 계속 */ }
     if (this.tryAttack(ax, input)) return;
@@ -494,8 +507,9 @@ class Player {
       return;
     }
 
-    // 후딜 캔슬 (대시 / 점프)
+    // 후딜 캔슬 (패링 / 대시 / 점프)
     if (f >= end) {
+      if (this.tryParry()) return;
       if (this.tryDash(ax)) return;
       if (this.buf.jump > 0 && (this.onGround || this.coyote > 0 || this.jumpsUsed < 2)) {
         this.endMove();
@@ -558,7 +572,8 @@ class Player {
   updateCharge(game, input, ax) {
     const C = CONFIG.charge;
     this.vx *= 0.75;
-    if (this.tryDash(ax)) return;   // 차지 중 대시로 취소 가능
+    if (this.tryParry()) return;    // 차지 중 패링 / 대시로 취소 가능
+    if (this.tryDash(ax)) return;
     this.chargeFrames++;
     if (this.chargeLevel < C.maxLevel && this.chargeFrames >= (this.chargeLevel + 1) * C.framesPerLevel) {
       if (this.useStamina(C.staminaPerLevel)) {
@@ -586,6 +601,34 @@ class Player {
       this.dashCooldown = P.dashCooldown;
       this.setState('free');
     }
+  }
+
+  tryParry() {
+    if (this.buf.parry <= 0) return false;
+    this.buf.parry = 0;
+    this.move = null;
+    this.chargeLevel = 0;
+    this.launchFollow = false;
+    this.vx *= 0.3;
+    if (this.vy > 0) this.vy *= 0.3;
+    this.setState('parry');
+    Sound.play('parryStance');
+    return true;
+  }
+
+  updateParry(game, input, ax) {
+    this.vx *= 0.8;
+    if (!this.onGround && this.stateFrame <= CONFIG.parry.window) this.vy = Math.min(this.vy, 1.5);  // 공중에선 잠깐 멈칫
+    if (this.stateFrame >= CONFIG.parry.whiffFrames) this.setState('free');
+  }
+
+  onParrySuccess(enemy) {
+    const PR = CONFIG.parry;
+    this.invuln = PR.invulnFrames;
+    this.critReady = PR.critReadyFrames;
+    this.parryFlash = 14;
+    if (enemy) this.facing = Math.sign(enemy.x - this.x) || this.facing;
+    this.setState('free');
   }
 
   updateHurt(game) {

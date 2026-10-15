@@ -1,7 +1,10 @@
 'use strict';
-// 적. 1단계: 근접 잡몹 (0.5초 빨강 예고 후 베기)
-// 상태: idle | chase | windup | attack | recover | hurt | launched | down | getup | dead
-//  launched: 공중에 떠 있음 (공격 불가) → 바닥에 닿으면 down → getup → chase
+// 적 6종 공통 클래스. 종류별 차이는 config.js 의 enemies.* (특성 플래그 + attacks 목록)
+//  상태: idle | chase | windup | attack | recover | hurt | stun | launched | down | getup | dead
+//   windup : 공격 예고 (노랑 = 패링 가능 / 빨강 = 패링 불가)
+//   stun   : 그로기 (패링 당함 / 벽에 박음). 아무것도 못 함
+//   launched: 공중에 떠 있음 (공격 불가) → 바닥에 닿으면 down → getup → chase
+//  특성: shield(정면 방어) / flying(공중 부유) / superArmor(경직 무시, 패링으로 해제)
 
 class Enemy {
   constructor(type, x, y) {
@@ -19,17 +22,22 @@ class Enemy {
     this.state = 'idle';
     this.stateFrame = 0;
     this.cooldown = 30 + Math.random() * 40;
+    this.atk = T.attacks[0];      // 현재(또는 다음) 공격
     this.flash = 0;
     this.hitPlayer = false;
     this.dead = false;
     this.remove = false;
-    this.hpShow = 0;          // 맞은 뒤 체력바 표시 시간
-    this.spawnFrame = 0;
-    this.airTime = 0;         // 띄워진 뒤 누적 체공 시간 (저글링 감쇠용, 기상하면 리셋)
-    this.slammed = false;     // 내려찍기로 바닥에 꽂히는 중
+    this.hpShow = 0;              // 맞은 뒤 체력바 표시 시간
+    this.airTime = 0;             // 띄워진 뒤 누적 체공 시간 (저글링 감쇠용, 기상하면 리셋)
+    this.slammed = false;         // 내려찍기로 바닥에 꽂히는 중
     this.hitstun = 0;
+    this.stunTimer = 0;           // 그로기 남은 시간
+    this.armorBroken = 0;         // 슈퍼아머 해제 남은 시간
+    this.turnTimer = 0;           // 방패병: 뒤돌아보기까지 누적
+    this.diveVX = 0; this.diveVY = 0;
     this.walkPhase = Math.random() * 6;
     this.seed = Math.random() * 1000;   // 숨쉬기 등 애니메이션 박자를 적마다 다르게
+    if (T.flying) this.y = y - T.hoverHeight;
   }
 
   // 무한콤 방지: 오래 떠 있을수록 덜 뜬다
@@ -43,9 +51,32 @@ class Enemy {
     this.stateFrame = 0;
   }
 
-  // 예고 중인가? (렌더러가 빨강 번쩍에 사용)
+  // 예고 중인가? (렌더러가 빨강/노랑 번쩍에 사용)
   get telegraphing() {
     return this.state === 'windup';
+  }
+
+  get armored() {
+    return !!this.cfg.superArmor && this.armorBroken <= 0;
+  }
+
+  // 방패를 들고 있는 상태인가 (정면 공격 막음)
+  get guarding() {
+    return !!this.cfg.shield && (this.state === 'idle' || this.state === 'chase' || this.state === 'windup');
+  }
+
+  // 공중에 떠서 움직이는 중인가 (중력 무시)
+  get hovering() {
+    return !!this.cfg.flying && !this.dead &&
+      this.state !== 'launched' && this.state !== 'down' && this.state !== 'getup' &&
+      !(this.state === 'recover' && this.grounded);
+  }
+
+  // 사거리 안의 공격 중 하나 고르기
+  pickAttack(dist) {
+    const list = this.cfg.attacks.filter((a) => dist <= a.range);
+    if (!list.length) return null;
+    return list[(Math.random() * list.length) | 0];
   }
 
   update(game) {
@@ -54,64 +85,60 @@ class Enemy {
     if (this.flash > 0) this.flash--;
     if (this.hpShow > 0) this.hpShow--;
     if (this.cooldown > 0) this.cooldown--;
-    this.spawnFrame++;
+    if (this.armorBroken > 0) this.armorBroken--;
     this.stateFrame++;
 
     const dx = p.x - this.x;
     const dist = Math.abs(dx);
+    const dirToPlayer = dx >= 0 ? 1 : -1;
 
     switch (this.state) {
       case 'idle':
         this.vx *= T.friction;
+        if (this.hovering) this.hover(game, p, 0.4);
         if (dist < T.aggroRange && !p.dead) this.setState('chase');
         break;
 
-      case 'chase': {
+      case 'chase':
         if (p.dead) { this.setState('idle'); break; }
-        this.facing = dx >= 0 ? 1 : -1;
-        const sameLevel = Math.abs(p.y - this.y) < 70;
-        if (dist > T.attackRange || !sameLevel) {
-          const target = this.facing * T.speed;
-          this.vx += Math.sign(target - this.vx) * Math.min(Math.abs(target - this.vx), T.accel);
-        } else {
-          this.vx *= T.friction;
-          if (this.cooldown <= 0) {
-            this.setState('windup');
-            Sound.play('telegraph');
-          }
-        }
+        this.updateChase(game, p, dx, dist, dirToPlayer);
+        break;
+
+      case 'windup': {
+        const A = this.atk;
+        this.vx *= T.friction;
+        if (this.hovering) { this.vx *= 0.9; this.vy *= 0.85; this.vy += Math.sin(this.stateFrame * 0.9) * 0.2; }
+        // 돌진형/급강하는 예고 동안 계속 플레이어를 노려봄
+        if (A.kind === 'rush' || A.kind === 'dive' || A.kind === 'shoot') this.facing = dirToPlayer;
+        if (this.stateFrame >= A.windup) this.startAttack(game, p);
         break;
       }
 
-      case 'windup':
-        this.vx *= T.friction;
-        if (this.stateFrame >= T.windup) {
-          this.hitPlayer = false;
-          this.vx = this.facing * T.attackLunge;
-          this.setState('attack');
-        }
-        break;
-
       case 'attack':
-        this.vx *= 0.88;
-        Combat.enemyAttack(game, this, T.hitbox, T);
-        if (this.stateFrame >= T.active) this.setState('recover');
+        this.updateAttack(game, p);
         break;
 
       case 'recover':
         this.vx *= T.friction;
-        if (this.stateFrame >= T.recovery) {
-          this.cooldown = T.cooldown * (0.8 + Math.random() * 0.4);
+        if (this.hovering) { this.vy *= 0.9; this.vy -= 0.12; }
+        if (this.stateFrame >= this.atk.recovery) {
+          this.grounded = false;
+          this.cooldown = this.atk.cooldown * (0.8 + Math.random() * 0.4);
           this.setState('chase');
         }
         break;
 
       case 'hurt':
-        this.vx *= this.onGround ? T.friction : 0.97;
-        if (this.stateFrame >= this.hitstun && this.onGround) {
-          this.cooldown = Math.max(this.cooldown, 20);
-          this.setState('chase');
-        }
+        if (this.hovering) { this.vx *= 0.9; this.vy *= 0.88; }
+        else this.vx *= this.onGround ? T.friction : 0.97;
+        if (this.stateFrame >= this.hitstun && (this.onGround || this.hovering)) this.afterHurt();
+        break;
+
+      case 'stun':
+        // 그로기: 제자리에서 휘청
+        this.vx *= 0.85;
+        if (this.hovering) this.vy *= 0.9;
+        if (--this.stunTimer <= 0) { this.stunTimer = 0; this.setState('chase'); this.cooldown = Math.max(this.cooldown, 30); }
         break;
 
       case 'launched':
@@ -145,7 +172,7 @@ class Enemy {
         if (this.stateFrame >= CONFIG.air.getupFrames) {
           this.airTime = 0;
           this.cooldown = Math.max(this.cooldown, 25);
-          this.setState('chase');
+          this.afterHurt();
         }
         break;
 
@@ -168,14 +195,166 @@ class Enemy {
 
     if (this.slammed) {
       this.vy = CONFIG.air.slamEnemySpeed;
-    } else {
+    } else if (this.hovering && !(this.state === 'attack' && this.atk.kind === 'dive')) {
+      // 부유: 중력 없음, 통과 발판 무시
+      this.dropThrough = 2;
+    } else if (!(this.state === 'attack' && this.atk.kind === 'dive')) {
       const g = CONFIG.physics.gravity * (this.state === 'launched' ? CONFIG.air.launchedGravityMult : 1);
       this.vy = Math.min(this.vy + g, CONFIG.physics.maxFall);
     }
     Dungeon.moveAndCollide(this);
     if (this.onGround) this.walkPhase += Math.abs(this.vx) * 0.11;
+    else if (this.hovering) this.walkPhase += 0.25;   // 날갯짓
   }
 
+  // 경직/기상 후: 그로기가 남아 있으면 다시 그로기로
+  afterHurt() {
+    if (this.stunTimer > 0) this.setState('stun');
+    else {
+      this.cooldown = Math.max(this.cooldown, 20);
+      this.setState('chase');
+    }
+  }
+
+  // ---------- 이동 / 공격 선택 ----------
+  updateChase(game, p, dx, dist, dir) {
+    const T = this.cfg;
+    const sameLevel = Math.abs(p.y - this.y) < 70;
+
+    // 방향 전환: 방패병은 뒤로 넘어간 플레이어를 늦게 돌아봄
+    if (T.shield) {
+      if (dir !== this.facing) {
+        if (++this.turnTimer >= T.turnDelay) { this.facing = dir; this.turnTimer = 0; }
+      } else this.turnTimer = 0;
+    } else {
+      this.facing = dir;
+    }
+
+    let targetVX = 0;
+    if (T.flying) {
+      this.hover(game, p, 1);
+    } else if (T.keepMin !== undefined) {
+      // 원거리형: 거리 유지
+      if (dist < T.keepMin) targetVX = -dir * T.speed;
+      else if (dist > T.keepMax) targetVX = dir * T.speed;
+    } else {
+      const reach = Math.min(...T.attacks.map((a) => a.range));
+      if (dist > reach * 0.9 || !sameLevel) targetVX = dir * T.speed;
+      if (T.shield && dir !== this.facing) targetVX = 0;   // 뒤돌아보는 중엔 멈칫
+    }
+    if (!T.flying) {
+      this.vx += Math.sign(targetVX - this.vx) * Math.min(Math.abs(targetVX - this.vx), T.accel);
+      // 낭떠러지/벽 앞에서 막히지 않게 단순 처리: 벽에 닿으면 멈춤
+      if (this.hitWall) this.vx = 0;
+    }
+
+    // 공격 시작
+    if (this.cooldown <= 0 && !p.dead) {
+      const canSee = T.flying || sameLevel || this.cfg.attacks[0].kind === 'shoot';
+      const a = canSee ? this.pickAttack(dist) : null;
+      if (a && (!T.shield || dir === this.facing)) {
+        this.atk = a;
+        this.facing = dir;
+        this.setState('windup');
+        Sound.play(a.parryable ? 'telegraphYellow' : 'telegraph');
+      }
+    }
+  }
+
+  // 비행형: 플레이어 옆 위쪽에 떠 있기 (위아래로 둥실)
+  hover(game, p, k) {
+    const T = this.cfg;
+    const side = this.x >= p.x ? 1 : -1;
+    const tx = p.x + side * T.hoverSide;
+    const ty = game.level.groundY - T.hoverHeight + Math.sin((game.frame + this.seed) * 0.05) * 12;
+    const ax = Math.max(-1, Math.min(1, (tx - this.x) / 80)) * T.accel * k;
+    const ay = Math.max(-1, Math.min(1, (ty - this.y) / 60)) * T.accel * k;
+    this.vx = (this.vx + ax) * 0.95;
+    this.vy = (this.vy + ay) * 0.92;
+    const sp = Math.hypot(this.vx, this.vy);
+    if (sp > T.speed) { this.vx *= T.speed / sp; this.vy *= T.speed / sp; }
+  }
+
+  startAttack(game, p) {
+    const A = this.atk;
+    this.hitPlayer = false;
+    this.setState('attack');
+    if (A.kind === 'melee') {
+      this.vx = this.facing * A.lunge;
+    } else if (A.kind === 'dive') {
+      // 플레이어가 있던 곳으로 급강하
+      const tx = p.x - this.x, ty = (p.y - p.h * 0.5) - (this.y - this.h * 0.5);
+      const L = Math.hypot(tx, ty) || 1;
+      this.diveVX = tx / L * A.diveSpeed;
+      this.diveVY = Math.max(2, ty / L * A.diveSpeed);
+      this.facing = tx >= 0 ? 1 : -1;
+      Sound.play('dash');
+    } else if (A.kind === 'rush') {
+      Sound.play('rush');
+      Effects.dust(this.x, this.y, 10, this.facing);
+    } else if (A.kind === 'shoot') {
+      const sx = this.x + this.facing * 18, sy = this.y - this.h * 0.62;
+      const tx = p.x - sx, ty = (p.y - p.h * 0.55) - sy;
+      const L = Math.hypot(tx, ty) || 1;
+      const P = A.projectile;
+      game.projectiles.push(new Projectile(sx, sy, tx / L * P.speed, ty / L * P.speed, A, this));
+      Sound.play('shoot');
+    }
+  }
+
+  updateAttack(game, p) {
+    const A = this.atk, T = this.cfg;
+    const f = this.stateFrame;
+    switch (A.kind) {
+      case 'melee':
+        this.vx *= 0.88;
+        Combat.enemyAttack(game, this, A.hitbox, A);
+        if (f >= A.active) this.setState('recover');
+        break;
+
+      case 'shoot':
+        this.vx *= T.friction;
+        if (f >= A.active) this.setState('recover');
+        break;
+
+      case 'rush':
+        this.vx = this.facing * A.rushSpeed;
+        if (f % 3 === 0) Effects.dust(this.x, this.y, 2, this.facing);
+        Combat.enemyAttack(game, this, A.hitbox, A);
+        if (this.hitWall) {
+          // 벽에 박음 → 기절
+          this.vx = -this.facing * 4;
+          this.vy = -3;
+          this.stunTimer = A.wallStun;
+          this.setState('stun');
+          Effects.addShake(9);
+          Effects.sparks(this.x + this.facing * this.w / 2, this.y - this.h * 0.6, -this.facing, 14, '#fff3c0');
+          Effects.popText(this.x, this.y - this.h - 20, '기절!', '#ffe070', 18);
+          Sound.play('wallHit');
+        } else if (f >= A.active) {
+          this.setState('recover');
+        }
+        break;
+
+      case 'dive':
+        this.vx = this.diveVX;
+        this.vy = this.diveVY;
+        if (f % 2 === 0) Effects.afterimage(Anim.snapshot(Anim.enemyFigure(this)), 'rgba(255,60,60,1)');
+        Combat.enemyAttack(game, this, A.hitbox, A);
+        if (this.onGround) {
+          // 땅에 처박힘: 잠시 무방비
+          this.grounded = true;
+          this.vx = 0; this.vy = 0;
+          Effects.dust(this.x, this.y, 8, 0);
+          this.setState('recover');
+        } else if (f >= A.active) {
+          this.setState('recover');
+        }
+        break;
+    }
+  }
+
+  // ---------- 피격 ----------
   // 칼끼리 부딪힘: 공격이 끊기고 뒤로 밀려남 (데미지 없음)
   clashed(dir) {
     const C = CONFIG.feel;
@@ -185,13 +364,40 @@ class Enemy {
     this.setState('hurt');
   }
 
-  // info: { dir, knockX, knockY, hitstun, launch, slam }
+  // 패링 당함: 그로기 (중갑병은 슈퍼아머 해제)
+  parried(dir) {
+    const PR = CONFIG.parry;
+    this.hitPlayer = true;
+    this.stunTimer = PR.stunFrames;
+    this.vx = dir * 3 / this.cfg.weight;
+    if (this.cfg.superArmor) {
+      this.armorBroken = PR.armorBreakFrames;
+      Effects.popText(this.x, this.y - this.h - 26, 'ARMOR BREAK', '#ffe070', 20);
+      Effects.shards(this.x, this.y - this.h * 0.7, dir, 12, '#8d97a3');
+    }
+    this.setState('stun');
+  }
+
+  // 정면에서 맞았는가 (방패 판정용). attackerX: 공격 위치
+  hitFromFront(attackerX) {
+    return (attackerX - this.x) * this.facing > 0;
+  }
+
+  // info: { dir, knockX, knockY, hitstun, launch, slam, attackerX }
+  // 반환: 'blocked'(방패로 막음) | 'armor'(슈퍼아머로 버팀) | 'hit' | 'kill'
   takeHit(dmg, info) {
     const T = this.cfg, A = CONFIG.air;
+
+    // 방패: 정면 공격은 막는다 (런처·내려찍기는 방패를 무시)
+    if (this.guarding && !info.launch && !info.slam && this.hitFromFront(info.attackerX)) {
+      this.flash = 3;
+      this.vx = info.dir * 1.5 / T.weight;
+      return 'blocked';
+    }
+
     this.hp -= dmg;
     this.flash = CONFIG.feel.flashFrames;
     this.hpShow = 180;
-    this.facing = -info.dir;
     if (this.hp <= 0) {
       this.hp = 0;
       this.dead = true;
@@ -199,10 +405,19 @@ class Enemy {
       this.vx = info.dir * Math.max(6, info.knockX);
       this.vy = -5;
       this.setState('dead');
-      return;
+      return 'kill';
     }
+
+    // 슈퍼아머: 데미지만 받고 행동은 계속
+    if (this.armored && !info.slam) {
+      this.vx += info.dir * 0.6;
+      return 'armor';
+    }
+
+    // 맞은 쪽으로 돌아봄 (방패병은 turnDelay 에 따라 천천히)
+    if (!T.shield) this.facing = -info.dir;
     const mult = this.juggleMult();
-    const inAir = this.state === 'launched' || !this.onGround;
+    const inAir = this.state === 'launched' || (!this.onGround && !this.hovering);
 
     if (info.slam) {
       // 내려찍기: 같이 바닥으로 꽂힘
@@ -216,6 +431,12 @@ class Enemy {
       this.vy = info.knockY * mult / T.weight;
       this.onGround = false;
       this.setState('launched');
+    } else if (this.hovering) {
+      // 비행형: 맞으면 공중에서 휘청 (떨어지지 않음)
+      this.vx = info.dir * info.knockX * 0.6 / T.weight;
+      this.vy = Math.min(0, info.knockY) * 0.4 * mult;
+      this.hitstun = info.hitstun;
+      this.setState('hurt');
     } else if (inAir) {
       // 공중 저글링: 맞을 때마다 살짝 띄워서 공중에 머무르게
       const lift = info.knockY < 0 ? info.knockY : -A.defaultLift;
@@ -232,5 +453,6 @@ class Enemy {
       this.hitstun = info.hitstun;
       this.setState('hurt');
     }
+    return 'hit';
   }
 }

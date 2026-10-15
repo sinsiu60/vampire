@@ -26,6 +26,9 @@ const KEYBINDS = {
   restart: ['Enter', 'NumpadEnter'],   // 게임오버 / 일시정지에서 재시작
   debug: ['KeyH'],              // 히트박스 표시 (개발용)
   theme: ['KeyT'],              // 배경 테마 미리보기 (개발용: 노을 → 달밤 → 불타는 성)
+  // 적 소환 (개발용): 1 잡몹 / 2 방패병 / 3 비행형 / 4 중갑병 / 5 원거리형 / 6 돌진형
+  spawn1: ['Digit1'], spawn2: ['Digit2'], spawn3: ['Digit3'],
+  spawn4: ['Digit4'], spawn5: ['Digit5'], spawn6: ['Digit6'],
   help: ['F1'],                 // 조작 도움말 표시/숨기기
 };
 
@@ -265,28 +268,109 @@ const CONFIG = {
     moveSpeedMult: 0,          // 차지 중 이동 (0 = 제자리)
   },
 
+  // ---------- 패링 ----------
+  parry: {
+    window: 12,                // F 를 누른 뒤 이 프레임 안에 노랑 공격이 닿으면 성공 (0.2초)
+    whiffFrames: 24,           // 실패(헛방) 시 전체 동작 시간
+    stunFrames: 110,           // 성공 시 적 그로기 시간
+    slowmoMs: 300,             // 슬로모션 시간 (실제 시간 ms)
+    slowmoScale: 0.25,         // 슬로모션 속도 배율
+    invulnFrames: 24,          // 성공 직후 무적
+    critReadyFrames: 300,      // 다음 공격 크리티컬 확정 유지 시간
+    armorBreakFrames: 420,     // 중갑병 슈퍼아머 해제 시간
+    hitstop: 6,
+  },
+
   // ---------- 적 ----------
+  // 공통: hp, speed(이동), accel, aggroRange(인식 거리), weight(넉백 저항), friction
+  // attacks: 공격 목록. AI 가 사거리 안의 공격 중 하나를 고른다
+  //   kind: melee(근접) | rush(돌진) | dive(급강하) | shoot(투사체)
+  //   parryable: true = 노랑 예고(패링 가능) / false = 빨강 예고(패링 불가, 피해야 함)
+  //   range: 이 거리 안이면 시작, windup: 예고 시간, active: 판정 시간, recovery: 후딜, cooldown: 다음 공격까지
+  // look: 그래픽 (체형 / 무기)
   enemies: {
     grunt: {
       name: '근접 잡몹',
-      width: 26,
-      height: 46,
-      hp: 70,
-      speed: 1.7,
-      accel: 0.25,
-      aggroRange: 520,
-      attackRange: 56,         // 이 거리 안이면 공격 시작
-      windup: 30,              // 공격 예고 (0.5초)
-      active: 6,
-      recovery: 32,
-      cooldown: 55,            // 공격 후 다음 공격까지
-      attackLunge: 3.5,
-      damage: 12,
-      hitbox: { x: 4, y: -40, w: 50, h: 32 },
-      knock: { x: 6, y: -3.5 },
-      weight: 1,               // 넉백 저항 (클수록 덜 밀림)
-      friction: 0.82,
-      color: '#0b0809',
+      width: 26, height: 46, hp: 70,
+      speed: 1.7, accel: 0.25, aggroRange: 520, weight: 1, friction: 0.82,
+      look: { body: 'grunt', weapon: 'blade' },
+      attacks: [
+        { id: 'slash', kind: 'melee', parryable: true, range: 56,
+          windup: 30, active: 6, recovery: 32, cooldown: 55, lunge: 3.5,
+          damage: 12, hitbox: { x: 4, y: -40, w: 50, h: 32 }, knock: { x: 6, y: -3.5 } },
+      ],
+    },
+    // 방패병: 정면 공격을 막음 → 런처로 띄우거나 등 뒤로 넘어가서 공략
+    shield: {
+      name: '방패병',
+      width: 28, height: 48, hp: 90,
+      speed: 1.2, accel: 0.2, aggroRange: 480, weight: 1.6, friction: 0.8,
+      shield: true,            // 정면 공격 막음 (런처·내려찍기·등 뒤 공격은 통함)
+      turnDelay: 40,           // 등 뒤로 넘어간 플레이어를 돌아보기까지 걸리는 시간
+      blockPush: 3.5,          // 막았을 때 플레이어가 밀려나는 힘
+      look: { body: 'grunt', weapon: 'shield' },
+      attacks: [
+        { id: 'bash', kind: 'melee', parryable: true, range: 50,
+          windup: 28, active: 6, recovery: 34, cooldown: 70, lunge: 4.5,
+          damage: 10, hitbox: { x: 4, y: -46, w: 40, h: 44 }, knock: { x: 9, y: -2 } },
+      ],
+    },
+    // 비행형: 공중에 떠 있음 → 점프해서 공중 콤보로
+    flyer: {
+      name: '비행형',
+      width: 24, height: 36, hp: 50,
+      speed: 2.4, accel: 0.18, aggroRange: 560, weight: 0.8, friction: 0.9,
+      flying: true,
+      hoverHeight: 150,        // 바닥에서 떠 있는 높이
+      hoverSide: 120,          // 플레이어 옆으로 유지하는 거리
+      look: { body: 'flyer', weapon: 'claws' },
+      attacks: [
+        { id: 'dive', kind: 'dive', parryable: false, range: 230,
+          windup: 36, active: 40, recovery: 40, cooldown: 90, diveSpeed: 9,
+          damage: 12, hitbox: { x: -14, y: -40, w: 28, h: 44 }, knock: { x: 6, y: -4 } },
+      ],
+    },
+    // 중갑병: 슈퍼아머 (경직·넉백 없음). 노랑 공격을 패링하면 슈퍼아머 해제
+    heavy: {
+      name: '중갑병',
+      width: 34, height: 58, hp: 260,
+      speed: 0.9, accel: 0.12, aggroRange: 480, weight: 2.5, friction: 0.78,
+      superArmor: true,
+      look: { body: 'heavy', weapon: 'hammer' },
+      attacks: [
+        { id: 'smash', kind: 'melee', parryable: true, range: 72,
+          windup: 40, active: 7, recovery: 40, cooldown: 70, lunge: 3,
+          damage: 22, hitbox: { x: 0, y: -70, w: 80, h: 70 }, knock: { x: 9, y: -5 } },
+        { id: 'sweep', kind: 'melee', parryable: false, range: 84,
+          windup: 46, active: 9, recovery: 44, cooldown: 80, lunge: 2,
+          damage: 26, hitbox: { x: -20, y: -34, w: 120, h: 34 }, knock: { x: 11, y: -6 } },
+      ],
+    },
+    // 원거리형: 거리를 벌리고 투사체. 투사체를 베거나 패링하면 반사
+    archer: {
+      name: '원거리형',
+      width: 22, height: 44, hp: 45,
+      speed: 1.6, accel: 0.22, aggroRange: 620, weight: 0.9, friction: 0.82,
+      keepMin: 200, keepMax: 360,   // 이 거리를 유지하려 함
+      look: { body: 'slim', weapon: 'bow' },
+      attacks: [
+        { id: 'shot', kind: 'shoot', parryable: true, range: 460,
+          windup: 40, active: 4, recovery: 30, cooldown: 80,
+          damage: 11, projectile: { speed: 6.5, radius: 6, life: 150, reflectMult: 1.6, reflectDamage: 30 } },
+      ],
+    },
+    // 돌진형: 직선 돌진, 벽에 박으면 기절
+    charger: {
+      name: '돌진형',
+      width: 30, height: 46, hp: 110,
+      speed: 1.3, accel: 0.2, aggroRange: 640, weight: 1.4, friction: 0.82,
+      look: { body: 'grunt', weapon: 'horns' },
+      // 돌진은 벽에 박거나 active 프레임이 끝날 때까지 계속된다
+      attacks: [
+        { id: 'rush', kind: 'rush', parryable: false, range: 420,
+          windup: 45, active: 150, recovery: 36, cooldown: 100, rushSpeed: 10.5, wallStun: 150,
+          damage: 18, hitbox: { x: -6, y: -44, w: 36, h: 42 }, knock: { x: 10, y: -5 } },
+      ],
     },
   },
 
@@ -310,6 +394,15 @@ const CONFIG = {
     width: 1920,
     groundY: 460,
     waveDelay: 90,             // 적 전멸 후 다음 웨이브까지
-    waveSizes: [2, 3, 4],
+    // 웨이브별 등장 적 (마지막 웨이브 이후는 전체에서 무작위)
+    waves: [
+      ['grunt', 'grunt'],
+      ['grunt', 'shield', 'archer'],
+      ['flyer', 'flyer', 'grunt'],
+      ['charger', 'grunt', 'archer'],
+      ['heavy', 'grunt'],
+      ['shield', 'heavy', 'flyer', 'archer'],
+    ],
+    randomWaveSize: 5,
   },
 };
