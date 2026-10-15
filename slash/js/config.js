@@ -361,6 +361,57 @@ const CONFIG = {
     hitstop: 0,
   },
 
+  // ---------- 스타일 랭크 (DMC 방식) ----------
+  style: {
+    // 랭크: need = 이 점수 이상이면 해당 랭크. 마지막 랭크 게이지는 max 까지
+    ranks: [
+      { name: 'D', title: 'Dull', need: 0, color: '#9aa4ad' },
+      { name: 'C', title: 'Cool', need: 80, color: '#6fd0ff' },
+      { name: 'B', title: 'Bravo', need: 180, color: '#59ffb0' },
+      { name: 'A', title: 'Absolute', need: 300, color: '#ffe14a' },
+      { name: 'S', title: 'Stylish', need: 440, color: '#ffa53a' },
+      { name: 'SS', title: 'Spectacular', need: 600, color: '#ff6a3a' },
+      { name: 'SSS', title: 'Sensational', need: 780, color: '#ff3a6a' },
+    ],
+    max: 960,
+    // 기술별 기본 점수 (맞힐 때)
+    movePoints: {
+      L1: 6, L2: 6, L3: 8, L4: 12, THRUST: 14,
+      HEAVY0: 12, HEAVY1: 18, HEAVY2: 26,
+      LAUNCHER: 14, A1: 8, A2: 8, A3: 14, AIR_HEAVY: 12, SLAM: 16, SLAM_WAVE: 10,
+      COUNTER: 24, COUNTER_LAUNCH: 22, REFLECT: 22,
+    },
+    defaultPoints: 8,
+    // 다양성: 최근 history 개의 기술 중 같은 기술이 있을수록 점수 감소
+    history: 7,
+    repeatMult: [1, 0.6, 0.35, 0.2, 0.1],   // 최근에 같은 기술을 0번/1번/2번… 쓴 경우의 배율
+    freshBonus: 1.25,          // 최근에 안 쓴 기술이면 보너스
+    armorMult: 0.5,            // 슈퍼아머에 맞은 공격
+    // 보너스
+    airMult: 1.35,             // 공중 콤보 (내가 공중이거나 적이 떠 있음)
+    parry: 40,                 // 퍼펙트 패링
+    parryChainBonus: 6,        // 체인 1회당 추가
+    clash: 15,                 // 칼 부딪힘
+    dodge: 10,                 // 대시 무적으로 공격 회피
+    dodgeCounter: 32,          // 회피 직후 반격 보너스
+    dodgeCounterFrames: 60,    // 회피 후 이 시간 안에 맞히면 반격 보너스
+    kill: 18,
+    postureBreak: 30,
+    execution: 160,            // 처형: 대폭 상승
+    executionMinRanks: 1,      // 처형 시 최소 이만큼 랭크 상승 보장
+    // 하락
+    decayDelay: 120,           // 마지막 득점 후 이 시간이 지나면 서서히 하락
+    decayBase: 0.18,           // 프레임당 하락량
+    decayPerRank: 0.1,         // 랭크가 높을수록 빨리 떨어짐
+    hitDropRanks: 2,           // 피격 시 떨어지는 랭크 수
+    guardLoss: 4,              // 가드로 받을 때 약간 하락
+    rankUpAnim: 26,            // 랭크 오를 때 글자가 튀는 시간
+    feedLife: 70,              // 보너스 문구 표시 시간
+    // 방(웨이브) 클리어 보상: 최고 랭크별 (지금은 체력 회복, 8단계에서 아이템 보상 추가)
+    clearHeal: [0, 5, 10, 16, 24, 34, 50],
+    clearBannerFrames: 150,
+  },
+
   // ---------- 적 ----------
   // 공통: hp, posture(체간 최대치), speed(이동), accel, aggroRange(인식 거리), weight(넉백 저항), friction
   // attacks: 공격 목록. AI 가 사거리 안의 공격 중 하나를 고른다

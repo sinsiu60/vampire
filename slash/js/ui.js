@@ -30,11 +30,11 @@ const UI = {
       const t = game.combo.timer / CONFIG.feel.comboResetFrames;
       const pop = game.combo.pop > 0 ? 1 + game.combo.pop * 0.05 : 1;
       ctx.save();
-      ctx.translate(900, 120);
+      ctx.translate(940, 236);
       ctx.scale(pop, pop);
       ctx.textAlign = 'right';
       ctx.globalAlpha = Math.min(1, t * 3);
-      ctx.font = 'bold 44px "Segoe UI", sans-serif';
+      ctx.font = 'bold 34px "Segoe UI", sans-serif';
       ctx.lineWidth = 5;
       ctx.strokeStyle = '#000';
       ctx.strokeText(game.combo.count, 0, 0);
@@ -42,11 +42,12 @@ const UI = {
       ctx.fillText(game.combo.count, 0, 0);
       ctx.font = 'bold 16px "Segoe UI", sans-serif';
       ctx.fillStyle = '#5ff';
-      ctx.fillText('HITS', 0, 20);
+      ctx.fillText('HITS', 0, 18);
       ctx.restore();
     }
 
     this.parryHud(ctx, game);
+    this.styleHud(ctx, game);
 
     // 현재 기술 이름 (테스트용)
     if (p.state === 'attack' && p.move) {
@@ -64,7 +65,7 @@ const UI = {
     ctx.textAlign = 'right';
     ctx.font = '12px "Segoe UI", sans-serif';
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.fillText(`WAVE ${game.wave}   처치 ${game.kills}`, 940, 30);
+    ctx.fillText(`WAVE ${game.wave}   처치 ${game.kills}`, 720, 30);
 
     if (this.showHelp) {
       // 키 이름은 KEYBINDS 에서 가져온다 (config.js 에서 바꾸면 도움말도 같이 바뀜)
@@ -84,6 +85,94 @@ const UI = {
         ctx.fillStyle = 'rgba(255,255,255,0.75)';
         ctx.fillText(lines[i], 480, 470 + i * 14);
       }
+    }
+  },
+
+  // ---------- 스타일 랭크 (오른쪽 위) ----------
+  styleHud(ctx, game) {
+    const S = CONFIG.style;
+    const cx = 880, base = 88;
+    if (Style.rank >= 0) {
+      const R = S.ranks[Style.rank];
+      const k = Style.anim / S.rankUpAnim;                 // 1 → 0
+      const scale = 1 + 1.3 * k * k;
+      const rot = Math.sin(k * 14) * 0.25 * k;
+      const shakeX = Style.downAnim > 0 ? (Math.random() - 0.5) * 6 : 0;
+      ctx.save();
+      ctx.translate(cx + shakeX, base - 24);
+      ctx.rotate(rot - 0.12);
+      ctx.scale(scale, scale);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const size = 46 + Style.rank * 3;
+      ctx.font = `italic 900 ${size}px "Segoe UI", sans-serif`;
+      ctx.lineWidth = 7;
+      ctx.strokeStyle = '#000';
+      ctx.strokeText(R.name, 0, 0);
+      ctx.shadowColor = R.color;
+      ctx.shadowBlur = 14 + 10 * k;
+      ctx.fillStyle = k > 0.75 ? '#ffffff' : R.color;   // 오를 때 하얗게 번쩍
+      ctx.fillText(R.name, 0, 0);
+      ctx.restore();
+
+      // 게이지 (다음 랭크까지)
+      const gw = 120, gx = cx - gw / 2, gy = base + 10;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(gx - 2, gy - 2, gw + 4, 8);
+      ctx.fillStyle = R.color;
+      ctx.fillRect(gx, gy, gw * Style.gauge(), 4);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      ctx.font = 'italic bold 12px "Segoe UI", sans-serif';
+      ctx.fillStyle = R.color;
+      ctx.fillText(R.title, cx, gy + 20);
+    }
+    // 보너스 문구
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = 'italic bold 13px "Segoe UI", sans-serif';
+    Style.feed.forEach((f, i) => {
+      const a = Math.min(1, f.life / 20);
+      const slide = Math.max(0, f.life - (S.feedLife - 8)) * 4;
+      ctx.globalAlpha = a;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#000';
+      ctx.strokeText(f.text, 940 + slide, 132 + i * 17);
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.text, 940 + slide, 132 + i * 17);
+    });
+    ctx.globalAlpha = 1;
+
+    // 방(웨이브) 클리어 결과
+    const b = game.clearBanner;
+    if (b) {
+      const V = CONFIG.view;
+      const t = 1 - b.life / b.max;
+      const a = Math.min(1, b.life / 30, t * 8);
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.fillRect(0, 150, V.width, 86);
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 30px "Segoe UI", sans-serif';
+      ctx.fillStyle = '#fff';
+      ctx.fillText('CLEAR', V.width / 2 - 90, 196);
+      if (b.rank >= 0) {
+        const R = S.ranks[b.rank];
+        ctx.font = 'italic 900 40px "Segoe UI", sans-serif';
+        ctx.fillStyle = R.color;
+        ctx.shadowColor = R.color;
+        ctx.shadowBlur = 12;
+        ctx.fillText(R.name, V.width / 2 + 40, 200);
+        ctx.shadowBlur = 0;
+        ctx.font = '13px "Segoe UI", sans-serif';
+        ctx.fillStyle = '#ddd';
+        ctx.fillText('최고 랭크', V.width / 2 + 40, 222);
+      }
+      ctx.font = '14px "Segoe UI", sans-serif';
+      ctx.fillStyle = '#9f9';
+      if (b.heal > 0) ctx.fillText(`보상: 체력 +${b.heal}`, V.width / 2 + 170, 196);
+      ctx.restore();
     }
   },
 

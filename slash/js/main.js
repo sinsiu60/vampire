@@ -57,7 +57,10 @@ const Game = {
     this.dim = 0;           // 배경 어두워짐 (0~1)
     this.exec = null;       // 처형 연출 진행 상태
     this.execDark = 0;      // 처형 암전 (0~1)
+    this.waveCleared = true;
+    this.clearBanner = null;   // 방(웨이브) 클리어 결과 표시
     Effects.reset();
+    Style.reset();
     this.setState('playing');
     this.updateCamera(true);
   },
@@ -76,6 +79,7 @@ const Game = {
       for (let i = 0; i < A.randomWaveSize; i++) types.push(all[(Math.random() * all.length) | 0]);
     }
     this.wave++;
+    this.waveCleared = false;
     types.forEach((t, i) => {
       // 플레이어와 떨어진 곳에 스폰
       const side = (i % 2 === 0) ? 1 : -1;
@@ -88,6 +92,7 @@ const Game = {
     x = Math.max(80, Math.min(A.width - 80, x));
     const e = new Enemy(type, x, A.groundY);
     this.enemies.push(e);
+    this.waveCleared = false;
     Effects.dust(x, A.groundY, 6, 0);
     return e;
   },
@@ -105,10 +110,31 @@ const Game = {
   },
 
   onEnemyKilled(enemy, how) {
-    if (how !== 'execute') this.kills++;
+    if (how !== 'execute') {
+      this.kills++;
+      Style.onKill();
+    }
   },
 
-  onParry(enemy, tier) {},
+  onParry(enemy, tier) {
+    Style.onParry(tier, this.player.parryChain);
+  },
+
+  onPostureBreak(enemy) {
+    Style.onPostureBreak();
+  },
+
+  // 방(웨이브) 클리어: 최고 랭크에 따라 보상 (지금은 체력 회복, 8단계에서 아이템)
+  onRoomClear() {
+    const S = CONFIG.style, p = this.player;
+    const best = Style.clearRoom();
+    const heal = best >= 0 ? S.clearHeal[best] : 0;
+    p.hp = Math.min(CONFIG.player.maxHp, p.hp + heal);
+    p.stamina = CONFIG.player.maxStamina;
+    this.clearBanner = { rank: best, heal, life: S.clearBannerFrames, max: S.clearBannerFrames };
+    if (heal > 0) Effects.popText(p.x, p.y - p.h - 20, `+${heal} HP`, '#7f7', 16);
+    Sound.play('clear');
+  },
 
   // ---------- 처형 ----------
   // 체간이 무너진 적 중 가까운 것
@@ -150,6 +176,7 @@ const Game = {
     const outroAt = splitAt + X.splitFrames, endAt = outroAt + X.outroFrames;
     ex.f++;
     p.stateFrame++;
+    Style.update(true);
     p.updateScarf();
     Effects.update(ex.f < splitAt);   // 일섬 전후 정적: 검기 잔상도 멈춤
 
@@ -210,9 +237,12 @@ const Game = {
   },
 
   // 처형 성공 (5단계 스타일 랭크에서 대폭 상승 처리)
-  onExecution(enemy) {},
+  onExecution(enemy) {
+    Style.onExecution();
+  },
 
   onPlayerHurt() {
+    Style.onPlayerHit();
     this.combo.count = 0;
     this.combo.timer = 0;
   },
@@ -267,6 +297,9 @@ const Game = {
       return;
     }
 
+    Style.update();
+    if (this.clearBanner && --this.clearBanner.life <= 0) this.clearBanner = null;
+
     p.update(this, Input);
     Combat.playerAttack(this, p);
     for (const e of this.enemies) e.update(this);
@@ -278,7 +311,11 @@ const Game = {
     if (this.combo.timer > 0 && --this.combo.timer === 0) this.combo.count = 0;
     if (this.combo.pop > 0) this.combo.pop--;
 
-    // 웨이브
+    // 웨이브: 전멸하면 클리어 보상 → 잠시 후 다음 웨이브
+    if (this.enemies.length === 0 && !this.waveCleared && !this.exec) {
+      this.waveCleared = true;
+      this.onRoomClear();
+    }
     if (this.enemies.length === 0) {
       if (--this.waveTimer <= 0) {
         this.spawnWave();

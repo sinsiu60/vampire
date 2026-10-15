@@ -193,6 +193,16 @@ const Sound = {
         this._tone(0.5, 'sine', 140, 30, 0.9);
         this._tone(0.3, 'sawtooth', 300, 50, 0.2);
         break;
+      case 'rankUp':            // 랭크 업: 상승 아르페지오
+        this._tone(0.1, 'square', 660, 660, 0.08);
+        this._tone(0.1, 'square', 880, 880, 0.08, 0.06);
+        this._tone(0.18, 'square', 1320, 1320, 0.09, 0.12, 0.3);
+        break;
+      case 'clear':             // 방 클리어
+        this._tone(0.25, 'triangle', 523, 523, 0.18, 0, 0.3);
+        this._tone(0.25, 'triangle', 659, 659, 0.18, 0.12, 0.3);
+        this._tone(0.5, 'triangle', 784, 784, 0.2, 0.24, 0.5);
+        break;
       case 'telegraphWhite':
         this._tone(0.3, 'sine', 2600, 2600, 0.12, 0, 0.6);
         break;

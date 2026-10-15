@@ -72,7 +72,10 @@ class Projectile {
         Combat.perfectParry(game, p, null, this.x, this.y, false);
         return;
       }
-      if (p.isInvulnerable()) return;
+      if (p.isInvulnerable()) {
+        if (p.state === 'dash' && !this.dodged) { this.dodged = true; Style.onDodge(); }
+        return;
+      }
       const shooterX = this.x - this.vx * 10;   // 날아온 쪽
       const res = Combat.resolveIncoming(game, p, this.damage, Math.sign(this.vx) || 1, { x: 4, y: -3 }, this.atk, null, shooterX);
       if (res !== 'dodge') this.dead = true;
@@ -83,7 +86,7 @@ class Projectile {
         const dir = Math.sign(this.vx) || 1;
         Combat.applyHit(game, e, this.damage, false, {
           dir, knockX: 5, knockY: -3, hitstun: 34, attackerX: this.x - dir * 20,
-        }, { hitstop: 7, shake: 5, heavy: true, x: this.x, y: this.y });
+        }, { hitstop: 7, shake: 5, heavy: true, x: this.x, y: this.y, styleId: 'REFLECT' });
         e.addPosture(this.damage * CONFIG.posture.hitMult, game);
         return;
       }

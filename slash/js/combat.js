@@ -79,7 +79,7 @@ const Combat = {
       attackerX: player.x,
     }, {
       hitstop: move.hitstop, shake: move.shake, heavy: move.heavy, impact: move.impactFrame,
-      launchSfx: move.launch,
+      launchSfx: move.launch, styleId: player.moveId,
     });
 
     // 체간: 공격이 들어갈수록 차오름 (방패에 막혀도 조금)
@@ -101,7 +101,10 @@ const Combat = {
   // 적에게 데미지 적용 + 결과별 연출. fx: { hitstop, shake, heavy, impact, x, y, launchSfx }
   applyHit(game, enemy, dmg, crit, info, fx) {
     const F = CONFIG.feel;
+    // 공중 콤보 판정: 내가 공중이거나 적이 떠 있을 때
+    const air = !game.player.onGround || enemy.state === 'launched';
     const res = enemy.takeHit(dmg, info);
+    if (res !== 'blocked' && fx.styleId) Style.onHit(fx.styleId, air, res === 'armor');
     const dir = info.dir;
     const hx = fx.x !== undefined ? fx.x : enemy.x - dir * enemy.w * 0.2;
     const hy = fx.y !== undefined ? fx.y : enemy.y - enemy.h * 0.6;
@@ -154,6 +157,7 @@ const Combat = {
     Effects.sparks(x, y, -dir, 12, '#ffd060');
     Effects.flashRing(x, y);
     Sound.play('clash');
+    Style.onClash();
   },
 
   // 내려찍기 착지 충격파: 주변 바닥의 적을 띄움
@@ -173,7 +177,7 @@ const Combat = {
       const dmg = W.damage * (crit ? CONFIG.player.critMult : 1);
       this.applyHit(game, e, dmg, crit, {
         dir, knockX: W.knock.x, knockY: W.knock.y, hitstun: W.hitstun, launch: true, attackerX: player.x,
-      }, { hitstop: W.hitstop, shake: 0, heavy: false, x: e.x, y: e.y - e.h * 0.4 });
+      }, { hitstop: W.hitstop, shake: 0, heavy: false, x: e.x, y: e.y - e.h * 0.4, styleId: 'SLAM_WAVE' });
     }
   },
 
@@ -198,7 +202,10 @@ const Combat = {
       this.perfectParry(game, player, enemy, x, player.y - player.h * 0.6, attack.telegraph === 'white');
       return 'perfect';
     }
-    if (player.isInvulnerable()) return 'dodge';   // 대시 무적 등: 피함
+    if (player.isInvulnerable()) {                 // 대시 무적 등: 피함
+      if (player.state === 'dash') Style.onDodge();
+      return 'dodge';
+    }
     // 가드: 노랑/흰색 공격을 정면에서
     if (player.isGuarding() && parryable && (srcX - player.x) * player.facing >= 0) {
       const taken = player.onGuardBlock(dmg, dir);
@@ -208,6 +215,7 @@ const Combat = {
       Effects.sparks(x, y, -player.facing, 8, '#dfe9ff');
       Effects.damageNumber(player.x, player.y - player.h - 8, taken, false);
       Sound.play('guard');
+      Style.onGuard();
       if (player.dead) game.onPlayerHurt();
       return 'guard';
     }

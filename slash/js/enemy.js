@@ -447,7 +447,10 @@ class Enemy {
     Effects.sparks(this.x, this.y - this.h * 0.7, -1, 12, '#ff6040');
     Effects.addShake(8);
     Sound.play('postureBreak');
-    if (game) game.slowmo(CONFIG.posture.breakSlowmoMs);
+    if (game) {
+      game.slowmo(CONFIG.posture.breakSlowmoMs);
+      game.onPostureBreak(this);
+    }
   }
 
   // 정면에서 맞았는가 (방패 판정용). attackerX: 공격 위치
