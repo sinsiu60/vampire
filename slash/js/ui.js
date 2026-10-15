@@ -65,11 +65,13 @@ const UI = {
     ctx.fillText(`WAVE ${game.wave}   처치 ${game.kills}`, 940, 30);
 
     if (this.showHelp) {
+      // 키 이름은 KEYBINDS 에서 가져온다 (config.js 에서 바꾸면 도움말도 같이 바뀜)
+      const k = (a) => Input.label(a);
       const lines = [
-        'A/D 이동   스페이스 점프(2단, 길게=높이)   S+스페이스 발판 내려가기',
-        'J 약공 4타   K 강공(길게=차지)   J,J 후 K 찌르기   L 대시(무적)   후딜 중 L/스페이스 캔슬',
-        'S+K 런처(K 유지 = 같이 점프)   공중 J 3타   공중 K 날려베기   공중 S+K 내려찍기',
-        'H 히트박스   F1 도움말 숨기기   Esc 일시정지',
+        `${k('left')}/${k('right')} 이동   ${k('jump')} 점프(2단, 길게=높이)   ${k('down')}+${k('jump')} 발판 내려가기   ${k('dash')} 대시(무적)`,
+        `${k('light')} 약공 4타   ${k('heavy')} 강공(길게=차지)   약공 2타 후 ${k('heavy')} 찌르기   후딜 중 ${k('dash')}/${k('jump')} 캔슬`,
+        `${k('down')}+${k('heavy')} 런처(${k('heavy')} 유지 = 같이 점프)   공중 ${k('light')} 3타   공중 ${k('heavy')} 날려베기   공중 ${k('down')}+${k('heavy')} 내려찍기`,
+        `${k('debug')} 히트박스   ${k('help')} 도움말 숨기기   ${k('pause')} 일시정지`,
       ];
       ctx.textAlign = 'center';
       ctx.font = '12px "Segoe UI", sans-serif';
@@ -92,7 +94,7 @@ const UI = {
       ctx.font = 'bold 40px "Segoe UI", sans-serif';
       ctx.fillText('일시정지', V.width / 2, V.height / 2 - 10);
       ctx.font = '16px "Segoe UI", sans-serif';
-      ctx.fillText('Esc: 계속   R: 재시작', V.width / 2, V.height / 2 + 26);
+      ctx.fillText(`${Input.label('pause')}: 계속   ${Input.label('restart')}: 재시작`, V.width / 2, V.height / 2 + 26);
     } else if (game.state === 'gameover') {
       const t = Math.min(1, game.stateTime / 60);
       ctx.fillStyle = `rgba(20,0,0,${0.7 * t})`;
@@ -104,7 +106,7 @@ const UI = {
       ctx.fillText('YOU DIED', V.width / 2, V.height / 2 - 10);
       ctx.fillStyle = '#fff';
       ctx.font = '18px "Segoe UI", sans-serif';
-      ctx.fillText('R 키로 재시작', V.width / 2, V.height / 2 + 30);
+      ctx.fillText(`${Input.label('restart')} 키로 재시작`, V.width / 2, V.height / 2 + 30);
       ctx.globalAlpha = 1;
     }
   },

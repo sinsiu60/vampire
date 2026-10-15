@@ -50,7 +50,7 @@ class Player {
 
     // 입력 버퍼 (남은 프레임)
     this.buf = { jump: 0, light: 0, heavy: 0, dash: 0 };
-    this.heavyDown = false;       // K 를 누를 때 S 를 같이 눌렀는가
+    this.heavyDown = false;       // 강공을 누를 때 아래를 같이 눌렀는가
 
     // 공격
     this.move = null;
@@ -265,7 +265,7 @@ class Player {
   tryJump(input) {
     if (this.buf.jump <= 0) return false;
     const P = CONFIG.player;
-    // S + 점프: 통과 발판 내려가기
+    // 아래 + 점프: 통과 발판 내려가기
     if (this.onGround && input.isDown('down') && this.groundRect && this.groundRect.oneWay) {
       this.buf.jump = 0;
       this.dropThrough = P.dropThroughFrames;
@@ -340,7 +340,7 @@ class Player {
       this.startAttack('LAUNCHER', ax);
       return true;
     }
-    // 약공 2타 후 K → 전진 찌르기
+    // 약공 2타 후 강공 → 전진 찌르기
     if (this.buf.heavy > 0 && this.lastMoveId === 'L2') {
       this.buf.heavy = 0;
       this.startAttack('THRUST', ax);
@@ -434,7 +434,7 @@ class Player {
     if (f > m.startup) this.vx *= this.onGround ? 0.82 : 0.92;
     else this.vx *= 0.7;
 
-    // 런처: K 를 누르고 있으면 판정 직후 같이 떠오름
+    // 런처: 강공 버튼을 누르고 있으면 판정 직후 같이 떠오름
     if (m.launch && f === m.startup + 2 && input.isDown('heavy')) {
       this.vy = CONFIG.air.launcherFollowVy;
       this.onGround = false;

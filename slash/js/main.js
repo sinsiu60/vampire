@@ -20,8 +20,6 @@ const Game = {
     window.addEventListener('resize', () => this.resize());
     Input.init();
     Input.onFirstInput = () => Sound.unlock();
-    Input.map.help = ['F1'];
-    window.addEventListener('keydown', (e) => { if (e.code === 'F1') e.preventDefault(); });
 
     this.newGame();
     this._last = performance.now();

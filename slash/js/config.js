@@ -3,6 +3,31 @@
 // 시간 단위: 프레임 (60프레임 = 1초)  /  속도 단위: px/프레임
 // 히트박스: { x: 몸 중심에서 앞쪽으로의 시작 거리, y: 발밑 기준 위쪽(음수), w, h }
 
+// ---------- 조작키 ----------
+// 동작 → 키 코드 목록 (여러 개 지정 가능)
+// 키보드: KeyboardEvent.code 값 ('KeyA', 'Space', 'ShiftLeft', 'Enter', 'Escape', 'Tab', 'F1' ...)
+// 마우스: 'Mouse0' = 좌클릭, 'Mouse1' = 휠클릭, 'Mouse2' = 우클릭
+// 조합 기술(S + 우클릭 런처 등)은 'down' + 'heavy' 조합으로 자동 처리된다
+const KEYBINDS = {
+  left: ['KeyA'],
+  right: ['KeyD'],
+  down: ['KeyS'],               // S + 강공 = 런처 / 공중 내려찍기, S + 점프 = 발판 내려가기
+  up: ['KeyW'],
+  jump: ['Space'],              // 2단 점프, 길게 누르면 높이 점프
+  light: ['Mouse0'],            // 약공격
+  heavy: ['Mouse2'],            // 강공격 (길게 누르면 차지)
+  dash: ['ShiftLeft', 'ShiftRight'],
+  parry: ['KeyF'],
+  skill1: ['KeyQ'],
+  skill2: ['KeyE'],
+  swap: ['KeyR'],               // 무기 교체
+  inventory: ['Tab'],
+  pause: ['Escape'],
+  restart: ['Enter', 'NumpadEnter'],   // 게임오버 / 일시정지에서 재시작
+  debug: ['KeyH'],              // 히트박스 표시 (개발용)
+  help: ['F1'],                 // 조작 도움말 표시/숨기기
+};
+
 const CONFIG = {
   // ---------- 화면 / 루프 ----------
   view: { width: 960, height: 540 },
@@ -37,7 +62,7 @@ const CONFIG = {
     coyoteFrames: 6,           // 발판에서 떨어진 직후에도 점프 가능한 프레임
     jumpBufferFrames: 8,       // 착지 전 미리 누른 점프 입력 유지
     attackBufferFrames: 12,    // 공격 입력 버퍼
-    dropThroughFrames: 12,     // S+스페이스 로 통과 발판 내려가기
+    dropThroughFrames: 12,     // 아래 + 점프 로 통과 발판 내려가기
 
     // 대시
     dashSpeed: 11.5,
@@ -113,7 +138,7 @@ const CONFIG = {
       lunge: 5.5, next: null, sfx: 'swingHeavy', heavy: true,
       swing: { from: -170, to: 75, r: 80, squash: 1 },
     },
-    // 약공 2타 후 K: 전진 찌르기
+    // 약공 2타 후 강공: 전진 찌르기
     THRUST: {
       name: '전진 찌르기', startup: 8, active: 6, recovery: 18,
       damage: 20, hitbox: { x: 4, y: -36, w: 92, h: 18 },
@@ -147,7 +172,7 @@ const CONFIG = {
     ],
 
     // ----- 2단계: 공중 콤보 -----
-    // S+K (지상): 런처. K를 계속 누르고 있으면 플레이어도 같이 뜬다
+    // 아래 + 강공 (지상): 런처. 강공 버튼을 계속 누르고 있으면 플레이어도 같이 뜬다
     LAUNCHER: {
       name: '런처', startup: 8, active: 5, recovery: 20,
       damage: 10, hitbox: { x: -6, y: -96, w: 66, h: 96 },
@@ -155,7 +180,7 @@ const CONFIG = {
       lunge: 1.5, sfx: 'launcher', launch: true,
       swing: { from: 100, to: -105, r: 78, squash: 1 },
     },
-    // 공중 J 3타
+    // 공중 약공 3타
     A1: {
       name: '공중 베기 1', startup: 4, active: 3, recovery: 12, air: true,
       damage: 8, hitbox: { x: -2, y: -60, w: 60, h: 60 },
@@ -177,7 +202,7 @@ const CONFIG = {
       lunge: 2, next: null, sfx: 'swingHeavy', heavy: true,
       swing: { from: -200, to: 160, r: 66, squash: 1 },
     },
-    // 공중 K (S 없이): 날려베기
+    // 공중 강공 (아래 없이): 날려베기
     AIR_HEAVY: {
       name: '공중 날려베기', startup: 8, active: 5, recovery: 18, air: true,
       damage: 16, hitbox: { x: -4, y: -70, w: 76, h: 70 },
@@ -185,7 +210,7 @@ const CONFIG = {
       lunge: 2, sfx: 'swingHeavy', heavy: true,
       swing: { from: -150, to: 70, r: 76, squash: 1 },
     },
-    // 공중 S+K: 내려찍기 (낙하 중 판정, 맞은 적은 같이 바닥으로)
+    // 공중 아래 + 강공: 내려찍기 (낙하 중 판정, 맞은 적은 같이 바닥으로)
     SLAM: {
       name: '내려찍기', startup: 7, active: 999, recovery: 16,
       damage: 14, hitbox: { x: -22, y: -40, w: 70, h: 60 },
