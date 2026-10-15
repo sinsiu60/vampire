@@ -993,7 +993,9 @@ const CONFIG = {
       magnetDelay: 30, magnetRange: 140, pickupRange: 20,
     },
     rest: { heal: 0.4 },       // 휴식: 최대 체력의 40% 회복
-    shop: { heal: 0.3, healCost: 40 },   // 상점 회복 (각인 판매·리롤은 4단계)
+    // 상점: 회복약 (한 번) / 각인 진열 stock 개 (등급별 가격 × 층 골드 배율) / 리롤 (할 때마다 비싸짐)
+    shop: { heal: 0.3, healCost: 40, stock: 3, prices: [60, 90, 130, 220], legendChance: 0.08,
+      rerollCost: 25, rerollStep: 15 },
   },
 
   floors: DATA.floors,            // data/floors.js (층 수 = 이 배열 길이)

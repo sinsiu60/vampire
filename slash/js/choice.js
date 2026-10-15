@@ -1,6 +1,6 @@
 'use strict';
 // 선택 창 (게임 정지): 휴식·상점·대장간·제단 메뉴, 보상 카드 등에서 같이 쓴다
-// Choice.open(game, { title, sub, options: [{ label, desc, cost, disabled, note, color, icon, act }], closable, onClose })
+// Choice.open(game, { title, sub, options: [{ label, desc, cost, disabled, note, color, icon, act, draw }], closable, onClose, sel })
 //   act(game) 가 true 를 돌려주면 창을 유지 (예: 상점에서 계속 사기)
 // 조작: ←/→ (A/D) 또는 ↑/↓ 이동, 스페이스/Enter/클릭 선택, Esc 닫기 (closable 일 때)
 
@@ -13,7 +13,9 @@ const Choice = {
 
   open(game, cfg) {
     this.cfg = cfg;
-    this.sel = Math.max(0, cfg.options.findIndex((o) => !o.disabled));
+    // sel: 처음 커서 위치 (다시 열 때 그 자리 유지용). 고를 수 없는 칸이면 첫 번째 고를 수 있는 칸
+    const s0 = cfg.sel;
+    this.sel = s0 !== undefined && cfg.options[s0] && !cfg.options[s0].disabled ? s0 : Math.max(0, cfg.options.findIndex((o) => !o.disabled));
     this.t = 0;
     this.rects = [];
     this.msg = null;
@@ -56,6 +58,7 @@ const Choice = {
       if (o.cost && game.gold < o.cost) { this.say(`골드가 부족합니다 (${o.cost} 필요)`); Sound.play('deny'); return; }
       if (o.cost) game.gold -= o.cost;
       Sound.play('menuSelect');
+      if (c.onPick) c.onPick(i);
       const keep = o.act ? o.act(game) : false;
       if (this.cfg !== c) return;
       if (game.state !== 'choice') { this.cfg = null; return; }   // act 가 다른 화면(각인 장착 등)을 열었음

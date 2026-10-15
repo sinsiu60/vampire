@@ -144,17 +144,7 @@ const Run = {
         ],
       });
     } else if (st.kind === 'shop') {
-      const healed = st.healBought;
-      Choice.open(game, {
-        title: '상점', sub: '골드로 거래한다', color: RD.shop.color,
-        options: [
-          { label: '회복약', icon: 'rest', color: '#7fe08a', desc: `체력 ${Math.round(R.shop.heal * 100)}% 회복`, cost: healed ? 0 : R.shop.healCost,
-            disabled: healed || p.hp >= p.maxHp, note: healed ? '품절' : '체력이 가득 참',
-            act: () => { st.healBought = true; const h = Math.round(p.maxHp * R.shop.heal); p.heal(h); Effects.popText(p.x, p.y - 70, `+${h} HP`, '#7f7', 18); Sound.play('rest'); } },
-          { label: '각인 구매', icon: 'shop', color: '#ffd23a', desc: '각인 3개 중 골라 산다', disabled: true, note: '4단계에서 열림' },
-          { label: '각인 리롤', icon: 'curse', color: '#c0a0ff', desc: '진열된 각인을 새로 바꾼다', disabled: true, note: '4단계에서 열림' },
-        ],
-      });
+      this.openShop(game, st);
     } else if (st.kind === 'anvil') {
       Choice.open(game, {
         title: '대장간', sub: '무기의 공격 방식을 바꾼다', color: RD.forge.color,
@@ -179,6 +169,69 @@ const Run = {
         ],
       });
     }
+  },
+
+  // ---------- 상점 ----------
+  // 진열: 각인 stock 개 (상점마다 처음 열 때 굴림, 리롤로 다시)
+  shopPrice(game, inst) {
+    const S = CONFIG.run.shop;
+    return Math.round(S.prices[inst.rarity] * (game.floorCfg ? game.floorCfg.gold : 1) / 5) * 5;
+  },
+  rerollPrice(game, st) {
+    const S = CONFIG.run.shop;
+    return Math.round((S.rerollCost + S.rerollStep * (st.rerolls || 0)) * (game.floorCfg ? game.floorCfg.gold : 1) / 5) * 5;
+  },
+  stockShop(game, st) {
+    const S = CONFIG.run.shop;
+    st.stock = Engrave.offer(game, S.stock, 0, S.legendChance).map((inst) => ({ inst, price: this.shopPrice(game, inst), sold: false }));
+  },
+
+  openShop(game, st) {
+    const R = CONFIG.run, p = game.player, S = R.shop;
+    if (!st.stock) this.stockShop(game, st);
+    const healed = st.healBought;
+    const reopen = () => this.openShop(game, st);
+    const cards = st.stock.map((it) => ({
+      label: Engrave.def(it.inst).name, desc: Engrave.desc(it.inst),
+      cost: it.sold ? 0 : it.price, disabled: it.sold, note: '판매 완료',
+      draw: (ctx, x, y, w, h, on) => this.drawShopCard(ctx, game, it, x, y, w, h, on),
+      act: () => {
+        // 산 각인 장착 (Esc 로 취소하면 환불)
+        it.sold = true;
+        Sound.play('coin');
+        EngraveUI.open(game, {
+          mode: 'equip', inst: it.inst, cancelable: true,
+          then: (g, r) => { if (r === 'cancel') { it.sold = false; g.gold += it.price; } reopen(); },
+        });
+        return true;
+      },
+    }));
+    const rr = this.rerollPrice(game, st);
+    Choice.open(game, {
+      title: '상점', sub: '각인을 사면 장착할 칸을 고른다 (Esc: 취소·환불)', color: CONFIG.rooms.shop.color,
+      sel: st.sel, onPick: (i) => { st.sel = i; },
+      options: cards.concat([
+        { label: '회복약', icon: 'rest', color: '#7fe08a', desc: `체력 ${Math.round(S.heal * 100)}% 회복\n(${Math.round(p.maxHp * S.heal)} HP)`, cost: healed ? 0 : Math.round(S.healCost * (game.floorCfg ? game.floorCfg.gold : 1) / 5) * 5,
+          disabled: healed || p.hp >= p.maxHp, note: healed ? '품절' : '체력이 가득 참',
+          act: () => { st.healBought = true; const h = Math.round(p.maxHp * S.heal); p.heal(h); Effects.popText(p.x, p.y - 70, `+${h} HP`, '#7f7', 18); Sound.play('rest'); reopen(); return true; } },
+        { label: '리롤', icon: 'curse', color: '#c0a0ff', desc: `진열된 각인을\n새로 바꾼다\n(할 때마다 비싸짐)`, cost: rr,
+          act: () => { st.rerolls = (st.rerolls || 0) + 1; this.stockShop(game, st); Sound.play('menuSelect'); reopen(); return true; } },
+      ]),
+    });
+  },
+
+  // 상점 각인 카드: 위는 각인 카드, 아래는 가격 (팔렸으면 어둡게)
+  drawShopCard(ctx, game, it, x, y, w, h, on) {
+    ctx.save();
+    if (it.sold) ctx.globalAlpha = 0.3;
+    Engrave.drawCard(ctx, it.inst, x, y, w, h - 30, on && !it.sold);
+    ctx.globalAlpha = 1;
+    if (it.sold) {
+      Menu.text(ctx, '판매 완료', x + w / 2, y + h - 10, 'bold 13px "Segoe UI", sans-serif', '#aaa');
+    } else {
+      this.drawGold(ctx, x + w / 2, y + h - 8, it.price, 'center', game.gold >= it.price ? '#ffd860' : '#a55');
+    }
+    ctx.restore();
   },
 
   // ---------- 골드 ----------

@@ -319,7 +319,7 @@ const EngraveUI = {
     if (this.msg && --this.msg.life <= 0) this.msg = null;
     const k = (a) => Input.isPressed(a);
     if (c.mode === 'view' && (k('inventory') || k('back') || k('pause'))) { this.close(game); Sound.play('invClose'); return; }
-    if (c.mode === 'upgrade' && (k('back') || k('pause'))) { this.close(game, 'cancel'); Sound.play('menuBack'); return; }
+    if ((c.mode === 'upgrade' || c.cancelable) && (k('back') || k('pause'))) { this.close(game, 'cancel'); Sound.play('menuBack'); return; }
     // 이동
     const S = CONFIG.engrave.slots, s = this.sel;
     if (k('menuLeft')) { s.w = (s.w + 2) % 3; Sound.play('menuMove'); }
@@ -431,7 +431,7 @@ const EngraveUI = {
     // 안내
     const kk = (a) => Input.label(a);
     const help = c.mode === 'equip'
-      ? `${kk('confirm')}·클릭: 이 칸에 장착 (있으면 교체)    ${kk('upgrade')}·우클릭: 이 칸의 각인 강화 +1 (새 각인은 사라짐)    ${kk('discard')}: 버리기 (+${CONFIG.engrave.discardGold} 골드)`
+      ? `${kk('confirm')}·클릭: 장착 (있으면 교체)    ${kk('upgrade')}·우클릭: 이 칸 각인 +1 강화 (새 각인 소모)    ${kk('discard')}: 버리기 (+${CONFIG.engrave.discardGold} 골드)${c.cancelable ? `    ${kk('back')}: 취소 (환불)` : ''}`
       : c.mode === 'upgrade' ? `${kk('confirm')}·클릭: 이 각인 +1 강화    ${kk('back')}: 취소`
         : `방향키·마우스: 살펴보기    ${kk('inventory')}/${kk('back')}: 닫기`;
     Menu.text(ctx, help, V.width / 2, V.height - 22, '12px "Segoe UI", sans-serif', 'rgba(255,255,255,0.6)');
