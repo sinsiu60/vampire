@@ -766,7 +766,9 @@ const Game = {
     } else {
       this.timeScale = 1;
     }
+    if (this.state !== 'playing') this.aimSlow = 0;
     if (this.debugSlow) this.timeScale *= this.debugSlow;
+    if (this.aimSlow) this.timeScale *= this.aimSlow;      // 사슬검 Q 포박 조준: 0.5배속
     this._acc += dt * this.timeScale;
     while (this._acc >= STEP) {
       // 이 스텝이 해당하는 실제 시각 (뒤로 밀린 스텝일수록 과거)
@@ -844,6 +846,7 @@ const Game = {
     }
     if (ex) Render.executionTarget(ctx, ex);
     Render.player(ctx, this.player);
+    Aim.draw(ctx, this);          // 사슬검 조준선·잠금·투척 예측
     Effects.drawFront(ctx);
     Render.lit = 0;
     if (CONFIG.debug.showHitboxes) Render.hitboxes(ctx, this);
@@ -887,6 +890,7 @@ const Game = {
       ctx.fillRect(0, 0, CONFIG.view.width, CONFIG.view.height);
     }
 
+    Aim.drawScreen(ctx, this);    // 조준 중 비네트
     UI.hud(ctx, this);
     if (this.state === 'map') Run.drawMap(ctx, this);
     if (this.state === 'choice') Choice.draw(ctx, this);

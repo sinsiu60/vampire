@@ -284,10 +284,33 @@ class Player {
   }
 
   // 스킬 (Q / E): 현재 무기의 스킬, 쿨타임은 무기마다 따로
+  // 스킬 쿨타임 적용: 아이템 쿨감 × 각인 × 공명 쿨감 (공명 쿨감은 한 번 쓰면 소모)
+  applySkillCooldown(t, slot, S) {
+    let cd = S.cooldown * (1 - this.stats.cdr / 100);
+    if (t === 'gauntlet' && slot === 'q') cd *= 1 - Engrave.v(this, 'gt_ascension', 'cdr') / 100;
+    const r = this.res;
+    if (r.timer > 0 && r.cdCut > 0) {
+      cd *= 1 - r.cdCut / 100;
+      Effects.popText(this.x, this.y - this.h - 40, `쿨타임 -${r.cdCut}%`, '#7ff', 11);
+      r.cdCut = 0;
+    }
+    cd = Math.round(cd);
+    this.skillCd[t][slot] = cd;
+    this.skillCdMax[t][slot] = cd;
+    return cd;
+  }
+
   trySkill(ax) {
+    if (this.aim) return false;                      // 사슬검 조준 중
     for (const [key, slot] of [['skill1', 'q'], ['skill2', 'e']]) {
       if (this.buf[key] <= 0) continue;
       const t = this.weaponType(), S = this.weaponCfg().skills[slot];
+      // 사슬검 Q: 누르면 조준 시작 (포박 중이면 투척 조준), 떼면 발사 — aim.js
+      if (S.kind === 'aimBind') {
+        this.buf[key] = 0;
+        if (this.game && Aim.startQ(this.game, this)) return true;
+        continue;
+      }
       if (this.skillCd[t][slot] > 0) {
         this.buf[key] = 0;
         this.skillDeny[t][slot] = 14;
@@ -295,18 +318,7 @@ class Player {
         continue;
       }
       this.buf[key] = 0;
-      // 쿨타임: 아이템 쿨감 × 공명 쿨감 (공명 쿨감은 한 번 쓰면 소모)
-      let cd = S.cooldown * (1 - this.stats.cdr / 100);
-      if (t === 'gauntlet' && slot === 'q') cd *= 1 - Engrave.v(this, 'gt_ascension', 'cdr') / 100;
-      const r = this.res;
-      if (r.timer > 0 && r.cdCut > 0) {
-        cd *= 1 - r.cdCut / 100;
-        Effects.popText(this.x, this.y - this.h - 40, `쿨타임 -${r.cdCut}%`, '#7ff', 11);
-        r.cdCut = 0;
-      }
-      cd = Math.round(cd);
-      this.skillCd[t][slot] = cd;
-      this.skillCdMax[t][slot] = cd;
+      this.applySkillCooldown(t, slot, S);
       const id = 'SKILL_' + t.toUpperCase() + '_' + slot.toUpperCase();
       if (S.kind === 'stance') this.startStance(S);
       else if (S.kind === 'meteor') this.startMeteor(S, ax, id);
@@ -869,6 +881,14 @@ class Player {
   tryAttack(ax, input) {
     const downHeld = this.heavyDown || input.isDown('down');
     const game = this.game;
+    if (this.aim) { this.buf.light = 0; this.buf.heavy = 0; return false; }   // 사슬검 조준 중
+    // 사슬검 우클릭: 박혀 있으면 당기기(새로 안 던짐), 아니면 누르는 동안 조준 → 떼면 발사 (aim.js)
+    if (this.buf.heavy > 0 && !downHeld && this.weaponCfg().instantHeavy && this.counterTimer <= 0) {
+      this.buf.heavy = 0;
+      if (this.rope && this.rope.embed) return false;
+      if (game) Aim.start(game, this, 'throw');
+      return true;
+    }
 
     // 처형: 체간이 무너진 적이 가까이 있으면 좌클릭으로 처형
     if (this.buf.light > 0 && game) {
@@ -932,16 +952,6 @@ class Player {
       const prev = this.lastMoveId && this.moveData(this.lastMoveId);
       const next = prev && !prev.air && prev.next ? prev.next : 'L1';
       this.startAttack(next, ax);
-      return true;
-    }
-    if (this.buf.heavy > 0 && this.weaponCfg().instantHeavy && this.rope && this.rope.embed) {
-      this.buf.heavy = 0;    // 사슬이 박혀 있으면 우클릭은 당기기 (새로 던지지 않음)
-      return false;
-    }
-    if (this.buf.heavy > 0 && this.weaponCfg().instantHeavy) {
-      // 차지 없이 바로 (사슬검: 누른 채로 있으면 박힌 사슬을 당김)
-      this.buf.heavy = 0;
-      this.startAttack('HEAVY0', ax, this.moveData('HEAVY')[0]);
       return true;
     }
     if (this.buf.heavy > 0) {

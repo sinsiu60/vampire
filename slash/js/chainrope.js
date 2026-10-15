@@ -42,11 +42,11 @@ const ChainRope = {
       for (let i = 1; i < K.length; i++) {
         if (f <= K[i][0]) {
           const a = K[i - 1], b = K[i], t = ease.inOut((f - a[0]) / Math.max(1, b[0] - a[0]));
-          return [a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+          return this.aimRot(p, m, C, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, C.pivot);
         }
       }
       const L = K[K.length - 1];
-      return [L[1], L[2]];
+      return this.aimRot(p, m, C, L[1], L[2], C.pivot);
     }
     const c = H.circle;
     const at = (fr) => {
@@ -61,6 +61,14 @@ const ChainRope = {
     if (f <= c.end) return at(f);
     const e = at(c.end), t = Math.min(1, (f - c.end) / (c.after || 8));
     return [e[0] + (rest[0] - e[0]) * t, e[1] + (rest[1] - e[1]) * t];
+  },
+
+  // 조준 발사 기술(aimed): 키프레임 경로를 조준 각도만큼 피벗 기준으로 돌림 (이징·딜레이·오버슈트는 그대로)
+  aimRot(p, m, C, x, y, pv) {
+    if (!m || !m.aimed || !p.aimShot) return [x, y];
+    const a = p.aimShot.ang, phi = Math.atan2(Math.sin(a), Math.cos(a) * p.facing);
+    const c = Math.cos(phi), s = Math.sin(phi), dx = x - pv[0], dy = y - pv[1];
+    return [pv[0] + dx * c - dy * s, pv[1] + dx * s + dy * c];
   },
 
   handPoint(p, C, f) {
@@ -120,7 +128,7 @@ const ChainRope = {
         q = { x: Math.cos(ang) * r, y: Math.sin(ang) * r * sq };
       }
     }
-    return [pv[0] + q.x, pv[1] + q.y];
+    return this.aimRot(p, m, C, pv[0] + q.x, pv[1] + q.y, pv);
   },
 
   bladePoint(p, C, m, f) {
@@ -213,6 +221,17 @@ const ChainRope = {
         rope.fxDone = {};
       }
       const f = p.stateFrame;
+      // 조준 보정 유도: 날아가는 동안 잠긴 대상을 초당 homing° 까지 따라감
+      const S = p.aimShot;
+      if (m.aimed && S && S.target && S.homing > 0 && f >= m.startup && f <= m.startup + m.active && !S.target.dead) {
+        const t = S.target, pvx = p.x + p.facing * C.pivot[0], pvy = p.y + C.pivot[1];
+        const want = Math.atan2(t.y - t.h * 0.5 - pvy, t.x - pvx);
+        let d = want - S.ang;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        const mx = S.homing * DEG / 60;
+        S.ang += Math.max(-mx, Math.min(mx, d));
+      }
       let q = this.bladePoint(p, C, m, f);
       if (rope.blendFrom && f < C.blendFrames) {
         const t = (f + 1) / (C.blendFrames + 1);
@@ -237,6 +256,7 @@ const ChainRope = {
       const b = rope.nodes[rope.nodes.length - 1];
       rope.blade = { x: b.x, y: b.y };
     }
+    if (rope.vib > 0) rope.vib--;
     rope.vel = { x: rope.blade.x - prev.x, y: rope.blade.y - prev.y };
     rope.prev = prev;
     rope.speed = Math.hypot(rope.vel.x, rope.vel.y);
@@ -321,7 +341,8 @@ const ChainRope = {
     if (!C || !rope || !m || m.noHit || rope.mode !== 'anim') return;
     const f = p.stateFrame;
     if (f < m.startup || f > m.startup + m.active) return;
-    const a = rope.prev, b = rope.blade, R = C.hitRadius;
+    const a = rope.prev, b = rope.blade;
+    const R = C.hitRadius * (m.aimed && p.aimShot ? p.aimShot.hitScale : 1);   // 조준 보정: 던진 칼날 판정 확대
     const fr = game.frame || 0;
     if (!p.rehit || p.rehitSwing !== p.swingId) { p.rehit = new Map(); p.rehitSwing = p.swingId; }
     for (const e of game.enemies) {
@@ -342,6 +363,14 @@ const ChainRope = {
       for (let i = 1; i <= steps; i++) {
         const x = a.x + (b.x - a.x) * i / steps, y = a.y + (b.y - a.y) * i / steps;
         let wall = x < 2 || x > L.width - 2;
+        // 갈고리 스냅 지점(벽 모서리·발판 끝)에 닿으면 거기 박힘
+        const sp = m.aimed && p.aimShot && p.aimShot.point;
+        if (sp && Math.hypot(x - sp.x, y - sp.y) < 14) {
+          this.embedAt(game, p, rope, { type: 'wall', at: { x: sp.x, y: sp.y } });
+          Effects.sparks(sp.x, sp.y, -p.facing, 8, '#ffd23a');
+          Sound.play('clash');
+          return;
+        }
         if (!wall) for (const r of L.active) if (!r.oneWay && x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h) { wall = true; break; }
         if (wall) {
           const at = { x: Math.max(2, Math.min(L.width - 2, x)), y };
@@ -372,7 +401,11 @@ const ChainRope = {
     rope.embed = E;
     rope.blade = { x: E.at.x, y: E.at.y };
     rope.len = Math.hypot(E.at.x - p.chainHand.x, E.at.y - p.chainHand.y);
+    // 적중: '착' + 사슬이 팽팽해지며 미세 진동
+    Sound.play('crack');
     Sound.play('chain');
+    rope.vib = 14;
+    game.hitstop = Math.max(game.hitstop, 5);
     p.endMove();    // 던지기 동작은 끝 — 이제 우클릭 유지로 당기기
   },
 
@@ -382,7 +415,7 @@ const ChainRope = {
     E.t++;
     if (E.type === 'bind') {
       const b = Transform.binds.find((x) => x.e === E.e);
-      if (!b || b.thrown || E.e.dead) { rope.embed = null; return; }
+      if (!b || b.phase !== 'orbit' || E.e.dead) { rope.embed = null; return; }
       E.at.x = E.e.x; E.at.y = E.e.y - E.e.h * 0.5;
       E.pulling = true;
       return;
@@ -478,6 +511,12 @@ const ChainRope = {
       for (let i = 0; i <= 24; i++) {
         const t = i / 24, u = 1 - t;
         pts.push({ x: u * u * hand.x + 2 * u * t * c.x + t * t * b.x, y: u * u * hand.y + 2 * u * t * c.y + t * t * b.y });
+      }
+      // 적중 직후: 팽팽한 사슬이 미세하게 떨림
+      if (rope.vib > 0) {
+        const L = Math.hypot(b.x - hand.x, b.y - hand.y) || 1, nx = -(b.y - hand.y) / L, ny = (b.x - hand.x) / L;
+        const amp = rope.vib * 0.22, ph = (Game.frame || 0) * 2.3;
+        pts.forEach((q, i) => { const w = Math.sin(Math.PI * i / 24) * Math.sin(i * 1.9 + ph) * amp; q.x += nx * w; q.y += ny * w; });
       }
     }
     // 고리: 곡선 위에 일정 간격으로 타원 (가로/세로 번갈아)

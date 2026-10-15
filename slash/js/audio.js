@@ -6,15 +6,17 @@ const Settings = {
   sfx: CONFIG.audio.sfxVolume,
   music: CONFIG.audio.musicVolume,
   shake: true,          // 화면 흔들림
+  aimAssist: AIM_ASSIST.defaultLevel,   // 조준 보정 단계 (off / weak / normal / strong)
   key: 'shadowEdge.settings',
   load() {
     try {
       const d = JSON.parse(localStorage.getItem(this.key) || 'null');
-      if (d) for (const k of ['sfx', 'music', 'shake']) if (d[k] !== undefined) this[k] = d[k];
+      if (d) for (const k of ['sfx', 'music', 'shake', 'aimAssist']) if (d[k] !== undefined) this[k] = d[k];
+      if (!AIM_ASSIST.levels[this.aimAssist]) this.aimAssist = AIM_ASSIST.defaultLevel;
     } catch (e) { /* 저장소를 못 쓰면 기본값 */ }
   },
   save() {
-    try { localStorage.setItem(this.key, JSON.stringify({ sfx: this.sfx, music: this.music, shake: this.shake })); } catch (e) { /* 무시 */ }
+    try { localStorage.setItem(this.key, JSON.stringify({ sfx: this.sfx, music: this.music, shake: this.shake, aimAssist: this.aimAssist })); } catch (e) { /* 무시 */ }
     Sound.applyVolume();
   },
 };
@@ -118,6 +120,13 @@ const Sound = {
       case 'crack':             // 채찍 크랙 '착'
         this._noise(0.05, 'highpass', 5000, 9000, 0.5, 1.5);
         this._tone(0.03, 'square', 2600, 1200, 0.08);
+        break;
+      case 'lock':              // 조준 잠금 '딸깍'
+        this._tone(0.03, 'square', 2400, 2200, 0.05);
+        this._tone(0.05, 'triangle', 3600, 3400, 0.04, 0.03);
+        break;
+      case 'hookSnap':          // 갈고리 지점 스냅
+        this._metal(2800, 0.06, 0.05, 0.2, [1, 1.6]);
         break;
       case 'tang':              // 사슬 팽팽 반동 '탕'
         this._metal(900, 0.25, 0.12, 0.35, [1, 1.5, 2.3]);

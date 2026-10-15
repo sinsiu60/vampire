@@ -14,6 +14,9 @@
 //            (칼날은 손보다 3~4프레임 늦게 출발. whip = 시간 20% 에 경로 80% 급가속 → 감속하며 o 만큼 지나쳤다 돌아옴)
 //     throw: 던지기 (활성 프레임에 적·벽에 닿으면 박힘) / taut: 사슬을 직선으로 팽팽하게 / impact: fx impact 키에서 충격파
 //     rehit: 같은 적을 다시 맞히는 간격 / spinRelease: 회전 중 우클릭 → HEAVY_SPIN
+//   aim (사슬검): 마우스 조준 { range: 최대 사거리, bindSlow: Q 조준 중 시간 배율, bindAimSec: Q 조준 최대 시간, visLerp: 조준점 따라가는 속도 }
+//   스킬 kind "aimBind": Q 누름 → 조준, 뗌 → 발사 / bind: 묶은 적 { orbitSpeed, radius, autoThrowSec, throwSpeed, gravity, maxFlight,
+//     damage·posture(적끼리 충돌), wallDamage·wallPosture·wallStun(벽꽝), landDamage, heavyPosture·bossPosture(묶지 못할 때 체간) }
 //     hold: 타격 끝 포즈로 멈추는 프레임 (예비동작 startup → 타격 active → 홀드 hold → 후딜 recovery). hold 가 있으면 공속 증가는 후딜만 줄임
 //     dual: 쌍검 손별 궤적 { R: 오른손, L: 왼손 } — { from, to: 칼 각도, r: 궤적 반지름, squash, py, reach: 팔 뻗는 길이, hold: 홀드 각도,
 //           windAng: 예비동작 각도, linear: 일정 속도 회전 } 또는 { rest: 쉬는 손 각도 }
@@ -273,15 +276,16 @@ DATA.transforms = [
   {
     "id": "sword_chain", "weapon": "sword", "name": "사슬검", "mech": "chain",
     "tagline": "늦게 따라와 휘감기는 쇠사슬 칼날",
-    "card": ["사거리 길고 칼날이 늦게 따라와 휘감김", "2타 내려치기 충격파 · 3타 회전 다단히트", "강공: 던지기 → 박히면 우클릭으로 당김", "Q: 포박 (묶어서 휘두른 뒤 던짐)"],
+    "card": ["사거리 길고 칼날이 늦게 따라와 휘감김", "우클릭: 마우스 조준 → 던지기, 박히면 당김", "Q: 조준 포박 → 회전 → Q 로 조준 투척", "던진 적이 벽에 부딪히면 벽꽝"],
     "changes": [
       "손이 먼저 움직이고 칼날은 늦게 출발해 급가속 → 지나쳤다 튕기듯 돌아옴. 사슬은 속도만큼 휘어 보임",
-      "약공 3타: 몸 뒤 → 앞 수평 휘두르기 → 머리 위 큰 호에서 멈칫 후 내리꽂기 (착지 충격파) → 몸 주변 2바퀴 회전 (다단히트)",
-      "강공: 칼날을 직선으로 최대 사거리까지 던짐 (3타 회전 중이면 더 멀리). 끝에서 '탕' 반동",
-      "칼날이 적·벽에 박힌 채 우클릭 유지: 사슬이 팽팽해지며 적을 끌어옴 / 벽·무거운 적이면 그쪽으로 날아감",
-      "Q 포박: 던진 칼날에 걸린 적을 묶어 크게 휘두른 뒤 가까운 다른 적에게 던진다 (둘 다 피해)"
+      "약공 3타: 몸 뒤 → 앞 수평 → 머리 위 큰 호에서 멈칫 후 내리꽂기 (착지 충격파) → 몸 주변 2바퀴 회전 (다단히트)",
+      "우클릭: 누르는 동안 마우스 방향 조준 → 떼면 사슬 던지기 (3타 회전 중 우클릭이면 바로 더 멀리). 적·벽에 박힌 뒤 우클릭 유지: 끌어오기 / 그쪽으로 날아감",
+      "Q 포박: 누르면 조준(0.5배속, 최대 1.5초) → 떼면 발사. 맞은 적은 묶여 주변을 회전 → Q 다시 누르면 투척 조준(예측선) → 떼면 투척 (2초 지나면 자동)",
+      "던진 적: 경로의 적과 부딪히면 둘 다 피해·체간 / 벽에 부딪히면 벽꽝 (큰 피해·기절). 보스·중갑병은 묶이지 않고 체간만 크게"
     ],
     "preview": ["L1", "L2", "L3", "HEAVY0"],
+    "aim": { "range": 330, "bindSlow": 0.5, "bindAimSec": 1.5, "visLerp": 0.25 },
     "chain": {
       "nodes": 14, "length": 150, "idleLength": 24, "bladeMass": 3, "gravity": 0.34, "idleDrag": 0.9, "iterations": 14, "groundFriction": 0.8,
       "handRest": [9, -30], "handR": 20, "pivot": [2, -32], "blendFrames": 3, "genericReach": 110,
@@ -308,20 +312,22 @@ DATA.transforms = [
       },
       "skills": {
         "q": {
-          "name": "포박", "kind": "move", "cooldown": 480, "desc": "칼날을 던져 걸린 적을 묶고 휘두른 뒤 다른 적에게 던진다",
+          "name": "포박", "kind": "aimBind", "cooldown": 480, "desc": "Q 누름: 조준(0.5배속) → 뗌: 사슬 발사. 묶은 뒤 Q 누름: 투척 조준 → 뗌: 투척",
           "move": {
-            "name": "포박", "startup": 7, "active": 7, "recovery": 18,
+            "name": "포박", "startup": 7, "active": 7, "recovery": 24,
             "damage": 6, "posture": 10, "hitbox": { "x": 0, "y": -40, "w": 1, "h": 1 },
             "knock": { "x": 0, "y": 0 }, "hitstun": 60, "hitstop": 6, "shake": 3,
             "lunge": 0, "sfx": "chain", "pts": 20, "skill": true, "special": "bind", "throw": true,
             "swing": { "from": 0, "to": 0, "r": 60 }, "pose": ["thrustWind", "thrustStrike"],
             "hand": { "keys": [[0, 9, -30], [4, -14, -34], [7, 24, -34], [24, 24, -32], [32, 9, -30]] },
             "blade": { "keys": [
-              { "f": 0, "a": 110, "r": 30 }, { "f": 4, "a": 170, "r": 45, "e": "slow" }, { "f": 7, "x": -30, "y": -8, "e": "slow" },
-              { "f": 14, "x": 280, "y": -4, "e": "whip", "o": 0.05, "fx": "tang" }, { "f": 22, "x": 250, "y": 14, "e": "slow" },
-              { "f": 32, "x": 50, "y": 24, "e": "slow" } ] }
+              { "f": 0, "a": 110, "r": 30 }, { "f": 4, "a": 170, "r": 45, "e": "slow" }, { "f": 7, "x": -30, "y": 0, "e": "slow" },
+              { "f": 14, "x": 330, "y": 0, "e": "whip", "o": 0.05, "fx": "tang" }, { "f": 24, "x": 290, "y": 14, "e": "slow" },
+              { "f": 38, "x": 40, "y": 24, "e": "slow" } ] }
           },
-          "bind": { "spinFrames": 40, "radius": 66, "throwSpeed": 17, "damage": 30, "posture": 30, "bossDamage": 20, "bossPosture": 30 }
+          "bind": { "orbitSpeed": 0.16, "radius": 66, "autoThrowSec": 2, "throwSpeed": 18, "gravity": 0.12, "maxFlight": 60,
+            "damage": 30, "posture": 30, "wallDamage": 55, "wallPosture": 45, "wallStun": 90, "landDamage": 10,
+            "heavyPosture": 70, "bossPosture": 60 }
         }
       },
       "moves": {
@@ -369,8 +375,8 @@ DATA.transforms = [
           "swing": { "from": 0, "to": 0, "r": 60 }, "pose": ["thrustWind", "thrustStrike"],
           "hand": { "keys": [[0, 9, -30], [4, -14, -34], [7, 24, -34], [28, 24, -32], [36, 9, -30]] },
           "blade": { "keys": [
-            { "f": 0, "a": 110, "r": 30 }, { "f": 4, "a": 170, "r": 45, "e": "slow" }, { "f": 7, "x": -30, "y": -8, "e": "slow" },
-            { "f": 14, "x": 330, "y": -4, "e": "whip", "o": 0.05, "fx": "tang" }, { "f": 24, "x": 300, "y": 16, "e": "slow" },
+            { "f": 0, "a": 110, "r": 30 }, { "f": 4, "a": 170, "r": 45, "e": "slow" }, { "f": 7, "x": -30, "y": 0, "e": "slow" },
+            { "f": 14, "x": 330, "y": 0, "e": "whip", "o": 0.05, "fx": "tang" }, { "f": 24, "x": 300, "y": 16, "e": "slow" },
             { "f": 36, "x": 50, "y": 24, "e": "slow" } ] }
         },
         "A1": {
@@ -404,8 +410,8 @@ DATA.transforms = [
             "swing": { "from": 0, "to": 0, "r": 60 }, "pose": ["thrustWind", "thrustStrike"],
             "hand": { "keys": [[0, 9, -30], [4, -14, -34], [7, 24, -34], [28, 24, -32], [36, 9, -30]] },
             "blade": { "keys": [
-              { "f": 0, "a": 110, "r": 30 }, { "f": 4, "a": 170, "r": 45, "e": "slow" }, { "f": 7, "x": -30, "y": -8, "e": "slow" },
-              { "f": 14, "x": 330, "y": -4, "e": "whip", "o": 0.05, "fx": "tang" }, { "f": 24, "x": 300, "y": 16, "e": "slow" },
+              { "f": 0, "a": 110, "r": 30 }, { "f": 4, "a": 170, "r": 45, "e": "slow" }, { "f": 7, "x": -30, "y": 0, "e": "slow" },
+              { "f": 14, "x": 330, "y": 0, "e": "whip", "o": 0.05, "fx": "tang" }, { "f": 24, "x": 300, "y": 16, "e": "slow" },
               { "f": 36, "x": 50, "y": 24, "e": "slow" } ] }
           }
         ],
@@ -418,7 +424,7 @@ DATA.transforms = [
           "hand": { "keys": [[0, 0, -54], [3, 26, -40], [22, 24, -34], [30, 9, -30]] },
           "blade": { "keys": [
             { "f": 0, "x": -10, "y": -40 }, { "f": 1, "x": -10, "y": -40, "e": "slow" },
-            { "f": 8, "x": 350, "y": -6, "e": "whip", "o": 0.05, "fx": "tang" }, { "f": 18, "x": 320, "y": 16, "e": "slow" },
+            { "f": 8, "x": 350, "y": 0, "e": "whip", "o": 0.05, "fx": "tang" }, { "f": 18, "x": 320, "y": 16, "e": "slow" },
             { "f": 30, "x": 50, "y": 24, "e": "slow" } ] }
         }
       }

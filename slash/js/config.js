@@ -52,6 +52,32 @@ const KEYBINDS = {
   dummyReset: ['KeyO'],         // 허수아비 되살리기 + 기록 초기화
 };
 
+// ---------- 조준 보정 (사슬검 마우스 조준: 우클릭 던지기 / Q 포박·투척) ----------
+// 설정 메뉴·일시정지 메뉴에서 단계 선택 (브라우저에 저장). 사슬검 동작 수치는 data/transforms.js 사슬검 aim
+const AIM_ASSIST = {
+  defaultLevel: 'normal',
+  order: ['off', 'weak', 'normal', 'strong'],
+  // cone: 커서 방향 ±각도(도) 안의 적 / radius: 커서 반경(px) 안의 적 / homing: 날아가는 중 대상을 따라가는 최대 각속도(도/초)
+  levels: {
+    off: { name: '끔', cone: 0, radius: 0, homing: 0 },
+    weak: { name: '약함', cone: 6, radius: 35, homing: 5 },
+    normal: { name: '보통', cone: 12, radius: 60, homing: 10 },
+    strong: { name: '강함', cone: 20, radius: 90, homing: 18 },
+  },
+  keepExtra: 6,              // 잠긴 대상은 cone + 이 각도까지 벗어나도 유지 (보통: ±18°)
+  keepRadiusMult: 1.5,       // 잠긴 대상은 커서 반경 × 이 배율까지 유지
+  switchRatio: 1.3,          // 다른 후보 점수가 지금 대상보다 30% 이상 높을 때만 바꿈
+  weights: { cursor: 2, angle: 1.5, player: 1 },   // 점수 = 커서 근접도×2 + 각도 근접도×1.5 + 플레이어 근접도×1 (각 0~1)
+  groggyBonus: 0.5,          // 그로기(체간 붕괴) 적 보너스
+  cursorNorm: 3,             // 커서 근접도 정규화: 커서 반경 × 이 배율에서 0
+  angleNorm: 2,              // 각도 근접도 정규화: cone × 이 배율에서 0
+  hitScale: 1.5,             // 보정이 켜져 있으면 던진 칼날 판정 배율
+  wallSnap: 40,              // 커서 반경 안의 벽 모서리·발판 끝으로 갈고리 지점 스냅 (px)
+  tossCone: 8,               // 투척: 예측 경로 ±각도 안에 적·벽이 있으면 경로를 휘어 맞춤
+  tossStep: 0.5,             // 투척 보정 각도 탐색 간격 (도)
+};
+
+
 const CONFIG = {
   // ---------- 화면 / 루프 ----------
   view: { width: 960, height: 540, zoom: 1.3 },   // zoom: 클수록 캐릭터가 크게 보임

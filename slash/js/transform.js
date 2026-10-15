@@ -106,7 +106,7 @@ const Transform = {
     // 사슬검 3타 회전 중 우클릭: 회전을 앞으로 놓아주듯 던짐
     if (m.spinRelease && f >= m.startup && p.buf.heavy > 0) {
       p.buf.heavy = 0;
-      p.startAttack('HEAVY_SPIN', 0, p.moveData('HEAVY_SPIN'));
+      Aim.fireNow(game, p, 'HEAVY_SPIN');     // 지금 마우스 방향(+보정)으로
       return true;
     }
     return false;
@@ -136,16 +136,18 @@ const Transform = {
       if (res === 'kill') return;
       const S = move.skillCfg && move.skillCfg.bind;
       if (!S) return;
-      if (e.isBoss) {
-        e.addPosture(S.bossPosture, game);
-        Combat.applyHit(game, e, S.bossDamage * p.damageMult(), false, { dir: p.facing, knockX: 0, knockY: 0, hitstun: 0, attackerX: p.x },
-          { hitstop: 6, shake: 4, x: e.x, y: e.y - e.h * 0.5, styleId: 'BIND', weapon: 'sword' });
-        Effects.popText(e.x, e.y - e.h - 30, '포박 불가', '#ccc', 13);
+      // 보스·중갑병: 회전시키지 못하고 체간만 크게
+      if (e.isBoss || (e.cfg.weight || 1) >= 2) {
+        e.addPosture(e.isBoss ? S.bossPosture : S.heavyPosture, game);
+        Effects.popText(e.x, e.y - e.h - 30, '포박 불가 · 체간!', '#ffd23a', 14);
+        Effects.addShake(4);
         return;
       }
       if (this.binds.some((b) => b.e === e)) return;
-      this.binds.push({ e, t: 0, S, a0: Math.atan2(e.y - p.y, e.x - p.x), thrown: false });
+      // 묶여서 플레이어 주변을 회전 → Q 로 투척 조준·발사 (autoThrowSec 지나면 바라보는 방향으로 자동 투척)
+      this.binds.push({ e, t: 0, S, a: Math.atan2(e.y - p.y, e.x - p.x), phase: 'orbit' });
       e.bound = true;
+      Effects.popText(e.x, e.y - e.h - 30, '포박', '#cfe', 15);
       Sound.play('chain');
     }
   },
@@ -238,65 +240,117 @@ const Transform = {
     if (p.state !== 'attack') p.chainRun = null;
     // 사슬검: 로프 물리 (다른 무기면 정리)
     ChainRope.update(game, p);
-    // 포박: 휘두르기 → 던지기
+    // 사슬검 마우스 조준 (aim.js)
+    if (d && d.mech === 'chain') Aim.update(game, p);
+    else if (p.aim) Aim.cancel(game, p);
+    // 포박: 플레이어 주변 회전 → 투척 (투사체)
     for (let i = this.binds.length - 1; i >= 0; i--) {
       const b = this.binds[i], e = b.e, S = b.S;
       if (e.dead || e.executed || e.remove) { e.bound = false; this.binds.splice(i, 1); continue; }
       b.t++;
-      if (!b.thrown) {
-        if (b.t < S.spinFrames) {
-          const a = b.a0 + (b.t / S.spinFrames) * Math.PI * 3 * (p.facing || 1);
-          // 머리 위로 크게 휘두름 (발밑이 바닥보다 내려가지 않게 — 벽 속에 박히면 밀려나 버림)
-          e.x = Math.max(12, Math.min(game.level.width - 12, p.x + Math.cos(a) * S.radius));
-          e.y = Math.min(p.y - 6, p.y - 30 + Math.sin(a) * S.radius * 0.45);
-          e.vx = 0; e.vy = 0;
-          e.onGround = false;
-          if (e.state !== 'launched') e.setState('launched');
-          if (b.t % 8 === 0) Sound.play('whoosh');
-          continue;
+      if (b.phase === 'orbit') {
+        b.a += S.orbitSpeed * (p.facing || 1);
+        // 머리 위로 크게 돌림 (발밑이 바닥보다 내려가지 않게 — 벽 속에 박히면 밀려나 버림)
+        e.x = Math.max(12, Math.min(game.level.width - 12, p.x + Math.cos(b.a) * S.radius));
+        e.y = Math.min(p.y - 6, p.y - 30 + Math.sin(b.a) * S.radius * 0.5 + e.h * 0.5);
+        e.vx = 0; e.vy = 0;
+        e.onGround = false;
+        if (e.state !== 'launched') e.setState('launched');
+        if (b.t % 10 === 0) Sound.play('whoosh');
+        // 시간 안에 투척 안 하면 바라보는 방향으로 자동 투척
+        if (b.t >= S.autoThrowSec * 60 && !(p.aim && p.aim.mode === 'toss')) {
+          const ang = p.facing > 0 ? -0.18 : Math.PI + 0.18;
+          this.toss(game, p, b, Aim.tossPlan(game, p, b, ang).ang);
         }
-        // 던지기: 가장 가까운 다른 적에게 (없으면 앞으로)
-        let tgt = null, bd = 700;
-        for (const o of game.enemies) {
-          if (o === e || o.dead || o.executed || o.bound) continue;
-          const dd = Math.abs(o.x - p.x);
-          if (dd < bd) { bd = dd; tgt = o; }
-        }
-        // 목표를 향해 일직선으로 날아감 (중력 무시)
-        const tx = tgt ? tgt.x : e.x + p.facing * 400, ty = tgt ? tgt.y - 22 : e.y - 20;
-        const L = Math.hypot(tx - e.x, ty - e.y) || 1;
-        b.vx = (tx - e.x) / L * S.throwSpeed;
-        b.vy = (ty - e.y) / L * S.throwSpeed;
-        e.vx = b.vx; e.vy = b.vy;
-        b.thrown = true;
-        b.t = 0;
-        b.tgt = tgt;
-        Sound.play('swingHeavy');
         continue;
       }
-      // 날아가는 중: 다른 적과 부딪히면 둘 다 피해 (맵 끝·벽에 닿으면 멈춤)
-      let stop = false;
-      if (e.x < 12 || e.x > game.level.width - 12 || e.hitWall) { e.x = Math.max(12, Math.min(game.level.width - 12, e.x)); stop = true; }
-      e.vx = b.vx; e.vy = b.vy;
-      let hitO = null;
-      for (const o of game.enemies) {
-        if (o === e || o.dead || o.executed) continue;
-        if (Math.abs(o.x - e.x) < (o.w + e.w) / 2 + 6 && o.y - o.h < e.y && e.y - e.h < o.y) { hitO = o; break; }
-      }
-      if (hitO || stop || (e.onGround && b.t > 30) || b.t > 45) {
-        e.vx = b.vx * 0.3; e.vy = -3;
+      this.stepThrown(game, p, b, i);
+    }
+  },
+
+  // 묶은 적 던지기: 투사체가 되어 날아감 (중력 포물선)
+  toss(game, p, b, ang) {
+    const S = b.S, e = b.e;
+    b.phase = 'thrown';
+    b.t = 0;
+    b.cx = e.x; b.cy = e.y - e.h * 0.5;
+    b.vx = Math.cos(ang) * S.throwSpeed;
+    b.vy = Math.sin(ang) * S.throwSpeed;
+    if (p.rope && p.rope.embed && p.rope.embed.type === 'bind') p.rope.embed = null;
+    p.facing = b.vx >= 0 ? 1 : -1;
+    Effects.flashRing(e.x, e.y - e.h * 0.5);
+    Sound.play('swingHeavy');
+    Sound.play('chain');
+  },
+
+  stepThrown(game, p, b, i) {
+    const S = b.S, e = b.e, L = game.level;
+    b.vy += S.gravity;
+    const px = b.cx, py = b.cy;
+    b.cx += b.vx; b.cy += b.vy;
+    e.x = b.cx; e.y = b.cy + e.h * 0.5;
+    e.vx = 0; e.vy = 0;
+    e.onGround = false;
+    if (e.state !== 'launched') e.setState('launched');
+    if (b.t % 2 === 0) Effects.sparks(e.x, e.y - e.h * 0.5, -Math.sign(b.vx) || 1, 1, '#cfe');
+    const end = (vx, vy) => {
+      e.bound = false;
+      e.vx = vx; e.vy = vy;
+      this.binds.splice(i, 1);
+    };
+    const hitFx = (x, y) => {
+      Effects.shards(x, y, Math.sign(b.vx) || 1, 14, '#0c0a0b');
+      Effects.radialSparks(x, y, 12, '#cfe', 1);
+    };
+    // 다른 적과 충돌: 둘 다 데미지 + 체간
+    for (const o of game.enemies) {
+      if (o === e || o.dead || o.executed || o.bound) continue;
+      if (Math.abs(o.x - e.x) < (o.w + e.w) / 2 && Math.abs((o.y - o.h * 0.5) - b.cy) < (o.h + e.h) / 2) {
         const dmg = S.damage * p.damageMult();
-        for (const o of hitO ? [hitO, e] : [e]) {
-          if (o.dead) continue;
-          const dir = Math.sign(o.x - e.x) || p.facing;
-          const res = Combat.applyHit(game, o, hitO ? dmg : dmg * 0.5, false, { dir, knockX: 6, knockY: -4, hitstun: 36, launch: true, attackerX: e.x },
-            { hitstop: 8, shake: 7, heavy: true, x: o.x, y: o.y - o.h * 0.5, styleId: 'BIND_THROW', weapon: 'sword' });
-          if (res !== 'kill' && res !== 'blocked') o.addPosture(S.posture, game);
+        for (const t of [o, e]) {
+          const dir = Math.sign(t.x - (t === o ? e.x : o.x)) || 1;
+          const res = Combat.applyHit(game, t, dmg, false, { dir, knockX: 6, knockY: -5, hitstun: 36, launch: true, attackerX: t.x - dir * 10 },
+            { hitstop: 9, shake: 7, heavy: true, x: t.x, y: t.y - t.h * 0.5, styleId: 'BIND_THROW', weapon: 'sword' });
+          if (res !== 'kill' && res !== 'blocked') t.addPosture(S.posture, game);
         }
-        Effects.ring(e.x, e.y - e.h * 0.5, '#cfe', 60);
-        e.bound = false;
-        this.binds.splice(i, 1);
+        hitFx(o.x, o.y - o.h * 0.5);
+        Sound.play('heavyHit');
+        end(-b.vx * 0.2, -4);
+        return;
       }
+    }
+    // 벽 충돌: 벽꽝 (큰 데미지 + 강한 흔들림 + 기절) / 위에서 떨어지면 착지
+    let wall = b.cx < 6 || b.cx > L.width - 6, ground = null;
+    if (!wall) for (const r of L.active) {
+      if (b.cx > r.x && b.cx < r.x + r.w && b.cy + e.h * 0.5 > r.y && b.cy - e.h * 0.5 < r.y + r.h) {
+        if (py + e.h * 0.5 <= r.y + 2 && b.vy > 0) { ground = r; break; }
+        if (!r.oneWay) { wall = true; break; }
+      }
+    }
+    if (wall) {
+      e.x = px; e.y = py + e.h * 0.5;
+      const dir = -Math.sign(b.vx) || 1;
+      const res = Combat.applyHit(game, e, S.wallDamage * p.damageMult(), false, { dir, knockX: 2, knockY: -2, hitstun: 30, launch: false, attackerX: e.x - dir * 10 },
+        { hitstop: 12, shake: 16, heavy: true, impact: true, x: e.x, y: e.y - e.h * 0.5, styleId: 'WALL_SLAM', weapon: 'sword' });
+      if (res !== 'kill' && res !== 'blocked') {
+        e.addPosture(S.wallPosture, game);
+        // 기절 (공중에서 부딪혀도): 벽 앞에 떨어져 휘청
+        if (e.state !== 'broken') { e.stunTimer = Math.max(e.stunTimer || 0, S.wallStun); e.vx = 0; e.setState('stun'); }
+      }
+      Effects.addShake(16);
+      Effects.ring(e.x, e.y - e.h * 0.5, '#ffd23a', 70);
+      hitFx(e.x, e.y - e.h * 0.5);
+      Effects.popText(e.x, e.y - e.h - 34, '벽꽝!', '#ffd23a', 22);
+      Sound.play('wallHit');
+      end(dir * 2, -2);
+      return;
+    }
+    if (ground || b.t > S.maxFlight) {
+      if (ground) e.y = ground.y;
+      Combat.applyHit(game, e, S.landDamage * p.damageMult(), false, { dir: Math.sign(b.vx) || 1, knockX: 2, knockY: -3, hitstun: 30, launch: false, attackerX: e.x },
+        { hitstop: 4, shake: 4, heavy: true, x: e.x, y: e.y - 6, styleId: 'BIND_THROW', weapon: 'sword' });
+      Effects.dust(e.x, e.y, 8, 0);
+      end(b.vx * 0.3, -2);
     }
   },
 
@@ -305,7 +359,7 @@ const Transform = {
   draw(ctx, game) {
     const p = game.player;
     for (const b of this.binds) {
-      if (b.thrown || p.rope) continue;     // 사슬검 로프가 있으면 그게 묶은 적까지 이어짐
+      if (b.phase !== 'orbit' || p.rope) continue;     // 사슬검 로프가 있으면 그게 묶은 적까지 이어짐
       const e = b.e;
       this.chainLine(ctx, p.x + p.facing * 8, p.y - p.h * 0.6, e.x, e.y - e.h * 0.5, '#cfe');
     }

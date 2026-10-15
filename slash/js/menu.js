@@ -38,13 +38,14 @@ const Menu = {
         { label: '시작하기', desc: '5층 던전 런 — 갈림길에서 방을 골라 나아간다', act: () => game.startRun('dungeon') },
         { label: '콤보 연습장', desc: '허수아비를 상대로 콤보·저글링·패링 연습', act: () => game.startRun('practice') },
         { label: '조작법', desc: '키 배치와 전투 요령', act: sub('controls') },
-        { label: '설정', desc: '소리 크기, 화면 흔들림', act: sub('settings') },
+        { label: '설정', desc: '소리 크기, 화면 흔들림, 조준 보정', act: sub('settings') },
       ];
       case 'paused': return [
         { label: '계속하기', act: () => { game.setState('playing'); Sound.play('menuBack'); } },
         { label: '다시 시작', act: () => game.startRun(game.mode) },
         { label: '조작법', act: sub('controls') },
         { label: '설정', act: sub('settings') },
+        { label: `조준 보정: ${AIM_ASSIST.levels[Settings.aimAssist].name}`, act: () => this.cycleAim(1) },
         { label: '타이틀로', act: () => game.toTitle() },
       ];
       case 'gameover': return [
@@ -57,6 +58,14 @@ const Menu = {
       ];
     }
     return [];
+  },
+
+  // 조준 보정 단계 바꾸기 (끔 / 약함 / 보통 / 강함), 브라우저에 저장
+  cycleAim(d) {
+    const O = AIM_ASSIST.order, i = O.indexOf(Settings.aimAssist);
+    Settings.aimAssist = O[(i + d + O.length) % O.length];
+    Settings.save();
+    Sound.play('lock');
   },
 
   openSub(name) {
@@ -138,8 +147,8 @@ const Menu = {
       if (Input.isPressed('confirm') || this.clicked()) { this.sub = null; Sound.play('menuBack'); }
       return;
     }
-    // 설정: 효과음 / 음악 / 화면 흔들림 / 돌아가기
-    const n = 4;
+    // 설정: 효과음 / 음악 / 화면 흔들림 / 조준 보정 / 돌아가기
+    const n = 5;
     this.navigate(n, (i) => { this.subSel = i; }, () => this.subSel, this.subRects);
     let d = 0;
     if (Input.isPressed('menuLeft')) d = -1;
@@ -151,8 +160,12 @@ const Menu = {
       d = m.x < r.x + r.w * 0.62 ? -1 : 1;
     }
     const s = this.subSel;
-    if (s === 3) {
+    if (s === 4) {
       if (Input.isPressed('confirm') || click) { this.sub = null; Sound.play('menuBack'); }
+      return;
+    }
+    if (s === 3) {
+      if (d !== 0 || Input.isPressed('confirm')) this.cycleAim(d || 1);
       return;
     }
     if (s === 2 && (d !== 0 || Input.isPressed('confirm'))) {
@@ -520,12 +533,13 @@ const Menu = {
   // ---------- 설정 ----------
   drawSettings(ctx) {
     const V = CONFIG.view;
-    const w = 460, h = 300, x = (V.width - w) / 2, y = (V.height - h) / 2;
+    const w = 460, h = 346, x = (V.width - w) / 2, y = (V.height - h) / 2;
     this.panel(ctx, x, y, w, h, '설정');
     const rows = [
       ['효과음', Settings.sfx],
       ['음악', Settings.music],
       ['화면 흔들림', Settings.shake ? '켜기' : '끄기'],
+      ['조준 보정 (사슬검)', AIM_ASSIST.levels[Settings.aimAssist].name],
       ['돌아가기', null],
     ];
     this.subRects = [];
