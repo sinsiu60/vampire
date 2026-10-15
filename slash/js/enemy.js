@@ -28,6 +28,8 @@ class Enemy {
     this.airTime = 0;         // 띄워진 뒤 누적 체공 시간 (저글링 감쇠용, 기상하면 리셋)
     this.slammed = false;     // 내려찍기로 바닥에 꽂히는 중
     this.hitstun = 0;
+    this.walkPhase = Math.random() * 6;
+    this.seed = Math.random() * 1000;   // 숨쉬기 등 애니메이션 박자를 적마다 다르게
   }
 
   // 무한콤 방지: 오래 떠 있을수록 덜 뜬다
@@ -171,6 +173,16 @@ class Enemy {
       this.vy = Math.min(this.vy + g, CONFIG.physics.maxFall);
     }
     Dungeon.moveAndCollide(this);
+    if (this.onGround) this.walkPhase += Math.abs(this.vx) * 0.11;
+  }
+
+  // 칼끼리 부딪힘: 공격이 끊기고 뒤로 밀려남 (데미지 없음)
+  clashed(dir) {
+    const C = CONFIG.feel;
+    this.hitPlayer = true;
+    this.vx = dir * C.clashKnock / this.cfg.weight;
+    this.hitstun = C.clashStun;
+    this.setState('hurt');
   }
 
   // info: { dir, knockX, knockY, hitstun, launch, slam }

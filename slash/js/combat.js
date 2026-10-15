@@ -25,7 +25,7 @@ const Combat = {
     return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
   },
 
-  _hb: {}, _bb: {},
+  _hb: {}, _bb: {}, _eb: {},
 
   // 플레이어 공격 판정: 판정 프레임 동안 매 스텝 호출
   playerAttack(game, player) {
@@ -34,6 +34,13 @@ const Combat = {
     const hb = this.worldBox(player, move.hitbox, this._hb);
     for (const e of game.enemies) {
       if (e.dead || player.hitList.has(e)) continue;
+      // 칼끼리 부딪힘: 적이 공격 판정 중이고 서로의 공격 판정이 겹치면
+      if (e.state === 'attack' && !e.hitPlayer &&
+          this.overlap(hb, this.worldBox(e, e.cfg.hitbox, this._eb))) {
+        player.hitList.add(e);
+        this.clash(game, player, e, hb);
+        continue;
+      }
       if (!this.overlap(hb, this.bodyBox(e, this._bb))) continue;
       player.hitList.add(e);
       this.hitEnemy(game, player, e, move);
@@ -80,6 +87,23 @@ const Combat = {
     if (crit) Sound.play('crit');
 
     game.registerHit();
+  },
+
+  // 칼끼리 부딪힘: 불꽃 + 양쪽 밀려남
+  clash(game, player, enemy, hb) {
+    const F = CONFIG.feel;
+    const eb = this._eb;
+    const x = (Math.max(hb.x, eb.x) + Math.min(hb.x + hb.w, eb.x + eb.w)) / 2;
+    const y = (Math.max(hb.y, eb.y) + Math.min(hb.y + hb.h, eb.y + eb.h)) / 2;
+    const dir = Math.sign(enemy.x - player.x) || player.facing;
+    enemy.clashed(dir);
+    player.vx = -dir * F.clashKnock * 0.6;
+    game.hitstop = Math.max(game.hitstop, F.clashHitstop);
+    Effects.addShake(5);
+    Effects.sparks(x, y, dir, 12, '#fff6c0');
+    Effects.sparks(x, y, -dir, 12, '#ffd060');
+    Effects.flashRing(x, y);
+    Sound.play('clash');
   },
 
   // 내려찍기 착지 충격파: 주변 바닥의 적을 띄움

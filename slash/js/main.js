@@ -4,6 +4,7 @@
 const Game = {
   state: 'playing',     // playing | paused | gameover
   stateTime: 0,
+  frame: 0,             // 전체 프레임 카운터 (애니메이션용)
   hitstop: 0,           // >0 이면 엔티티 정지 (역경직)
   timeScale: 1,         // 슬로모션용 (패링 등, 4단계)
   cam: { x: 0, y: 0 },
@@ -52,8 +53,7 @@ const Game = {
     this.timeScale = 1;
     Effects.reset();
     this.setState('playing');
-    this.cam.x = this.player.x - CONFIG.view.width / 2;
-    this.cam.y = 0;
+    this.updateCamera(true);
   },
 
   setState(s) {
@@ -96,9 +96,12 @@ const Game = {
   step() {
     Input.update();
     this.stateTime++;
+    this.frame++;
+    Render.updateAmbient();
 
     if (Input.isPressed('help')) UI.showHelp = !UI.showHelp;
     if (Input.isPressed('debug')) CONFIG.debug.showHitboxes = !CONFIG.debug.showHitboxes;
+    if (Input.isPressed('theme')) Render.setTheme((Render.themeIndex + 1) % THEMES.length);
 
     if (this.state === 'paused') {
       if (Input.isPressed('pause')) this.setState('playing');
@@ -146,14 +149,23 @@ const Game = {
     this.updateCamera();
   },
 
-  updateCamera() {
-    const V = CONFIG.view, p = this.player;
-    const lookAhead = p.facing * 60;
-    const tx = p.x + lookAhead - V.width / 2;
-    this.cam.x += (tx - this.cam.x) * 0.1;
-    this.cam.x = Math.max(0, Math.min(this.level.width - V.width, this.cam.x));
-    this.cam.y = 0;
+  // 화면에 보이는 월드 크기 (줌 반영)
+  viewW() { return CONFIG.view.width / CONFIG.view.zoom; },
+  viewH() { return CONFIG.view.height / CONFIG.view.zoom; },
+  // 카메라 기본 높이: 바닥 아래가 조금 보이는 위치
+  restCamY() { return this.level.groundY + CONFIG.camera.groundMargin - this.viewH(); },
+
+  updateCamera(snap) {
+    const C = CONFIG.camera, p = this.player;
+    const vw = this.viewW(), vh = this.viewH();
+    const tx = p.x + p.facing * C.lookAhead - vw / 2;
+    // 세로: 플레이어가 화면 아래쪽 2/3 지점 근처, 바닥보다 아래로는 안 내려감
+    const ty = Math.min(this.restCamY(), p.y - vh * C.playerScreenY);
+    this.cam.x += (tx - this.cam.x) * (snap ? 1 : C.followX);
+    this.cam.y += (ty - this.cam.y) * (snap ? 1 : C.followY);
+    this.cam.x = Math.max(0, Math.min(this.level.width - vw, this.cam.x));
   },
+
 
   // ---------- 루프 ----------
   loop(now) {
@@ -184,12 +196,15 @@ const Game = {
     ctx.rect(0, 0, CONFIG.view.width, CONFIG.view.height);
     ctx.clip();
 
-    const cam = { x: Math.round(this.cam.x + Effects.shakeX), y: Math.round(this.cam.y + Effects.shakeY) };
-    Render.background(ctx, cam);
+    const cam = { x: this.cam.x + Effects.shakeX, y: this.cam.y + Effects.shakeY };
+    // 배경 패럴랙스는 기본 카메라 높이 기준의 상대값으로
+    Render.background(ctx, { x: cam.x, y: cam.y - this.restCamY() });
 
     ctx.save();
-    ctx.translate(-cam.x, -cam.y);
-    Render.level(ctx, this.level);
+    const z = CONFIG.view.zoom;
+    ctx.scale(z, z);
+    ctx.translate(-Math.round(cam.x * z) / z, -Math.round(cam.y * z) / z);
+    Render.level(ctx, this.level, cam);
     Effects.drawBack(ctx);
     for (const e of this.enemies) Render.enemy(ctx, e);
     Render.player(ctx, this.player);

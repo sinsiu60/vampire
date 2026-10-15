@@ -25,12 +25,20 @@ const KEYBINDS = {
   pause: ['Escape'],
   restart: ['Enter', 'NumpadEnter'],   // 게임오버 / 일시정지에서 재시작
   debug: ['KeyH'],              // 히트박스 표시 (개발용)
+  theme: ['KeyT'],              // 배경 테마 미리보기 (개발용: 노을 → 달밤 → 불타는 성)
   help: ['F1'],                 // 조작 도움말 표시/숨기기
 };
 
 const CONFIG = {
   // ---------- 화면 / 루프 ----------
-  view: { width: 960, height: 540 },
+  view: { width: 960, height: 540, zoom: 1.3 },   // zoom: 클수록 캐릭터가 크게 보임
+  camera: {
+    lookAhead: 50,             // 바라보는 쪽으로 미리 보여주는 거리
+    followX: 0.1,              // 따라가는 속도 (0~1)
+    followY: 0.08,
+    playerScreenY: 0.68,       // 플레이어를 화면 위에서 몇 % 지점에 둘지
+    groundMargin: 64,          // 바닥 아래로 보이는 두께
+  },
   fps: 60,
   maxFrameSkip: 5,            // 렉 걸렸을 때 한 번에 따라잡는 최대 스텝 수
 
@@ -95,6 +103,12 @@ const CONFIG = {
     trailSubsteps: 6,          // 프레임 사이 검기 샘플 수 (부드러움)
     trailLife: 9,              // 검기 잔류 프레임
     trailLifeHeavy: 13,
+
+    // 연출
+    flipFrames: 20,            // 2단 점프 공중제비 시간
+    scarfSegments: 8,          // 목도리 마디 수
+    scarfSegLen: 5,            // 마디 길이
+    scarfWind: 0.3,            // 뒤로 날리는 힘
     critMult: 1.6,
   },
 
@@ -286,6 +300,9 @@ const CONFIG = {
     maxShake: 18,
     damageNumberLife: 42,
     comboResetFrames: 100,     // 이 시간 동안 못 때리면 히트수 리셋
+    clashHitstop: 9,           // 칼끼리 부딪힘 역경직
+    clashKnock: 5,             // 부딪힘 밀려남
+    clashStun: 26,             // 부딪힌 적 경직
   },
 
   // ---------- 연습/테스트 아레나 (1단계) ----------

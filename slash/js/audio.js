@@ -86,6 +86,11 @@ const Sound = {
       case 'bounce':
         this._tone(0.12, 'sine', 160, 60, 0.5);
         break;
+      case 'clash':
+        this._tone(0.25, 'square', 1900, 1500, 0.12);
+        this._tone(0.3, 'triangle', 2900, 2600, 0.12);
+        this._noise(0.08, 'highpass', 5000, 3000, 0.4);
+        break;
       case 'crit':
         this._tone(0.12, 'triangle', 1400, 900, 0.25);
         break;

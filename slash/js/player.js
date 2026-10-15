@@ -3,16 +3,7 @@
 //          런처, 공중 3타, 공중 강공, 내려찍기
 // 상태: free | attack | charge | slam | dash | hurt | dead
 
-const DEG = Math.PI / 180;
-const ease = {
-  outQuad: (t) => 1 - (1 - t) * (1 - t),
-  outCubic: (t) => 1 - Math.pow(1 - t, 3),
-  inOut: (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2),
-};
-// ref 에 가장 가까운 (target + 360*k)
-function nearestAngle(target, ref) {
-  return target + Math.round((ref - target) / 360) * 360;
-}
+// (DEG, ease, nearestAngle 는 anim.js)
 
 class Player {
   constructor(x, y) {
@@ -68,6 +59,53 @@ class Player {
     this.invuln = 0;
     this.flash = 0;
     this.landSquash = 0;
+
+    // 애니메이션
+    this.runPhase = 0;            // 달리기 주기
+    this.flipTimer = 0;           // 2단 점프 공중제비
+    this.initScarf();
+  }
+
+  // ---------- 목도리 (뒤로 휘날리는 사슬 물리) ----------
+  initScarf() {
+    const n = CONFIG.player.scarfSegments;
+    this.scarf = [];
+    for (let i = 0; i <= n; i++) {
+      const x = this.x - this.facing * i * 4, y = this.y - 40;
+      this.scarf.push({ x, y, px: x, py: y });
+    }
+  }
+
+  updateScarf() {
+    const P = CONFIG.player;
+    const fig = Anim.playerFigure(this);
+    const n = fig.j.neck;
+    const s = this.scarf;
+    s[0].x = n.x - this.facing * 1.5;
+    s[0].y = n.y + 1.5;
+    const t = (Game.frame || 0) * 0.25;
+    for (let i = 1; i < s.length; i++) {
+      const q = s[i];
+      const vx = (q.x - q.px) * 0.86, vy = (q.y - q.py) * 0.86;
+      q.px = q.x; q.py = q.y;
+      // 항상 뒤로 살짝 날리고 + 펄럭임
+      q.x += vx - this.facing * P.scarfWind;
+      q.y += vy + 0.18 + Math.sin(t + i * 0.9) * 0.22 * (i / s.length);
+    }
+    for (let k = 0; k < 3; k++) {
+      for (let i = 1; i < s.length; i++) {
+        const a = s[i - 1], b = s[i];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 0.001;
+        const r = P.scarfSegLen / d;
+        b.x = a.x + dx * r;
+        b.y = a.y + dy * r;
+      }
+    }
+  }
+
+  addAfterimage() {
+    Effects.afterimage(Anim.snapshot(Anim.playerFigure(this)));
   }
 
   // ---------- 입력 수집 (히트스톱 중에도 매 스텝 호출) ----------
@@ -198,6 +236,7 @@ class Player {
     if (this.dropThrough > 0) this.dropThrough--;
     if (this.comboGrace > 0) this.comboGrace--; else if (this.state === 'free') this.lastMoveId = null;
     if (this.landSquash > 0) this.landSquash--;
+    if (this.flipTimer > 0) this.flipTimer--;
 
     // 스태미나 회복
     if (this.staminaDelay > 0) this.staminaDelay--;
@@ -258,7 +297,10 @@ class Player {
       }
     }
 
+    if (this.onGround) this.runPhase += Math.abs(this.vx) * 0.075;
+    if (this.onGround || this.state !== 'free') this.flipTimer = 0;
     this.emitTrail();
+    this.updateScarf();
   }
 
   // ---------- 공통 동작 ----------
@@ -280,6 +322,7 @@ class Player {
     } else if (this.jumpsUsed < 2) {
       this.vy = P.doubleJumpVel;
       this.jumpsUsed = 2;
+      this.flipTimer = P.flipFrames;
       Effects.dust(this.x, this.y, 5, 0);
     } else {
       return false;
@@ -485,7 +528,7 @@ class Player {
       // 수직 낙하
       this.vx = 0;
       this.vy = A.slamFallSpeed;
-      if (this.stateFrame % 2 === 0) Effects.afterimage(this.x, this.y, this.w, this.h, this.facing);
+      if (this.stateFrame % 2 === 0) this.addAfterimage();
       const a = {}, b = {};
       const pose = this.bladePose();
       this.bladePoint(pose, CONFIG.player.trailInner, a);
@@ -537,7 +580,7 @@ class Player {
     const P = CONFIG.player;
     this.vx = this.dashDir * P.dashSpeed;
     this.vy = 0;
-    if (this.stateFrame % 2 === 0) Effects.afterimage(this.x, this.y, this.w, this.h, this.facing);
+    if (this.stateFrame % 2 === 0) this.addAfterimage();
     if (this.stateFrame >= P.dashFrames) {
       this.vx *= P.dashEndSpeedMult;
       this.dashCooldown = P.dashCooldown;

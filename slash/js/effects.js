@@ -6,6 +6,7 @@ const Effects = {
   slashes: [],
   trail: [],       // 검기 리본: 칼 안쪽~칼끝 샘플 점들
   waves: [],       // 충격파 고리
+  rings: [],       // 부딪힘 섬광
   afterimages: [],
   numbers: [],
   shake: 0,
@@ -18,6 +19,7 @@ const Effects = {
     this.slashes.length = 0;
     this.trail.length = 0;
     this.waves.length = 0;
+    this.rings.length = 0;
     this.afterimages.length = 0;
     this.numbers.length = 0;
     this.shake = 0;
@@ -85,6 +87,11 @@ const Effects = {
     this.trail.push({ id, ix, iy, ox, oy, life, max: life, heavy: !!heavy });
   },
 
+  // 칼 부딪힘 섬광 (작은 원이 퍼지며 사라짐)
+  flashRing(x, y) {
+    this.rings.push({ x, y, life: 10, max: 10 });
+  },
+
   // 내려찍기 착지 충격파
   shockwave(x, y, radius) {
     this.waves.push({ x, y, r: radius, life: 22, max: 22 });
@@ -92,9 +99,9 @@ const Effects = {
     this.dust(x + 20, y, 10, -1);
   },
 
-  // 대시 잔상
-  afterimage(x, y, w, h, facing, color) {
-    this.afterimages.push({ x, y, w, h, facing, life: 16, max: 16, color: color || '#3ee' });
+  // 대시 잔상: 그 순간의 골격을 반투명 청록 분신으로
+  afterimage(fig) {
+    this.afterimages.push({ fig, life: 16, max: 16 });
   },
 
   damageNumber(x, y, value, crit) {
@@ -134,6 +141,8 @@ const Effects = {
       const tr = this.trail;
       for (let i = tr.length - 1; i >= 0; i--) if (--tr[i].life <= 0) tr.splice(i, 1);
     }
+    const rs = this.rings;
+    for (let i = rs.length - 1; i >= 0; i--) if (--rs[i].life <= 0) rs.splice(i, 1);
     const ws = this.waves;
     for (let i = ws.length - 1; i >= 0; i--) if (--ws[i].life <= 0) ws.splice(i, 1);
     const as = this.afterimages;
@@ -199,11 +208,12 @@ const Effects = {
   },
 
   drawBack(ctx) {
-    // 잔상
     for (const a of this.afterimages) {
-      ctx.globalAlpha = (a.life / a.max) * 0.45;
-      ctx.fillStyle = a.color;
-      ctx.fillRect(a.x - a.w / 2, a.y - a.h, a.w, a.h);
+      const t = a.life / a.max;
+      ctx.globalAlpha = t * 0.5;
+      const col = 'rgb(70,230,255)';
+      Anim.drawFigure(ctx, a.fig, { color: col, back: col });
+      if (a.fig.blade) Anim.drawBlade(ctx, a.fig.blade.base, a.fig.blade.tip, 1.8, 1, col);
     }
     ctx.globalAlpha = 1;
   },
@@ -235,6 +245,22 @@ const Effects = {
       ctx.fill();
       ctx.restore();
     }
+
+    // 부딪힘 섬광
+    for (const r of this.rings) {
+      const t = 1 - r.life / r.max;
+      ctx.globalAlpha = 1 - t;
+      ctx.fillStyle = '#fffbe0';
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, 4 + 10 * (1 - t), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#ffd860';
+      ctx.lineWidth = 3 * (1 - t) + 0.5;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, 6 + 30 * t, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
 
     // 충격파
     for (const w of this.waves) {
