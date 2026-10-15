@@ -55,18 +55,21 @@ const UI = {
       ctx.textAlign = 'left';
       ctx.font = 'bold 14px "Segoe UI", sans-serif';
       ctx.fillStyle = '#5ff';
-      ctx.fillText(p.move.name, 20, 70);
+      ctx.fillText(p.move.name, 20, 128);
     } else if (p.state === 'charge') {
       ctx.textAlign = 'left';
       ctx.font = 'bold 14px "Segoe UI", sans-serif';
       ctx.fillStyle = p.chargeLevel >= 2 ? '#fff' : '#5ff';
-      ctx.fillText('차지 Lv' + p.chargeLevel, 20, 70);
+      ctx.fillText('차지 Lv' + p.chargeLevel, 20, 128);
     }
 
     ctx.textAlign = 'right';
     ctx.font = '12px "Segoe UI", sans-serif';
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.fillText(`WAVE ${game.wave}   처치 ${game.kills}`, 720, 30);
+    if (game.mode === 'practice') ctx.fillText(`콤보 연습장  WAVE ${game.wave}   처치 ${game.kills}`, 720, 30);
+    else ctx.fillText(`처치 ${game.kills}`, 720, 30);
+    if (game.floor) this.minimap(ctx, game);
+    if (game.floorBanner) this.floorBanner(ctx, game.floorBanner);
 
     if (this.showHelp) {
       // 키 이름은 KEYBINDS 에서 가져온다 (config.js 에서 바꾸면 도움말도 같이 바뀜)
@@ -76,7 +79,7 @@ const UI = {
         `${k('light')} 약공 4타   ${k('heavy')} 강공(길게=차지)   약공 2타 후 ${k('heavy')} 찌르기   후딜 중 ${k('dash')}/${k('jump')} 캔슬`,
         `${k('down')}+${k('heavy')} 런처(${k('heavy')} 유지 = 같이 점프)   공중 ${k('light')} 3타   공중 ${k('heavy')} 날려베기   공중 ${k('down')}+${k('heavy')} 내려찍기`,
         `${k('parry')} 탭 = 퍼펙트 패링   ${k('parry')} 누르기 = 가드   패링 직후 ${k('light')} 반격 일섬 / ${k('heavy')} 반격 런처   체간 붕괴 시 ${k('light')} 처형`,
-        `${k('spawn1')}~${k('spawn6')} 적 소환   ${k('debug')} 히트박스   ${k('debugMode')} 패링 디버그   ${k('help')} 도움말 숨기기   ${k('pause')} 일시정지`,
+        `${k('spawn1')}~${k('spawn6')} 적 소환   ${k('debug')} 히트박스   ${k('debugMode')} 패링 디버그   ${k('mode')} 던전/연습장   ${k('help')} 도움말   ${k('pause')} 일시정지`,
       ];
       ctx.textAlign = 'center';
       ctx.font = '12px "Segoe UI", sans-serif';
@@ -89,10 +92,93 @@ const UI = {
     }
   },
 
+  // ---------- 미니맵 (왼쪽 위) ----------
+  // 방 폭에 비례한 상자들. 현재 방 = 흰색, 클리어 = 회청색, 전투 중 = 빨강, 아직 모르는 방 = 점선
+  minimap(ctx, game) {
+    const rooms = game.floor.rooms, cur = game.room;
+    const last = rooms[rooms.length - 1];
+    const total = last.mapX + last.mapW;
+    const k = Math.min(1.6, 236 / total);
+    const minY = Math.min(...rooms.map((r) => r.mapY)), maxY = Math.max(...rooms.map((r) => r.mapY + r.mapH));
+    const top = 58, ox = 22, oy = top + 20 - minY;   // 패널 위쪽은 고정, 방 상자는 그 아래로
+    let maxVisited = 0;
+    rooms.forEach((r) => { if (r.visited) maxVisited = Math.max(maxVisited, r.index); });
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(ox - 6, top, total * k + 12, maxY - minY + 28);
+    ctx.font = 'bold 10px "Segoe UI", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillText(`${game.floorIndex + 1}층 · ${THEMES[Render.themeIndex].name}   방 ${cur.index + 1}/${rooms.length}`, ox, top + 12);
+    for (const r of rooms) {
+      const known = r.visited || r.index <= maxVisited + 1;
+      if (!known) continue;
+      const x = ox + r.mapX * k, y = oy + r.mapY, w = r.mapW * k, h = r.mapH;
+      // 이전 방과 연결선
+      if (r.index > 0) {
+        const pr = rooms[r.index - 1];
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(ox + (pr.mapX + pr.mapW) * k, oy + pr.mapY + pr.mapH - (pr.rightH ? 8 : 0) - 2);
+        ctx.lineTo(x, y + h - (r.leftH ? 8 : 0) - 2);
+        ctx.stroke();
+      }
+      if (r === cur) ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      else if (r.cleared) ctx.fillStyle = 'rgba(150,180,200,0.35)';
+      else if (r.visited) ctx.fillStyle = 'rgba(255,80,60,0.4)';
+      else ctx.fillStyle = 'rgba(0,0,0,0)';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = r === cur ? '#fff' : r.visited ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = r === cur ? 1.5 : 1;
+      if (!r.visited) ctx.setLineDash([2, 2]);
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      ctx.setLineDash([]);
+      // 보스방 표시
+      if (r.kind === 'boss') {
+        ctx.fillStyle = r.cleared ? '#888' : '#ff4a3a';
+        ctx.beginPath();
+        ctx.arc(x + w / 2, y + h / 2 - 1, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillRect(x + w / 2 - 2, y + h / 2 + 1, 4, 3);
+      }
+      // 안 연 보상 상자
+      if (r.chest && !r.chest.opened) {
+        ctx.fillStyle = '#ffd860';
+        ctx.fillRect(x + w - 6, y + 2, 4, 4);
+      }
+    }
+    // 플레이어 위치
+    const px = ox + (cur.mapX + Math.max(0, Math.min(1, game.player.x / cur.width)) * cur.mapW) * k;
+    ctx.fillStyle = '#5ff';
+    ctx.beginPath();
+    ctx.arc(px, oy + cur.mapY + cur.mapH / 2, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  },
+
+  floorBanner(ctx, b) {
+    const V = CONFIG.view;
+    const t = 1 - b.life / b.max;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, t * 6, b.life / 30);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 40px "Segoe UI", sans-serif';
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#000';
+    ctx.strokeText(b.text, V.width / 2, 200);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(b.text, V.width / 2, 200);
+    ctx.font = '16px "Segoe UI", sans-serif';
+    ctx.fillStyle = '#ddd';
+    ctx.fillText(b.sub, V.width / 2, 228);
+    ctx.restore();
+  },
+
   // 패링 디버그 패널 (왼쪽): 설정값 + 최근 시도 기록 (일찍/늦게 몇 초)
   parryDebugPanel(ctx, game) {
     const PR = CONFIG.parry;
-    const x = 20, y = 96;
+    const x = 20, y = 152;
     ctx.save();
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(x - 6, y - 14, 250, 34 + game.parryLog.length * 15);
@@ -196,6 +282,7 @@ const UI = {
       ctx.font = '14px "Segoe UI", sans-serif';
       ctx.fillStyle = '#9f9';
       if (b.heal > 0) ctx.fillText(`보상: 체력 +${b.heal}`, V.width / 2 + 170, 196);
+      if (b.note) { ctx.fillStyle = '#ffe9a0'; ctx.fillText(b.note, V.width / 2 + 190, 196); }
       ctx.restore();
     }
   },
@@ -267,6 +354,20 @@ const UI = {
       ctx.fillText('일시정지', V.width / 2, V.height / 2 - 10);
       ctx.font = '16px "Segoe UI", sans-serif';
       ctx.fillText(`${Input.label('pause')}: 계속   ${Input.label('restart')}: 재시작`, V.width / 2, V.height / 2 + 26);
+    } else if (game.state === 'victory') {
+      const t = Math.min(1, game.stateTime / 60);
+      ctx.fillStyle = `rgba(0,0,0,${0.65 * t})`;
+      ctx.fillRect(0, 0, V.width, V.height);
+      ctx.globalAlpha = t;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffe9a0';
+      ctx.font = 'bold 50px "Segoe UI", sans-serif';
+      ctx.fillText('던전 클리어!', V.width / 2, V.height / 2 - 20);
+      ctx.fillStyle = '#fff';
+      ctx.font = '18px "Segoe UI", sans-serif';
+      ctx.fillText(`처치 ${game.kills}`, V.width / 2, V.height / 2 + 16);
+      ctx.fillText(`${Input.label('restart')} 키로 다시 시작`, V.width / 2, V.height / 2 + 46);
+      ctx.globalAlpha = 1;
     } else if (game.state === 'gameover') {
       const t = Math.min(1, game.stateTime / 60);
       ctx.fillStyle = `rgba(20,0,0,${0.7 * t})`;

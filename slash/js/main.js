@@ -43,10 +43,10 @@ const Game = {
     this.offY = (H - V.height * this.scale) / 2;
   },
 
-  newGame() {
-    const level = Dungeon.buildArena();
-    this.level = level;
-    this.player = new Player(200, level.groundY);
+  // mode: 'dungeon' (던전) | 'practice' (콤보 연습장: 아레나 + 웨이브)
+  newGame(mode) {
+    this.mode = mode || this.mode || 'dungeon';
+    this.player = null;
     this.enemies = [];
     this.projectiles = [];
     this.combo = { count: 0, timer: 0, pop: 0 };
@@ -64,9 +64,189 @@ const Game = {
     this.execDark = 0;      // 처형 암전 (0~1)
     this.waveCleared = true;
     this.clearBanner = null;   // 방(웨이브) 클리어 결과 표시
+    this.floorBanner = null;   // 층 시작 표시
+    this.transition = null;    // 방 이동 페이드
+    this.floor = null;
+    this.room = null;
     Effects.reset();
     Style.reset();
+    if (this.mode === 'practice') {
+      Render.setTheme(0);
+      const level = Dungeon.buildArena();
+      this.level = level;
+      this.player = new Player(200, level.groundY);
+      this.player.lastSafe = { x: 200, y: level.groundY };
+    } else {
+      this.startFloor(0);
+    }
     this.setState('playing');
+    this.updateCamera(true);
+  },
+
+  // ---------- 던전: 층 / 방 ----------
+  startFloor(fi) {
+    this.floorIndex = fi;
+    this.floor = Dungeon.generateFloor(fi);
+    Render.setTheme(fi % THEMES.length);
+    this.enterRoom(0, 'left');
+    this.floorBanner = { text: `${fi + 1}층`, sub: THEMES[fi % THEMES.length].name, life: 150, max: 150 };
+  },
+
+  enterRoom(i, side) {
+    const D = CONFIG.dungeon;
+    const room = this.floor.rooms[i];
+    this.room = room;
+    this.level = room.level;
+    Dungeon.setLevel(room.level);
+    Render.resetLevelCache();
+    const en = room.level.entry[side];
+    if (!this.player) this.player = new Player(en.x, en.y);
+    const p = this.player;
+    p.x = en.x; p.y = en.y; p.vx = 0; p.vy = 0;
+    p.facing = side === 'left' ? 1 : -1;
+    p.move = null;
+    if (!p.dead) p.setState('free');
+    p.initScarf();
+    p.lastSafe = { x: en.x, y: en.y };
+    this.enemies = [];
+    this.projectiles = [];
+    room.visited = true;
+    if (!room.cleared) {
+      // 들어오면 양쪽 문이 잠기고 적 등장
+      Dungeon.setLocked(room.level, true);
+      this.roomWave = 0;
+      this.roomTimer = D.spawnDelay;
+      Sound.play('gate');
+      Effects.addShake(4);
+      Effects.popText(p.x + p.facing * 60, p.y - 70, room.kind === 'boss' ? '보스방' : '문이 잠겼다', room.kind === 'boss' ? '#ff5050' : '#ffb070', 16);
+    } else {
+      Dungeon.setLocked(room.level, false);
+    }
+    this.updateCamera(true);
+  },
+
+  // 다음 방으로 (페이드 아웃 → 이동 → 페이드 인)
+  goToRoom(i, side) {
+    if (this.transition) return;
+    this.transition = { f: 0, to: i, side, nextFloor: false };
+  },
+
+  goNextFloor() {
+    if (this.transition) return;
+    if (this.floorIndex + 1 >= CONFIG.dungeon.floors) {
+      this.setState('victory');
+      Sound.play('clear');
+      return;
+    }
+    this.transition = { f: 0, nextFloor: true };
+  },
+
+  updateTransition() {
+    const F = CONFIG.dungeon.fadeFrames, t = this.transition;
+    t.f++;
+    if (t.f === F) {
+      if (t.nextFloor) this.startFloor(this.floorIndex + 1);
+      else this.enterRoom(t.to, t.side);
+    }
+    if (t.f >= F * 2) this.transition = null;
+  },
+
+  // 웨이브 진행 / 클리어 / 문 출입
+  updateRoom() {
+    const D = CONFIG.dungeon, room = this.room, p = this.player;
+    if (!room.cleared && !this.exec) {
+      if (this.enemies.length === 0) {
+        if (this.roomWave < room.waves.length) {
+          if (--this.roomTimer <= 0) {
+            this.spawnRoomWave(room.waves[this.roomWave]);
+            this.roomWave++;
+            this.roomTimer = D.waveDelay;
+          }
+        } else {
+          this.clearRoom();
+        }
+      }
+    }
+    // 문 출입 (잠기지 않았을 때만 지나갈 수 있음)
+    if (!room.level.locked && !p.dead && !this.exec) {
+      if (p.x < -4 && room.index > 0) this.goToRoom(room.index - 1, 'right');
+      else if (p.x > room.width + 4) {
+        if (room.index < this.floor.rooms.length - 1) this.goToRoom(room.index + 1, 'left');
+        else this.goNextFloor();
+      }
+    }
+  },
+
+  spawnRoomWave(types) {
+    for (const t of types) {
+      const pt = Dungeon.spawnPoint(this.level, this.player.x);
+      const e = this.spawnEnemy(t, pt.x, pt.y);
+      Effects.ring(e.x, e.y - e.h / 2, '#ff4040', 40);
+      Effects.dust(e.x, pt.y, 10, 0);
+    }
+    Sound.play('spawn');
+  },
+
+  // 방 클리어: 문 열림 + 최고 랭크에 따른 보상 상자
+  clearRoom() {
+    const room = this.room;
+    room.cleared = true;
+    Dungeon.setLocked(room.level, false);
+    const best = Style.clearRoom();
+    const cs = room.level.chestSpot;
+    room.chest = { x: cs.x, y: cs.y, w: 30, h: 24, rank: best, opened: false, shake: 0 };
+    Effects.dust(cs.x, cs.y, 12, 0);
+    Effects.ring(cs.x, cs.y - 12, '#ffd860', 50);
+    this.clearBanner = {
+      rank: best, heal: 0, life: CONFIG.style.clearBannerFrames, max: CONFIG.style.clearBannerFrames,
+      note: room.kind === 'boss'
+        ? (this.floorIndex + 1 >= CONFIG.dungeon.floors ? '오른쪽 문: 던전 탈출' : '오른쪽 문: 다음 층')
+        : '보상 상자를 열어라',
+    };
+    Sound.play('gateOpen');
+    Sound.play('clear');
+  },
+
+  // 보상 상자 열기 (공격으로 치거나 위 키): 지금은 체력 회복, 8단계에서 아이템
+  openChest(chest) {
+    if (chest.opened) return;
+    chest.opened = true;
+    const S = CONFIG.style, p = this.player;
+    const heal = chest.rank >= 0 ? S.clearHeal[chest.rank] : 3;
+    p.hp = Math.min(CONFIG.player.maxHp, p.hp + heal);
+    p.stamina = CONFIG.player.maxStamina;
+    Effects.radialSparks(chest.x, chest.y - 14, 20, '#ffd860', 1);
+    Effects.ring(chest.x, chest.y - 14, '#ffe9a0', 60);
+    Effects.popText(chest.x, chest.y - 46, `+${heal} HP`, '#7f7', 18);
+    Sound.play('chest');
+  },
+
+  updateChest() {
+    const ch = this.room && this.room.chest, p = this.player;
+    if (!ch || ch.opened) return;
+    if (ch.shake > 0) ch.shake--;
+    const near = Math.abs(p.x - ch.x) < 30 && Math.abs(p.y - ch.y) < 30;
+    if (near && Input.isPressed('up')) this.openChest(ch);
+  },
+
+  // 플레이어가 낭떠러지에 떨어짐: 데미지 + 직전 발판으로 복귀
+  playerFell() {
+    const D = CONFIG.dungeon, p = this.player;
+    p.hp = Math.max(0, p.hp - D.fallDamage);
+    Effects.damageNumber(p.x, p.y - 60, D.fallDamage, false);
+    const s = p.lastSafe || (this.level.entry ? this.level.entry.left : { x: 200, y: this.level.groundY });
+    p.x = s.x; p.y = s.y; p.vx = 0; p.vy = 0;
+    p.move = null;
+    p.invuln = D.fallInvuln;
+    p.flash = 8;
+    p.initScarf();
+    Effects.dust(p.x, p.y, 10, 0);
+    Effects.addShake(6);
+    Sound.play('hurt');
+    Style.onPlayerHit();
+    this.combo.count = 0;
+    if (p.hp <= 0) { p.dead = true; p.setState('dead'); }
+    else p.setState('free');
     this.updateCamera(true);
   },
 
@@ -92,14 +272,31 @@ const Game = {
     });
   },
 
-  spawnEnemy(type, x) {
-    const A = CONFIG.arena;
-    x = Math.max(80, Math.min(A.width - 80, x));
-    const e = new Enemy(type, x, A.groundY);
+  spawnEnemy(type, x, y) {
+    x = Math.max(80, Math.min(this.level.width - 80, x));
+    if (y === undefined) {
+      const g = this.groundAt(x);
+      x = g.x; y = g.y;
+    }
+    const e = new Enemy(type, x, y);
     this.enemies.push(e);
     this.waveCleared = false;
-    Effects.dust(x, A.groundY, 6, 0);
+    Effects.dust(x, y, 6, 0);
     return e;
+  },
+
+  // x 위치의 땅 높이 (낭떠러지면 가장 가까운 땅으로)
+  groundAt(x) {
+    const L = this.level;
+    if (!L.segs) return { x, y: L.groundY };
+    let best = null, bd = 1e9;
+    for (const sg of L.segs) {
+      if (sg.pit) continue;
+      if (x >= sg.x0 && x <= sg.x1) return { x, y: CONFIG.dungeon.baseY - sg.h };
+      const cx = Math.max(sg.x0 + 20, Math.min(sg.x1 - 20, x)), d = Math.abs(cx - x);
+      if (d < bd) { bd = d; best = { x: cx, y: CONFIG.dungeon.baseY - sg.h }; }
+    }
+    return best;
   },
 
   // 실제 시각(이벤트 타임스탬프) → 게임 시간. 같은 프레임 안에서 먼저 눌린 입력은 그만큼 앞당겨 기록
@@ -140,6 +337,7 @@ const Game = {
       this.kills++;
       Style.onKill();
     }
+    if (how === 'pit') Style.pushFeed('RING OUT', '#ffb070');
   },
 
   onParry(enemy, tier) {
@@ -302,10 +500,14 @@ const Game = {
       this.setState('paused');
       return;
     }
-    if (this.state === 'gameover' && Input.isPressed('restart')) {
+    if ((this.state === 'gameover' || this.state === 'victory') && Input.isPressed('restart')) {
       this.newGame();
       return;
     }
+    if (Input.isPressed('mode')) { this.newGame(this.mode === 'practice' ? 'dungeon' : 'practice'); return; }
+    if (this.state === 'victory') { Effects.update(false); return; }
+    // 방 이동 페이드 중엔 정지
+    if (this.transition) { this.updateTransition(); Effects.update(false); return; }
 
     // 줌인 / 배경 어두워짐: 서서히 원래대로 (연속 패링 5회 이상이면 살짝 어둡게 유지)
     const C = CONFIG.parry.chain;
@@ -341,7 +543,17 @@ const Game = {
     if (this.combo.timer > 0 && --this.combo.timer === 0) this.combo.count = 0;
     if (this.combo.pop > 0) this.combo.pop--;
 
-    // 웨이브: 전멸하면 클리어 보상 → 잠시 후 다음 웨이브
+    if (this.floorBanner && --this.floorBanner.life <= 0) this.floorBanner = null;
+    // 낭떠러지 낙사
+    if (p.y > this.level.killY && !p.dead) this.playerFell();
+    if (this.mode === 'dungeon') {
+      this.updateRoom();
+      this.updateChest();
+      if (p.dead && this.state === 'playing' && p.stateFrame > 40) this.setState('gameover');
+      this.updateCamera();
+      return;
+    }
+    // 연습장: 웨이브 전멸하면 클리어 보상 → 잠시 후 다음 웨이브
     if (this.enemies.length === 0 && !this.waveCleared && !this.exec) {
       this.waveCleared = true;
       this.onRoomClear();
@@ -438,6 +650,7 @@ const Game = {
     Render.lit = this.dim * 0.6;
     Effects.drawBack(ctx);
     const ex = this.exec;
+    if (this.room) Render.chest(ctx, this.room.chest);
     for (const e of this.enemies) if (!e.executed) Render.enemy(ctx, e);
     for (const pr of this.projectiles) pr.draw(ctx);
     // 처형 암전: 배경과 다른 적은 검게, 플레이어와 대상만 밝은 실루엣으로
@@ -495,6 +708,13 @@ const Game = {
 
     UI.hud(ctx, this);
     UI.overlay(ctx, this);
+    // 방 이동 페이드
+    if (this.transition) {
+      const F = CONFIG.dungeon.fadeFrames, f = this.transition.f;
+      const a = f < F ? f / F : 1 - (f - F) / F;
+      ctx.fillStyle = `rgba(0,0,0,${Math.max(0, Math.min(1, a)).toFixed(3)})`;
+      ctx.fillRect(0, 0, V.width, V.height);
+    }
     ctx.restore();
   },
 };

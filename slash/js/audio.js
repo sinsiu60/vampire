@@ -209,6 +209,23 @@ const Sound = {
       case 'whooshHeavy':
         this._noise(0.2, 'bandpass', 380, 1800, 0.6, 1.2);
         break;
+      case 'gate':              // 문 잠김: 철창 내려옴
+        this._noise(0.25, 'lowpass', 900, 120, 0.7);
+        this._metal(240, 0.5, 0.18, 0.4, [1, 2.2, 3.1]);
+        break;
+      case 'gateOpen':
+        this._noise(0.35, 'bandpass', 300, 1200, 0.4, 1.5);
+        this._metal(330, 0.4, 0.12, 0.3, [1, 2.2]);
+        break;
+      case 'spawn':
+        this._noise(0.3, 'lowpass', 300, 1500, 0.35);
+        this._tone(0.3, 'sawtooth', 90, 180, 0.12);
+        break;
+      case 'chest':
+        this._tone(0.12, 'triangle', 784, 784, 0.15);
+        this._tone(0.12, 'triangle', 988, 988, 0.15, 0.08);
+        this._tone(0.3, 'triangle', 1318, 1318, 0.18, 0.16, 0.5);
+        break;
       case 'telegraphWhite':
         this._tone(0.3, 'sine', 2600, 2600, 0.12, 0, 0.6);
         break;

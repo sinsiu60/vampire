@@ -274,6 +274,13 @@ class Enemy {
     }
     Dungeon.moveAndCollide(this);
     if (this.onGround) this.walkPhase += Math.abs(this.vx) * 0.11;
+    // 낭떠러지로 떨어짐 → 처치 (넉백으로 밀어 떨어뜨리기)
+    if (this.y > game.level.killY && !this.dead) {
+      this.dead = true;
+      this.remove = true;
+      this.hp = 0;
+      game.onEnemyKilled(this, 'pit');
+    }
     else if (this.hovering) this.walkPhase += 0.25;   // 날갯짓
   }
 
@@ -313,6 +320,9 @@ class Enemy {
       if (dist > reach * 0.9 || !sameLevel) targetVX = dir * T.speed;
       if (T.shield && dir !== this.facing) targetVX = 0;   // 뒤돌아보는 중엔 멈칫
     }
+    // 낭떠러지 앞에서는 멈춤 (걸어서 떨어지지 않게)
+    if (!T.flying && targetVX !== 0 && this.onGround &&
+        !Dungeon.hasGround(this.x + Math.sign(targetVX) * (this.w / 2 + 8), this.y)) targetVX = 0;
     if (!T.flying) {
       this.vx += Math.sign(targetVX - this.vx) * Math.min(Math.abs(targetVX - this.vx), T.accel);
       // 낭떠러지/벽 앞에서 막히지 않게 단순 처리: 벽에 닿으면 멈춤

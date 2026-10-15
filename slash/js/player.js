@@ -371,6 +371,11 @@ class Player {
 
     this.wasOnGround = this.onGround;
     Dungeon.moveAndCollide(this);
+    // 마지막으로 안전하게 서 있던 곳 (낭떠러지에 떨어지면 여기로 복귀)
+    const gr = this.groundRect;
+    if (this.onGround && gr && this.x - gr.x > 22 && gr.x + gr.w - this.x > 22 && this.x > 0 && this.x < game.level.width) {
+      this.lastSafe = { x: this.x, y: this.y };
+    }
 
     // 착지
     if (this.onGround && !this.wasOnGround) {

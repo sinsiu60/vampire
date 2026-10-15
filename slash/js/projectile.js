@@ -53,7 +53,7 @@ class Projectile {
     if (--this.life <= 0) { this.dead = true; return; }
 
     // 벽/바닥에 닿으면 사라짐
-    for (const r of game.level.rects) {
+    for (const r of game.level.active) {
       if (r.oneWay) continue;
       if (this.x > r.x && this.x < r.x + r.w && this.y > r.y && this.y < r.y + r.h) {
         this.dead = true;

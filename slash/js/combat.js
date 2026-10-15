@@ -45,6 +45,10 @@ const Combat = {
       }
     }
 
+    // 보상 상자: 공격으로 쳐서 열기
+    const ch = game.room && game.room.chest;
+    if (ch && !ch.opened && this.overlap(hb, { x: ch.x - ch.w / 2, y: ch.y - ch.h, w: ch.w, h: ch.h })) game.openChest(ch);
+
     for (const e of game.enemies) {
       if (e.dead || player.hitList.has(e)) continue;
       // 칼끼리 부딪힘: 적이 근접 공격 판정 중이고 서로의 공격 판정이 겹치면 (슈퍼아머는 밀리지 않음)

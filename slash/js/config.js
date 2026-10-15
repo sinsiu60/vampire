@@ -26,6 +26,7 @@ const KEYBINDS = {
   restart: ['Enter', 'NumpadEnter'],   // 게임오버 / 일시정지에서 재시작
   debug: ['KeyH'],              // 히트박스 표시 (개발용)
   debugMode: ['Backquote'],     // ` 키: 패링 디버그 (패링 창 원, 적 공격 판정, 입력 타이밍 표시)
+  mode: ['F2'],                 // 던전 ↔ 콤보 연습장 전환 (개발용, 9단계 타이틀 메뉴 전까지)
   theme: ['KeyT'],              // 배경 테마 미리보기 (개발용: 노을 → 달밤 → 불타는 성)
   // 적 소환 (개발용): 1 잡몹 / 2 방패병 / 3 비행형 / 4 중갑병 / 5 원거리형 / 6 돌진형
   spawn1: ['Digit1'], spawn2: ['Digit2'], spawn3: ['Digit3'],
@@ -542,6 +543,48 @@ const CONFIG = {
     clashHitstop: 9,           // 칼끼리 부딪힘 역경직
     clashKnock: 5,             // 부딪힘 밀려남
     clashStun: 26,             // 부딪힌 적 경직
+  },
+
+  // ---------- 던전 ----------
+  dungeon: {
+    floors: 3,
+    roomsMin: 5,               // 한 층의 방 수 (시작방 + 전투방 + 보스방)
+    roomsMax: 6,
+    baseY: 460,                // 기본 바닥 높이
+    startWidth: 900,
+    roomWidthMin: 1300,
+    roomWidthMax: 2000,
+    bossWidth: 1500,
+    landing: 220,              // 문 앞 평지 폭
+    ledgeH: 150,               // 높은 문(언덕 위) 높이
+    highDoorChance: 0.35,      // 문이 높은 곳에 있을 확률
+    segMin: 160, segMax: 340,  // 지형 구간 폭
+    heights: [0, 0, 0, 50, 90],// 지형 높이 후보
+    maxStep: 90,               // 이보다 높이 차가 크면 디딤 발판 자동 배치
+    pitChance: 0.32,
+    pitMin: 110, pitMax: 160,  // 낭떠러지 폭 (2단 점프로 넘을 수 있게)
+    platformChance: 0.55,      // 평지 위 통과 발판
+    doorHeight: 96,
+    killDepth: 220,            // 바닥 아래로 이만큼 떨어지면 낙사 판정
+    fallDamage: 12,            // 낭떠러지에 떨어지면 데미지 + 직전 발판으로 복귀
+    fallInvuln: 60,
+    spawnDelay: 40,            // 문이 잠기고 적이 나타나기까지
+    waveDelay: 50,             // 웨이브 사이
+    fadeFrames: 14,            // 방 이동 페이드
+    // 층별 등장 적 (가중치)
+    pools: [
+      { grunt: 4, shield: 2, archer: 2, flyer: 1 },
+      { grunt: 3, shield: 2, archer: 2, flyer: 2, charger: 2, heavy: 1 },
+      { grunt: 2, shield: 2, archer: 2, flyer: 2, charger: 2, heavy: 2 },
+    ],
+    roomEnemies: [3, 4, 5],    // 층별 웨이브당 적 수 (방이 넓으면 +1)
+    twoWaveWidth: 1700,        // 이보다 넓은 방은 웨이브 2번
+    // 보스방 (7단계에서 진짜 보스로 교체 예정): 층별 강적 묶음
+    bossRoom: [
+      ['heavy', 'grunt', 'archer'],
+      ['heavy', 'shield', 'charger', 'archer'],
+      ['heavy', 'heavy', 'shield', 'flyer', 'archer'],
+    ],
   },
 
   // ---------- 연습/테스트 아레나 (1단계) ----------

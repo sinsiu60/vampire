@@ -195,6 +195,10 @@ const Render = {
   },
 
   // ---------- 지형: 검정 ----------
+  resetLevelCache() {
+    this._tufts = null;
+  },
+
   level(ctx, level, cam) {
     const V = CONFIG.view;
     ctx.fillStyle = '#050405';
@@ -211,16 +215,39 @@ const Render = {
         ctx.fillRect(r.x, r.y, r.w, r.h);
       }
     }
-    // 바닥 위 풀 실루엣
+    // 낭떠러지: 아래로 갈수록 어두워지는 심연
+    if (level.segs) {
+      for (const sg of level.segs) {
+        if (!sg.pit || sg.x1 < cam.x - 20 || sg.x0 > cam.x + V.width + 20) continue;
+        const top = level.groundY - sg.h;
+        const g = ctx.createLinearGradient(0, top, 0, top + 90);
+        g.addColorStop(0, 'rgba(5,4,5,0.15)');
+        g.addColorStop(1, 'rgba(5,4,5,0.97)');
+        ctx.fillStyle = g;
+        ctx.fillRect(sg.x0, top, sg.x1 - sg.x0, 400);
+        // 벼랑 끝 바위
+        ctx.fillStyle = '#050405';
+        for (const ex of [sg.x0, sg.x1]) {
+          const d = ex === sg.x0 ? 1 : -1;
+          ctx.beginPath();
+          ctx.moveTo(ex, top + 10); ctx.lineTo(ex + d * 7, top + 24); ctx.lineTo(ex, top + 40);
+          ctx.fill();
+        }
+      }
+      ctx.fillStyle = '#050405';
+    }
+    // 땅 윗면의 풀 실루엣 (땅 사각형마다)
     if (!this._tufts) {
       this._tufts = [];
       let seed = 99;
       const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
-      for (let x = 0; x < level.width; x += 14 + rnd() * 40) this._tufts.push([x, 3 + rnd() * 7]);
+      const grounds = level.rects.filter((r) => !r.oneWay && r.w > 40 && r.y > level.groundY - 200 && r.x >= 0 && r.x < level.width);
+      for (const r of grounds) {
+        for (let x = r.x + 6; x < r.x + r.w - 6; x += 14 + rnd() * 40) this._tufts.push([x, r.y, 3 + rnd() * 7]);
+      }
     }
-    const gy = level.groundY;
     ctx.beginPath();
-    for (const [x, h] of this._tufts) {
+    for (const [x, gy, h] of this._tufts) {
       if (x < cam.x - 20 || x > cam.x + V.width + 20) continue;
       ctx.moveTo(x - 4, gy);
       ctx.lineTo(x - 2, gy - h);
@@ -229,6 +256,95 @@ const Render = {
       ctx.lineTo(x + 4, gy);
     }
     ctx.fill();
+    this.gates(ctx, level);
+  },
+
+  // 문: 잠겼으면 붉게 빛나는 철창, 열렸으면 위로 걷힌 철창 끝만
+  gates(ctx, level) {
+    const t = Game.frame || 0;
+    for (const g of level.gates) {
+      ctx.save();
+      if (level.locked) {
+        ctx.shadowColor = '#ff3020';
+        ctx.shadowBlur = 8 + Math.sin(t * 0.15) * 3;
+        ctx.fillStyle = '#050405';
+        ctx.fillRect(g.x, g.y - 6, g.w, 6);
+        ctx.strokeStyle = '#2a0c0a';
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 3; i++) {
+          const bx = g.x + 2 + i * 4;
+          ctx.beginPath(); ctx.moveTo(bx, g.y); ctx.lineTo(bx, g.y + g.h); ctx.stroke();
+        }
+        ctx.strokeStyle = 'rgba(255,60,40,0.8)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(g.x, g.y + g.h * 0.35); ctx.lineTo(g.x + g.w, g.y + g.h * 0.35);
+        ctx.moveTo(g.x, g.y + g.h * 0.7); ctx.lineTo(g.x + g.w, g.y + g.h * 0.7);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = '#050405';
+        ctx.fillRect(g.x, g.y - 6, g.w, 10);
+        // 열린 문: 다음 방 방향 화살표
+        const room = Game.room;
+        const exitable = room && (g.gate === 'right' || room.index > 0);
+        if (exitable) {
+          ctx.fillStyle = `rgba(255,240,200,${(0.45 + 0.25 * Math.sin(t * 0.1)).toFixed(3)})`;
+          const dir = g.gate === 'right' ? 1 : -1;
+          const ax = g.gate === 'right' ? g.x - 18 : g.x + g.w + 18, ay = g.y + g.h * 0.5;
+          ctx.beginPath();
+          ctx.moveTo(ax + dir * 8, ay); ctx.lineTo(ax - dir * 4, ay - 8); ctx.lineTo(ax - dir * 4, ay + 8);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
+  },
+
+  // 보상 상자: 최고 랭크 색으로 빛남
+  chest(ctx, ch) {
+    if (!ch) return;
+    const R = CONFIG.style.ranks;
+    const col = ch.rank >= 0 ? R[ch.rank].color : '#aaa';
+    const t = Game.frame || 0;
+    ctx.save();
+    ctx.translate(ch.x, ch.y);
+    if (!ch.opened) {
+      ctx.shadowColor = col;
+      ctx.shadowBlur = 10 + Math.sin(t * 0.12) * 4;
+    }
+    ctx.fillStyle = '#060506';
+    ctx.fillRect(-ch.w / 2, -ch.h * 0.62, ch.w, ch.h * 0.62);
+    if (ch.opened) {
+      // 뚜껑 열림
+      ctx.save();
+      ctx.translate(-ch.w / 2, -ch.h * 0.62);
+      ctx.rotate(-1.9);
+      ctx.fillRect(0, -ch.h * 0.38, ch.w, ch.h * 0.38);
+      ctx.restore();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(-ch.w / 2, -ch.h * 0.62);
+      ctx.quadraticCurveTo(0, -ch.h * 1.15, ch.w / 2, -ch.h * 0.62);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = col;
+      ctx.fillRect(-3, -ch.h * 0.7, 6, 7);
+      // 안내
+      const p = Game.player;
+      if (Math.abs(p.x - ch.x) < 70) {
+        ctx.font = 'bold 10px "Segoe UI", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#fff';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        const txt = `공격 또는 ${Input.label('up')} 로 열기`;
+        ctx.strokeText(txt, 0, -ch.h - 14);
+        ctx.fillText(txt, 0, -ch.h - 14);
+      }
+    }
+    ctx.restore();
   },
 
   // ---------- 플레이어 ----------
