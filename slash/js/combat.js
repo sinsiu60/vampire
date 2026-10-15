@@ -45,9 +45,6 @@ const Combat = {
       }
     }
 
-    // 보상 상자: 공격으로 쳐서 열기
-    const ch = game.room && game.room.chest;
-    if (ch && !ch.opened && this.overlap(hb, { x: ch.x - ch.w / 2, y: ch.y - ch.h, w: ch.w, h: ch.h })) game.openChest(ch);
 
     for (const e of game.enemies) {
       if (e.dead || player.hitList.has(e)) continue;

@@ -24,6 +24,11 @@ const UI = {
     ctx.textAlign = 'left';
     ctx.fillStyle = '#fff';
     ctx.fillText(`${Math.ceil(p.hp)} / ${p.maxHp}`, 26, 31);
+    // 골드 (던전)
+    if (game.mode === 'dungeon') {
+      const pop = Run.goldPop;
+      Run.drawGold(ctx, 210, 49, game.gold, 'left', pop > 0 ? '#ffffff' : null);
+    }
 
     // 히트 수
     if (game.combo.count > 1) {
@@ -220,68 +225,43 @@ const UI = {
     ctx.restore();
   },
 
-  // ---------- 미니맵 (왼쪽 위) ----------
-  // 방 폭에 비례한 상자들. 현재 방 = 흰색, 클리어 = 회청색, 전투 중 = 빨강, 아직 모르는 방 = 점선
+  // ---------- 런 진행 (왼쪽 위): 층 · 방 번호 · 지나온 길 아이콘 ----------
   minimap(ctx, game) {
-    const rooms = game.floor.rooms, cur = game.room;
-    const last = rooms[rooms.length - 1];
-    const total = last.mapX + last.mapW;
-    const k = Math.min(1.6, 236 / total);
-    const minY = Math.min(...rooms.map((r) => r.mapY)), maxY = Math.max(...rooms.map((r) => r.mapY + r.mapH));
-    const top = 58, ox = 22, oy = top + 20 - minY;   // 패널 위쪽은 고정, 방 상자는 그 아래로
-    let maxVisited = 0;
-    rooms.forEach((r) => { if (r.visited) maxVisited = Math.max(maxVisited, r.index); });
+    const fl = game.floor, cur = game.room.node, F = game.floorCfg;
+    const x = 16, y = 58, w = 250, h = 50;
     ctx.save();
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(ox - 6, top, total * k + 12, maxY - minY + 28);
+    ctx.fillRect(x, y, w, h);
     ctx.font = 'bold 10px "Segoe UI", sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.fillText(`${game.floorIndex + 1}층 · ${THEMES[Render.themeIndex].name}   방 ${cur.index + 1}/${rooms.length}`, ox, top + 12);
-    for (const r of rooms) {
-      const known = r.visited || r.index <= maxVisited + 1;
-      if (!known) continue;
-      const x = ox + r.mapX * k, y = oy + r.mapY, w = r.mapW * k, h = r.mapH;
-      // 이전 방과 연결선
-      if (r.index > 0) {
-        const pr = rooms[r.index - 1];
-        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    ctx.fillText(`${game.floorIndex + 1}층 · ${F.name}   방 ${cur.layer + 1}/${fl.length}`, x + 6, y + 13);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.fillText(`${Input.label('map')} 지도`, x + w - 6, y + 13);
+    // 갈림길마다 한 칸: 지나온 방 아이콘 / 지금 방 / 앞으로 (점) / 보스
+    const n = fl.length, step = (w - 24) / (n - 1);
+    for (let li = 0; li < n; li++) {
+      const cx = x + 12 + li * step, cy = y + 33;
+      const visited = fl.layers[li].find((nd) => nd.visited);
+      if (li < n - 1) {
+        ctx.strokeStyle = li < cur.layer ? 'rgba(120,255,255,0.6)' : 'rgba(255,255,255,0.15)';
         ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(ox + (pr.mapX + pr.mapW) * k, oy + pr.mapY + pr.mapH - (pr.rightH ? 8 : 0) - 2);
-        ctx.lineTo(x, y + h - (r.leftH ? 8 : 0) - 2);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx + 6, cy); ctx.lineTo(cx + step - 6, cy); ctx.stroke();
       }
-      if (r === cur) ctx.fillStyle = 'rgba(255,255,255,0.45)';
-      else if (r.cleared) ctx.fillStyle = 'rgba(150,180,200,0.35)';
-      else if (r.visited) ctx.fillStyle = 'rgba(255,80,60,0.4)';
-      else ctx.fillStyle = 'rgba(0,0,0,0)';
-      ctx.fillRect(x, y, w, h);
-      ctx.strokeStyle = r === cur ? '#fff' : r.visited ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.35)';
-      ctx.lineWidth = r === cur ? 1.5 : 1;
-      if (!r.visited) ctx.setLineDash([2, 2]);
-      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-      ctx.setLineDash([]);
-      // 보스방 표시
-      if (r.kind === 'boss') {
-        ctx.fillStyle = r.cleared ? '#888' : '#ff4a3a';
-        ctx.beginPath();
-        ctx.arc(x + w / 2, y + h / 2 - 1, 3.2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillRect(x + w / 2 - 2, y + h / 2 + 1, 4, 3);
-      }
-      // 안 연 보상 상자
-      if (r.chest && !r.chest.opened) {
-        ctx.fillStyle = '#ffd860';
-        ctx.fillRect(x + w - 6, y + 2, 4, 4);
+      const nd = visited || (li === n - 1 ? fl.layers[li][0] : null);
+      if (nd) {
+        const col = CONFIG.rooms[nd.kind].color;
+        if (nd === cur) {
+          ctx.fillStyle = 'rgba(120,255,255,0.18)';
+          ctx.beginPath(); ctx.arc(cx, cy, 9, 0, Math.PI * 2); ctx.fill();
+        }
+        Run.icon(ctx, nd.kind, cx, cy, nd === cur ? 10 : 8, nd === cur ? '#bff' : col);
+      } else {
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI * 2); ctx.fill();
       }
     }
-    // 플레이어 위치
-    const px = ox + (cur.mapX + Math.max(0, Math.min(1, game.player.x / cur.width)) * cur.mapW) * k;
-    ctx.fillStyle = '#5ff';
-    ctx.beginPath();
-    ctx.arc(px, oy + cur.mapY + cur.mapH / 2, 2.2, 0, Math.PI * 2);
-    ctx.fill();
     ctx.restore();
   },
 
@@ -498,7 +478,8 @@ const UI = {
       ctx.font = '14px "Segoe UI", sans-serif';
       ctx.fillStyle = '#9f9';
       if (b.heal > 0) ctx.fillText(`보상: 체력 +${b.heal}`, V.width / 2 + 170, 196);
-      if (b.note) { ctx.fillStyle = '#ffe9a0'; ctx.fillText(b.note, V.width / 2 + 190, 196); }
+      if (b.gold > 0) { ctx.fillStyle = '#ffd860'; ctx.fillText(`랭크 보너스 +${b.gold} 골드`, V.width / 2 + 190, 186); }
+      if (b.note) { ctx.fillStyle = '#ffe9a0'; ctx.fillText(b.note, V.width / 2 + 190, b.gold > 0 ? 208 : 196); }
       ctx.restore();
     }
   },

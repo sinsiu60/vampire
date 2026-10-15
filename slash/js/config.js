@@ -24,6 +24,7 @@ const KEYBINDS = {
   swapNext: ['WheelDown'],      // 마우스 휠 아래: 다음 무기
   swapPrev: ['WheelUp'],        // 마우스 휠 위: 이전 무기
   inventory: ['Tab'],
+  map: ['KeyM'],                // 층 지도
   pause: ['Escape'],
   restart: ['Enter', 'NumpadEnter'],   // 게임오버 / 일시정지에서 재시작
   debug: ['KeyH'],              // 히트박스 표시 (개발용)
@@ -910,108 +911,7 @@ const CONFIG = {
     swingLeadMs: 90,           // 타격 이만큼 전부터 무기를 휘두르기 시작 (칼이 닿는 모습 = 실제 타격 시점)
   },
 
-  enemies: {
-    grunt: {
-      name: '근접 잡몹',
-      width: 26, height: 46, hp: 70, posture: 100,
-      speed: 1.7, accel: 0.25, aggroRange: 520, weight: 1, friction: 0.82,
-      look: { body: 'grunt', weapon: 'blade' },
-      attacks: [
-        { id: 'slash', kind: 'melee', parryable: true, range: 56,
-          telegraphMs: 500, active: 6, recovery: 32, cooldown: 55, lunge: 3.5,
-          damage: 12, hitbox: { x: 4, y: -40, w: 50, h: 32 }, knock: { x: 6, y: -3.5 } },
-      ],
-    },
-    // 방패병: 정면 공격을 막음 → 런처로 띄우거나 등 뒤로 넘어가서 공략
-    shield: {
-      name: '방패병',
-      width: 28, height: 48, hp: 90, posture: 110,
-      speed: 1.2, accel: 0.2, aggroRange: 480, weight: 1.6, friction: 0.8,
-      shield: true,            // 정면 공격 막음 (런처·내려찍기·등 뒤 공격은 통함)
-      turnDelay: 40,           // 등 뒤로 넘어간 플레이어를 돌아보기까지 걸리는 시간
-      blockPush: 3.5,          // 막았을 때 플레이어가 밀려나는 힘
-      look: { body: 'grunt', weapon: 'shield' },
-      attacks: [
-        { id: 'bash', kind: 'melee', parryable: true, range: 50,
-          telegraphMs: 480, active: 6, recovery: 34, cooldown: 70, lunge: 4.5,
-          damage: 10, hitbox: { x: 4, y: -46, w: 40, h: 44 }, knock: { x: 9, y: -2 } },
-      ],
-    },
-    // 비행형: 공중에 떠 있음 → 점프해서 공중 콤보로
-    flyer: {
-      name: '비행형',
-      width: 24, height: 36, hp: 50, posture: 80,
-      speed: 2.4, accel: 0.18, aggroRange: 560, weight: 0.8, friction: 0.9,
-      flying: true,
-      hoverHeight: 150,        // 바닥에서 떠 있는 높이
-      hoverSide: 120,          // 플레이어 옆으로 유지하는 거리
-      look: { body: 'flyer', weapon: 'claws' },
-      attacks: [
-        { id: 'dive', kind: 'dive', parryable: false, range: 230,
-          telegraphMs: 600, active: 40, recovery: 40, cooldown: 90, diveSpeed: 9,
-          damage: 12, hitbox: { x: -14, y: -40, w: 28, h: 44 }, knock: { x: 6, y: -4 } },
-      ],
-    },
-    // 중갑병: 슈퍼아머 (경직·넉백 없음). 노랑 공격을 패링하면 슈퍼아머 해제
-    heavy: {
-      name: '중갑병',
-      width: 34, height: 58, hp: 260, posture: 150,
-      speed: 0.9, accel: 0.12, aggroRange: 480, weight: 2.5, friction: 0.78,
-      superArmor: true,
-      look: { body: 'heavy', weapon: 'hammer' },
-      attacks: [
-        // 노랑 내려찍기가 주력 (weight 3), 빨강 휩쓸기는 가끔 + 연속으로는 안 씀
-        { id: 'smash', kind: 'melee', parryable: true, range: 84, weight: 3,
-          telegraphMs: 680, active: 7, recovery: 40, cooldown: 70, lunge: 3,
-          damage: 22, hitbox: { x: 0, y: -70, w: 80, h: 70 }, knock: { x: 9, y: -5 } },
-        { id: 'sweep', kind: 'melee', parryable: false, range: 84, weight: 1,
-          telegraphMs: 850, active: 9, recovery: 44, cooldown: 80, lunge: 2,
-          damage: 26, hitbox: { x: -20, y: -34, w: 120, h: 34 }, knock: { x: 11, y: -6 } },
-      ],
-    },
-    // 원거리형: 거리를 벌리고 투사체. 투사체를 베거나 패링하면 반사
-    archer: {
-      name: '원거리형',
-      width: 22, height: 44, hp: 45, posture: 70,
-      speed: 1.6, accel: 0.22, aggroRange: 620, weight: 0.9, friction: 0.82,
-      keepMin: 200, keepMax: 360,   // 이 거리를 유지하려 함
-      look: { body: 'slim', weapon: 'bow' },
-      attacks: [
-        { id: 'shot', kind: 'shoot', parryable: true, range: 460,
-          telegraphMs: 680, active: 4, recovery: 30, cooldown: 80,
-          damage: 11, projectile: { speed: 6.5, radius: 6, life: 150, reflectMult: 1.6, reflectDamage: 30 } },
-      ],
-    },
-    // 허수아비 (콤보 연습장 전용): 움직이지 않음. 띄우기·저글링·체간 붕괴·처형 다 됨.
-    // 연습장에서 P 를 누르면 가까이 온 플레이어를 노랑 베기로 공격 (패링 연습)
-    dummy: {
-      name: '허수아비', practiceOnly: true,
-      width: 26, height: 50, hp: 400, posture: 120,
-      speed: 0, accel: 0, aggroRange: 0, weight: 1.1, friction: 0.8,
-      dummy: true,
-      look: { body: 'dummy', weapon: 'none' },
-      attackAggro: 260,        // 공격 모드일 때 인식 거리
-      attacks: [
-        { id: 'slash', kind: 'melee', parryable: true, range: 70,
-          telegraphMs: 520, active: 6, recovery: 30, cooldown: 70, lunge: 0,
-          damage: 6, hitbox: { x: 0, y: -44, w: 66, h: 36 }, knock: { x: 4, y: -2 } },
-      ],
-    },
-    // 돌진형: 직선 돌진, 벽에 박으면 기절
-    charger: {
-      name: '돌진형',
-      width: 30, height: 46, hp: 110, posture: 120,
-      speed: 1.3, accel: 0.2, aggroRange: 640, weight: 1.4, friction: 0.82,
-      look: { body: 'grunt', weapon: 'horns' },
-      // 돌진은 벽에 박거나 active 프레임이 끝날 때까지 계속된다
-      attacks: [
-        { id: 'rush', kind: 'rush', parryable: false, range: 420,
-          telegraphMs: 760, active: 150, recovery: 36, cooldown: 100, rushSpeed: 10.5, wallStun: 150,
-          wallPosture: 0.6,       // 벽에 박으면 체간 최대치의 이 비율만큼 증가
-          damage: 18, hitbox: { x: -6, y: -44, w: 36, h: 42 }, knock: { x: 10, y: -5 } },
-      ],
-    },
-  },
+  enemies: DATA.enemies,          // data/enemies.js
 
   // ---------- 콤보 연습장 ----------
   practice: {
@@ -1038,16 +938,10 @@ const CONFIG = {
   },
 
   // ---------- 던전 ----------
+  // 방 지형 생성 (방 종류·층 구성은 data/rooms.js, data/floors.js)
   dungeon: {
-    floors: 3,
-    roomsMin: 5,               // 한 층의 방 수 (시작방 + 전투방 + 보스방)
-    roomsMax: 6,
     baseY: 460,                // 기본 바닥 높이
-    startWidth: 900,
-    roomWidthMin: 1300,
-    roomWidthMax: 2000,
-    bossWidth: 1500,
-    landing: 220,              // 문 앞 평지 폭
+    landing: 220,              // 입구 앞 평지 폭
     ledgeH: 150,               // 높은 문(언덕 위) 높이
     highDoorChance: 0.35,      // 문이 높은 곳에 있을 확률
     segMin: 160, segMax: 340,  // 지형 구간 폭
@@ -1063,45 +957,42 @@ const CONFIG = {
     spawnDelay: 40,            // 문이 잠기고 적이 나타나기까지
     waveDelay: 50,             // 웨이브 사이
     fadeFrames: 14,            // 방 이동 페이드
-    // 층별 등장 적 (가중치)
-    pools: [
-      { grunt: 4, shield: 2, archer: 2, flyer: 1 },
-      { grunt: 3, shield: 2, archer: 2, flyer: 2, charger: 2, heavy: 1 },
-      { grunt: 2, shield: 2, archer: 2, flyer: 2, charger: 2, heavy: 2 },
-    ],
-    roomEnemies: [3, 4, 5],    // 층별 웨이브당 적 수 (방이 넓으면 +1)
-    twoWaveWidth: 1700,        // 이보다 넓은 방은 웨이브 2번
-    // 층별 보스 (bosses 의 이름)
-    bossByFloor: ['dusk', 'moon', 'flame'],
   },
 
-  // ---------- 층별 특색 (10단계) ----------
-  // enemy: 일반 적 능력치 배율 / eliteChance: 정예 등장 확률 / traps: 전투방 함정
-  // rest: 층 시작방 모닥불 회복 (최대 체력의 비율, 0 = 없음) / music: 던전·보스 곡 (audio.music 이름)
-  floors: [
-    {
-      name: '노을의 성벽', desc: '함정 없음 · 기본기를 익히는 층',
-      enemy: { hp: 1, damage: 1, posture: 1 }, eliteChance: 0,
-      traps: null, rest: 0, music: 'dungeon', bossMusic: 'boss',
+  // ---------- 런 구조 (로그라이크) ----------
+  // (방 종류는 data/rooms.js, 층 구성·적·보스는 data/floors.js)
+  // 층마다: 시작방 → 갈림길마다 다음 방 2~3개 중 선택 → … → 보스방. 지도는 M
+  run: {
+    choices: [2, 3],           // 갈림길 선택지 수
+    firstLayer: 'combat',      // 시작방 다음 첫 갈림길은 전투방만
+    preBoss: { rest: 3, shop: 2, combat: 1 },   // 보스 직전 갈림길 가중치 (회복할 기회)
+    guaranteeElite: 1,         // 층마다 지도에 최소 엘리트 수
+    guaranteeServices: 2,      // 층마다 지도에 최소 등장하는 시설 종류 수 (상점·휴식·대장간 중)
+    services: ['shop', 'rest', 'forge'],
+    exitLanding: 440,          // 방 오른쪽 출구(갈림길 문) 평지 폭
+    twoWaveWidth: 1700,        // 이보다 넓은 전투방은 웨이브 2번
+    startGold: 0,
+    portalGap: 120,            // 갈림길 문 간격
+    // 골드: 적 처치 시 maxHp × perHp (± 25%), 정예 × eliteMult, 보스 고정, 방 클리어 보너스 (최고 스타일 랭크별)
+    gold: {
+      perHp: 0.06, eliteMult: 3, boss: [60, 80, 100, 120, 150],
+      clearBonus: [0, 2, 4, 7, 10, 15, 22],
+      coinValue: 5,            // 동전 하나 값 (나머지는 작은 동전)
+      magnetDelay: 30, magnetRange: 140, pickupRange: 20,
     },
-    {
-      name: '달빛 회랑', desc: '가시 함정 · 정예 등장',
-      enemy: { hp: 1.3, damage: 1.15, posture: 1.1 }, eliteChance: 0.12,
-      traps: { kind: 'spikes', min: 1, max: 2 }, rest: 0.5, music: 'dungeon2', bossMusic: 'boss2',
-    },
-    {
-      name: '불타는 왕좌', desc: '화염 분출구 · 정예 다수',
-      enemy: { hp: 1.6, damage: 1.3, posture: 1.2 }, eliteChance: 0.2,
-      traps: { kind: 'flames', min: 1, max: 3 }, rest: 0.5, music: 'dungeon3', bossMusic: 'boss3',
-    },
-  ],
+    rest: { heal: 0.4 },       // 휴식: 최대 체력의 40% 회복
+    shop: { heal: 0.3, healCost: 40 },   // 상점 회복 (각인 판매·리롤은 4단계)
+  },
+
+  floors: DATA.floors,            // data/floors.js (층 수 = 이 배열 길이)
+  rooms: DATA.rooms,              // data/rooms.js (방 종류)
 
   // 정예: 층 배율 위에 추가로 곱함. 처치하면 희귀 이상 장비 확정
   elite: {
     hp: 1.8, damage: 1.3, posture: 1.6, weight: 1.5,
     scale: 1.15,               // 몸 크기
     dropMinRarity: 1,
-    colors: ['#ffd23a', '#9fd0ff', '#ff6a3a'],   // 층별 기운 색
+    colors: ['#ffd23a', '#9fd0ff', '#ff6a3a', '#cfeaff', '#c08aff'],   // 층별 기운 색
   },
 
   // 함정: idle(대기, 범위에서 무작위) → warn(예고, 빨강) → active(판정). 적도 맞음 (밀어 넣으면 이득)
@@ -1122,66 +1013,9 @@ const CONFIG = {
   // 패턴 기본값. 보스마다 patterns 에서 일부만 덮어씀
   //  telegraphMs: 예고 시작 → 타격까지 (페이즈 2 에선 phase2Speed 배 빨라짐)
   //  parryable: true = 노랑(패링·가드 가능) / false = 빨강(회피) / telegraph: 'white' = 간파(퍼펙트 패링 시 체간 대폭)
-  bossPatterns: {
-    // 돌진베기: 웅크렸다가 순식간에 붙어서 벰 (노랑)
-    dashSlash: { weight: 3, telegraphMs: 640, dashFrames: 10, maxDist: 380, active: 5, recovery: 42,
-      damage: 20, hitbox: { x: -10, y: -84, w: 104, h: 84 }, knock: { x: 9, y: -4 }, parryable: true },
-    // 점프 내려찍기: 플레이어 위치로 뛰어올라 내려찍고 충격파 (빨강, 점프로 피하기)
-    jumpSlam: { weight: 2, windFrames: 30, airFrames: 42, peak: 220, radius: 120, recovery: 46,
-      damage: 24, knock: { x: 10, y: -7 }, parryable: false, minDist: 110 },
-    // 검기 3연발: 낮게(점프) / 높게(가만히) / 가운데 (노랑, 패링하면 반사)
-    swordWaves: { weight: 2, count: 3, telegraphMs: 430, gapFrames: 12, speed: 7.5, heights: [-16, -66, -36],
-      damage: 14, recovery: 36, parryable: true, reflectDamage: 45, minDist: 160 },
-    // 광역 경고 후 폭발: 바닥에 붉은 원 → 잠시 뒤 폭발 (빨강)
-    areaBlast: { weight: 2, zones: 4, spread: 170, radius: 74, warnFrames: 68, recovery: 50,
-      damage: 26, knock: { x: 8, y: -8 }, parryable: false },
-    // ----- 페이즈 2 추가 패턴 (보스마다 하나) -----
-    // 난무: 노랑 → 노랑 → 흰색 섬광 찌르기 (리듬 패링)
-    flurry: { weight: 3, phase2: true, hits: [
-      { telegraphMs: 400, telegraph: 'yellow' },
-      { telegraphMs: 320, telegraph: 'yellow' },
-      { telegraphMs: 560, telegraph: 'white', thrust: true },
-    ], lunge: 5, damage: 16, hitbox: { x: -6, y: -80, w: 96, h: 80 }, thrustBox: { x: 0, y: -60, w: 150, h: 26 },
-      knock: { x: 8, y: -3 }, recovery: 46, maxDist: 260 },
-    // 연속 내려찍기 3회 (빨강)
-    triSlam: { weight: 3, phase2: true, count: 3, windFrames: 16, airFrames: 34, peak: 170, radius: 110, recovery: 54,
-      damage: 20, knock: { x: 9, y: -6 }, parryable: false },
-    // 화염 기둥: 보스에서 플레이어 쪽으로 연달아 폭발이 번져감 (빨강)
-    pillars: { weight: 3, phase2: true, count: 8, step: 110, interval: 12, warnFrames: 42, radius: 58, recovery: 54,
-      damage: 22, knock: { x: 7, y: -8 }, parryable: false },
-  },
+  bossPatterns: DATA.bossPatterns,   // data/bosses.js
 
-  bosses: {
-    dusk: {
-      name: '황혼의 검귀', title: '1층 · 노을',
-      width: 40, height: 72, hp: 1600, posture: 240,
-      weight: 4, friction: 0.8, walkSpeed: 1.6, spacing: [110, 250],
-      idleMin: 36, idleMax: 70,              // 패턴 사이 대기
-      look: { body: 'boss', weapon: 'greatsword' }, aura: '#ff7a3a',
-      weakness: ['gauntlet', 'sword'],       // 페이즈별 약점 무기 [1페이즈, 2페이즈]
-      patterns: { dashSlash: {}, jumpSlam: {}, swordWaves: {}, areaBlast: {}, flurry: {} },
-    },
-    moon: {
-      name: '월야의 창기사', title: '2층 · 달밤',
-      width: 38, height: 74, hp: 2000, posture: 270,
-      weight: 4, friction: 0.8, walkSpeed: 1.9, spacing: [130, 280],
-      idleMin: 30, idleMax: 60,
-      look: { body: 'boss', weapon: 'lance' }, aura: '#8fb4ff',
-      weakness: ['greatsword', 'gauntlet'],
-      patterns: { dashSlash: { telegraphMs: 600, maxDist: 460, hitbox: { x: -10, y: -70, w: 140, h: 40 } },
-        jumpSlam: { weight: 3 }, swordWaves: { speed: 9 }, areaBlast: {}, triSlam: {} },
-    },
-    flame: {
-      name: '불꽃 성주', title: '3층 · 불타는 성',
-      width: 44, height: 78, hp: 2400, posture: 300,
-      weight: 5, friction: 0.8, walkSpeed: 1.5, spacing: [110, 240],
-      idleMin: 28, idleMax: 56,
-      look: { body: 'boss', weapon: 'flameblade' }, aura: '#ff5020',
-      weakness: ['sword', 'greatsword'],
-      patterns: { dashSlash: { damage: 24 }, jumpSlam: { radius: 140 }, swordWaves: { count: 4, heights: [-16, -66, -36, -16] },
-        areaBlast: { weight: 3, zones: 5, radius: 84 }, pillars: {} },
-    },
-  },
+  bosses: DATA.bosses,            // data/bosses.js
   // 보스 공통
   boss: {
     phase2At: 0.5,             // 체력 50% 이하 → 2페이즈

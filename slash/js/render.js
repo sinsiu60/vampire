@@ -39,6 +39,30 @@ const THEMES = [
     mote: 'rgba(255,170,80,',
     moteRise: true,     // 불씨가 위로 올라감
   },
+  { // 4층: 서리 묘역
+    name: '서리 묘역',
+    sky: ['#24313f', '#5f7c96', '#c3d5e3'],
+    orb: { x: 0.78, y: 130, r: 40, color: 'rgba(240,248,255,0.85)', glow: 'rgba(210,230,255,0.25)' },
+    layers: [
+      { kind: 'mountains', factor: 0.12, base: 320, amp: 120, color: '#8ea3b6' },
+      { kind: 'buildings', factor: 0.3, base: 400, amp: 90, color: '#5d7387' },
+      { kind: 'hills', factor: 0.55, base: 432, amp: 36, color: '#34445a' },
+    ],
+    mote: 'rgba(240,248,255,',
+    moteRise: false,    // 눈
+  },
+  { // 5층: 공허의 첨탑
+    name: '공허의 첨탑',
+    sky: ['#0c0916', '#2a1b46', '#6b3f8c'],
+    orb: { x: 0.5, y: 200, r: 90, color: 'rgba(210,160,255,0.3)', glow: 'rgba(170,90,255,0.3)' },
+    layers: [
+      { kind: 'mountains', factor: 0.12, base: 330, amp: 110, color: '#4b2f70' },
+      { kind: 'buildings', factor: 0.3, base: 390, amp: 160, color: '#2e1c4b' },
+      { kind: 'hills', factor: 0.55, base: 432, amp: 40, color: '#190f2e' },
+    ],
+    mote: 'rgba(200,150,255,',
+    moteRise: true,
+  },
 ];
 
 const Render = {
@@ -334,7 +358,7 @@ const Render = {
     }
     ctx.shadowBlur = 0;
     const p = Game.player;
-    if (!r.used && Math.abs(p.x - r.x) < 90) {
+    if (!r.used && !r.quiet && Math.abs(p.x - r.x) < 90) {
       ctx.font = 'bold 10px "Segoe UI", sans-serif';
       ctx.textAlign = 'center';
       ctx.strokeStyle = '#000';

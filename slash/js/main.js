@@ -69,6 +69,8 @@ const Game = {
     this.floor = null;
     this.room = null;
     this.run = { frames: 0, bestRank: -1, maxCombo: 0 };   // 게임오버/클리어 화면 기록
+    this.gold = CONFIG.run.startGold;
+    Run.reset();
     this.hint = CONFIG.ui.startHintFrames;
     Effects.reset();
     Style.reset();
@@ -104,64 +106,68 @@ const Game = {
     Menu.enter(this, 'title');
   },
 
-  // ---------- 던전: 층 / 방 ----------
+  // ---------- 런: 층 / 방 ----------
   startFloor(fi) {
     this.floorIndex = fi;
-    this.floor = Dungeon.generateFloor(fi);
+    this.floor = Run.genFloor(fi);
     this.prevRoom = null;
-    Render.setTheme(fi % THEMES.length);
-    this.enterRoom(0, 'left');
     const F = this.floorCfg;
+    Render.setTheme(F.theme % THEMES.length);
+    this.enterNode(this.floor.layers[0][0]);
     this.floorBanner = { text: `${fi + 1}층 · ${F.name}`, sub: F.desc, life: 170, max: 170 };
   },
 
-  enterRoom(i, side) {
+  // 지도의 방(node)으로 들어감. 처음이면 방을 만든다
+  enterNode(node) {
     const D = CONFIG.dungeon;
-    const room = this.floor.rooms[i];
+    const room = node.room || Run.buildRoom(node, this.floorIndex);
+    node.visited = true;
     this.room = room;
     this.level = room.level;
     Dungeon.setLevel(room.level);
     Render.resetLevelCache();
-    const en = room.level.entry[side];
+    const en = room.level.entry.left;
     if (!this.player) this.player = new Player(en.x, en.y);
     const p = this.player;
     p.x = en.x; p.y = en.y; p.vx = 0; p.vy = 0;
-    p.facing = side === 'left' ? 1 : -1;
+    p.facing = 1;
     p.move = null;
     if (!p.dead) p.setState('free');
     p.initScarf();
     p.lastSafe = { x: en.x, y: en.y };
     this.enemies = [];
     this.projectiles = [];
-    // 주우지 않은 아이템은 방을 나가면 그 방에 남음
-    if (this.prevRoom) this.prevRoom.drops = this.drops;
-    this.drops = room.drops || [];
-    this.prevRoom = room;
+    this.drops = [];
+    Run.coins.length = 0;
     Skills.reset();
     room.visited = true;
+    Run.makePortals(this, room);   // 갈림길 문 (클리어 전엔 닫혀 있음)
     if (!room.cleared) {
-      // 들어오면 양쪽 문이 잠기고 적 등장
+      // 적이 있는 방: 갈림길 문이 닫히고 적 등장
       Dungeon.setLocked(room.level, true);
       this.roomWave = 0;
       this.roomTimer = D.spawnDelay;
       Sound.play('gate');
       Effects.addShake(4);
-      Effects.popText(p.x + p.facing * 60, p.y - 70, room.kind === 'boss' ? '보스방' : '문이 잠겼다', room.kind === 'boss' ? '#ff5050' : '#ffb070', 16);
+      const RD = CONFIG.rooms[room.kind];
+      Effects.popText(p.x + 60, p.y - 70, room.kind === 'boss' ? '보스방' : room.kind === 'elite' ? '엘리트 — 강화된 적' : '적을 모두 쓰러뜨려라', RD.color, 16);
     } else {
       Dungeon.setLocked(room.level, false);
+      node.cleared = true;
+      if (room.kind !== 'start') Effects.popText(p.x + 60, p.y - 70, CONFIG.rooms[room.kind].name, CONFIG.rooms[room.kind].color, 16);
     }
     this.updateCamera(true);
   },
 
   // 다음 방으로 (페이드 아웃 → 이동 → 페이드 인)
-  goToRoom(i, side) {
+  goToNode(node) {
     if (this.transition) return;
-    this.transition = { f: 0, to: i, side, nextFloor: false };
+    this.transition = { f: 0, node, nextFloor: false };
   },
 
   goNextFloor() {
     if (this.transition) return;
-    if (this.floorIndex + 1 >= CONFIG.dungeon.floors) {
+    if (this.floorIndex + 1 >= CONFIG.floors.length) {
       Menu.enter(this, 'victory');
       Sound.play('victory');
       Music.play('title');
@@ -175,7 +181,7 @@ const Game = {
     t.f++;
     if (t.f === F) {
       if (t.nextFloor) this.startFloor(this.floorIndex + 1);
-      else this.enterRoom(t.to, t.side);
+      else this.enterNode(t.node);
     }
     if (t.f >= F * 2) this.transition = null;
   },
@@ -198,14 +204,8 @@ const Game = {
         }
       }
     }
-    // 문 출입 (잠기지 않았을 때만 지나갈 수 있음)
-    if (!room.level.locked && !p.dead && !this.exec) {
-      if (p.x < -4 && room.index > 0) this.goToRoom(room.index - 1, 'right');
-      else if (p.x > room.width + 4) {
-        if (room.index < this.floor.rooms.length - 1) this.goToRoom(room.index + 1, 'left');
-        else this.goNextFloor();
-      }
-    }
+    // 갈림길 문 / 시설 / 골드
+    Run.update(this);
   },
 
   // 지금 층 설정 (CONFIG.floors)
@@ -216,10 +216,11 @@ const Game = {
 
   spawnRoomWave(types) {
     const F = this.floorCfg;
-    for (const t of types) {
+    for (const w of types) {
+      const t = typeof w === 'string' ? w : w.type;
       const pt = Dungeon.spawnPoint(this.level, this.player.x);
       const e = this.spawnEnemy(t, pt.x, pt.y);
-      if (Math.random() < F.eliteChance) this.makeElite(e);
+      if (w.elite || Math.random() < F.eliteChance) this.makeElite(e);
       Effects.ring(e.x, e.y - e.h / 2, e.elite ? e.eliteColor : '#ff4040', e.elite ? 56 : 40);
       Effects.dust(e.x, pt.y, 10, 0);
     }
@@ -258,6 +259,8 @@ const Game = {
     x = x !== undefined ? x : L.width * 0.68;
     const g = this.groundAt(x);
     const b = new Boss(id, g.x, g.y - 380);
+    // 층별 보스 체력 배율 (data/floors.js bossHp)
+    if (this.mode === 'dungeon' && this.floorCfg.bossHp !== 1) b.maxHp = b.hp = Math.round(b.maxHp * this.floorCfg.bossHp);
     this.enemies.push(b);
     this.waveCleared = false;
     this.bossIntro = { name: b.name, title: b.cfg.title, life: CONFIG.boss.introFrames + 40, max: CONFIG.boss.introFrames + 40 };
@@ -271,61 +274,24 @@ const Game = {
     return null;
   },
 
-  // 방 클리어: 문 열림 + 최고 랭크에 따른 보상 상자
+  // 방 클리어: 갈림길 문이 열림 + 최고 스타일 랭크에 따라 골드 보너스
   clearRoom() {
-    const room = this.room;
+    const room = this.room, G = CONFIG.run.gold;
     room.cleared = true;
+    room.node.cleared = true;
     Dungeon.setLocked(room.level, false);
+    Run.makePortals(this, room);
     const best = Style.clearRoom();
-    const cs = room.level.chestSpot;
-    room.chest = { x: cs.x, y: cs.y, w: 30, h: 24, rank: best, opened: false, shake: 0, boss: room.kind === 'boss' };
-    Effects.dust(cs.x, cs.y, 12, 0);
-    Effects.ring(cs.x, cs.y - 12, '#ffd860', 50);
+    const bonus = Math.round((best >= 0 ? G.clearBonus[best] : 0) * this.floorCfg.gold);
+    if (bonus > 0) Run.spawnCoins(this, this.player.x, this.player.y - 60, bonus);
+    const last = this.floorIndex + 1 >= CONFIG.floors.length;
     this.clearBanner = {
-      rank: best, heal: 0, life: CONFIG.style.clearBannerFrames, max: CONFIG.style.clearBannerFrames,
-      note: room.kind === 'boss'
-        ? (this.floorIndex + 1 >= CONFIG.dungeon.floors ? '오른쪽 문: 던전 탈출' : '오른쪽 문: 다음 층')
-        : '보상 상자를 열어라',
+      rank: best, gold: bonus, life: CONFIG.style.clearBannerFrames, max: CONFIG.style.clearBannerFrames,
+      note: room.kind === 'boss' ? (last ? '오른쪽 끝: 탈출' : '오른쪽 끝: 다음 층으로')
+        : room.kind === 'elite' ? '엘리트 보상: 각인 (2단계에서)' : '오른쪽 끝의 문 중 하나를 골라라',
     };
     Sound.play('gateOpen');
     Sound.play('clear');
-  },
-
-  // 보상 상자 열기 (공격으로 치거나 위 키): 장비 1개 (방 최고 랭크가 높을수록 좋은 등급) + 체력 조금
-  openChest(chest) {
-    if (chest.opened) return;
-    chest.opened = true;
-    const S = CONFIG.style, L = CONFIG.loot, p = this.player;
-    const heal = Math.round((chest.rank >= 0 ? S.clearHeal[chest.rank] : 3) * L.chestHealMult);
-    p.heal(heal);
-    p.stamina = p.maxStamina;
-    const item = Loot.roll(this.floorIndex || 0, Math.max(0, chest.rank), chest.boss ? L.bossMinRarity : 0);
-    Loot.spawnDrop(this, item, chest.x, chest.y - 20, p.x < chest.x ? -1.5 : 1.5);
-    Effects.radialSparks(chest.x, chest.y - 14, 20, '#ffd860', 1);
-    Effects.ring(chest.x, chest.y - 14, '#ffe9a0', 60);
-    if (heal > 0) Effects.popText(chest.x, chest.y - 46, `+${heal} HP`, '#7f7', 16);
-    Sound.play('chest');
-  },
-
-  updateChest() {
-    const p = this.player;
-    // 모닥불 (층 시작방): 위 키로 한 번 회복
-    const rest = this.room && this.room.rest;
-    if (rest && !rest.used && Math.abs(p.x - rest.x) < 40 && Math.abs(p.y - rest.y) < 40 && Input.isPressed('up')) {
-      rest.used = true;
-      const h = Math.round(p.maxHp * rest.heal);
-      p.heal(h);
-      p.stamina = p.maxStamina;
-      Effects.popText(rest.x, rest.y - 60, `휴식 +${h} HP`, '#7f7', 18);
-      Effects.radialSparks(rest.x, rest.y - 20, 24, '#ffb050', 1);
-      Effects.ring(rest.x, rest.y - 20, '#ffd080', 70);
-      Sound.play('rest');
-    }
-    const ch = this.room && this.room.chest;
-    if (!ch || ch.opened) return;
-    if (ch.shake > 0) ch.shake--;
-    const near = Math.abs(p.x - ch.x) < 30 && Math.abs(p.y - ch.y) < 30;
-    if (near && Input.isPressed('up')) this.openChest(ch);
   },
 
   // 플레이어가 낭떠러지에 떨어짐: 데미지 + 직전 발판으로 복귀
@@ -439,14 +405,12 @@ const Game = {
       p.heal(h);
       Effects.popText(p.x, p.y - p.h - 30, `+${h}`, '#f66', 12);
     }
-    // 아이템 드랍
-    if (enemy.isBoss) Loot.bossDrop(this, enemy);
-    else if (enemy.elite && this.mode === 'dungeon') {
-      // 정예: 장비 확정 + 스타일 보너스
-      Loot.spawnDrop(this, Loot.roll(this.floorIndex || 0, 1, CONFIG.elite.dropMinRarity), enemy.x, enemy.y);
+    // 골드
+    Run.dropGold(this, enemy);
+    if (enemy.elite) {
       Style.gain(CONFIG.style.eliteKill);
       Style.pushFeed('ELITE', enemy.eliteColor);
-    } else Loot.enemyDrop(this, enemy);
+    }
   },
 
   onParry(enemy, tier) {
@@ -617,13 +581,25 @@ const Game = {
       }
       // 7: 보스 소환 (층 번호에 맞는 보스)
       if (Input.isPressed('spawn7') && !this.boss) {
-        this.spawnBoss(CONFIG.dungeon.bossByFloor[(this.floorIndex || 0) % 3], this.player.x + this.player.facing * 300);
+        this.spawnBoss(this.mode === 'dungeon' ? this.floorCfg.boss : 'dusk', this.player.x + this.player.facing * 300);
       }
       // 8: 아이템 떨어뜨리기 (높은 등급이 잘 나옴)
       if (Input.isPressed('spawn8')) {
         const p = this.player;
         Loot.spawnDrop(this, Loot.roll(2, 4, 0), p.x + p.facing * 50, p.y - 10, p.facing * 1.5);
       }
+    }
+
+    // 층 지도 (M) / 선택 창: 게임 정지
+    if (this.state === 'map') {
+      if (Input.isPressed('map') || Input.isPressed('back') || Input.isPressed('pause')) { this.setState('playing'); Sound.play('invClose'); }
+      return;
+    }
+    if (this.state === 'choice') { Choice.update(this); return; }
+    if (this.state === 'playing' && this.mode === 'dungeon' && Input.isPressed('map') && !this.exec && !this.transition) {
+      this.setState('map');
+      Sound.play('invOpen');
+      return;
     }
 
     // 인벤토리 (Tab): 게임 정지
@@ -702,12 +678,12 @@ const Game = {
     if (p.y > this.level.killY && !p.dead) this.playerFell();
     if (this.mode === 'dungeon') {
       this.updateRoom();
-      this.updateChest();
       // 음악: 보스가 있으면 보스 곡
       const b = this.boss;
       const F = this.floorCfg;
       if (this.state === 'playing') Music.play(b && b.state !== 'bossDeath' ? F.bossMusic : F.music);
       Traps.update(this);
+      if (this.player.dead) Run.coins.length = 0;
     } else {
       // 콤보 연습장: 허수아비
       Practice.update(this);
@@ -808,8 +784,7 @@ const Game = {
     Effects.drawBack(ctx);
     const ex = this.exec;
     if (this.room) {
-      Render.rest(ctx, this.room.rest);
-      Render.chest(ctx, this.room.chest);
+      Run.drawWorld(ctx, this);
       Traps.draw(ctx, this);
     }
     Loot.drawDrops(ctx, this);
@@ -873,6 +848,8 @@ const Game = {
 
     UI.hud(ctx, this);
     if (this.state === 'inventory') Inventory.draw(ctx, this);
+    if (this.state === 'map') Run.drawMap(ctx, this);
+    if (this.state === 'choice') Choice.draw(ctx, this);
     if (this.state === 'paused' || this.state === 'gameover' || this.state === 'victory') Menu.draw(ctx, this);
     // 시작 페이드 인
     if (this.fadeIn > 0) {

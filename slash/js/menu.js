@@ -35,7 +35,7 @@ const Menu = {
     const sub = (name) => () => this.openSub(name);
     switch (game.state) {
       case 'title': return [
-        { label: '시작하기', desc: '3층 던전에 도전한다', act: () => game.startRun('dungeon') },
+        { label: '시작하기', desc: '5층 던전 런 — 갈림길에서 방을 골라 나아간다', act: () => game.startRun('dungeon') },
         { label: '콤보 연습장', desc: '허수아비를 상대로 콤보·저글링·패링 연습', act: () => game.startRun('practice') },
         { label: '조작법', desc: '키 배치와 전투 요령', act: sub('controls') },
         { label: '설정', desc: '소리 크기, 화면 흔들림', act: sub('settings') },
@@ -461,6 +461,7 @@ const Menu = {
         [`${k('skill1')} / ${k('skill2')}`, '현재 무기의 스킬'],
         [k('inventory'), '인벤토리'],
         [k('up'), '보상 상자 열기 (공격으로 쳐도 됨)'],
+        [k('map'), '층 지도'],
         [k('pause'), '일시정지'],
       ]],
     ];

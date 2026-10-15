@@ -9,13 +9,14 @@ const Traps = {
   place(room, level, fi) {
     const F = CONFIG.floors[Math.min(fi, CONFIG.floors.length - 1)], T = CONFIG.traps;
     room.traps = [];
-    if (!F.traps || room.kind !== 'combat') return;
+    if (!F.traps || !room.terrain) return;
     const C = T[F.traps.kind];
     const n = randInt(F.traps.min, F.traps.max);
-    const segs = level.segs.filter((sg) => !sg.pit && sg.x1 - sg.x0 >= T.minSeg && sg.x1 > T.doorGap && sg.x0 < room.width - T.doorGap);
+    const exitGap = (room.exitLanding || 0) + 60;   // 오른쪽 갈림길 문 앞은 비움
+    const segs = level.segs.filter((sg) => !sg.pit && sg.x1 - sg.x0 >= T.minSeg && sg.x1 > T.doorGap && sg.x0 < room.width - exitGap);
     for (let i = 0; i < n && segs.length; i++) {
       const sg = segs.splice((Math.random() * segs.length) | 0, 1)[0];
-      const lo = Math.max(sg.x0 + C.width, T.doorGap), hi = Math.min(sg.x1 - C.width, room.width - T.doorGap);
+      const lo = Math.max(sg.x0 + C.width, T.doorGap), hi = Math.min(sg.x1 - C.width, room.width - exitGap);
       if (hi <= lo) continue;
       room.traps.push({
         kind: F.traps.kind, x: rand(lo, hi), y: CONFIG.dungeon.baseY - sg.h,
@@ -26,7 +27,11 @@ const Traps = {
 
   update(game) {
     const room = game.room;
-    if (!room || !room.traps || room.cleared) return;   // 방을 클리어하면 멈춤
+    if (!room || !room.traps) return;
+    if (room.cleared) {   // 방을 클리어하면 멈춤 (내려간 상태로)
+      for (const tr of room.traps) tr.phase = 'idle';
+      return;
+    }
     const p = game.player;
     for (const tr of room.traps) {
       const C = CONFIG.traps[tr.kind];

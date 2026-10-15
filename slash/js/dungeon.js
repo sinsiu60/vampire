@@ -63,70 +63,14 @@ const Dungeon = {
     this.refreshSolids(level);
   },
 
-  // ---------- 층 생성 ----------
-  generateFloor(fi) {
-    const D = CONFIG.dungeon;
-    const n = randInt(D.roomsMin, D.roomsMax);
-    const rooms = [];
-    for (let i = 0; i < n; i++) {
-      const kind = i === 0 ? 'start' : i === n - 1 ? 'boss' : 'combat';
-      const width = kind === 'start' ? D.startWidth : kind === 'boss' ? D.bossWidth : randInt(D.roomWidthMin, D.roomWidthMax);
-      const high = () => (Math.random() < D.highDoorChance ? D.ledgeH : 0);
-      rooms.push({
-        index: i, kind, width,
-        leftH: kind === 'combat' ? high() : 0,
-        rightH: kind === 'boss' ? 0 : high(),
-        visited: false,
-        cleared: kind === 'start',
-        waves: [],
-        chest: null,          // { x, y, rank, opened }
-        level: null,
-      });
-    }
-    // 웨이브 구성
-    for (const r of rooms) {
-      if (r.kind === 'combat') {
-        const count = D.roomEnemies[Math.min(fi, D.roomEnemies.length - 1)] + (r.width > 1750 ? 1 : 0);
-        const waves = r.width >= D.twoWaveWidth ? 2 : 1;
-        for (let w = 0; w < waves; w++) {
-          const list = [];
-          for (let k = 0; k < count - (waves === 2 ? 1 : 0); k++) list.push(pickWeighted(D.pools[Math.min(fi, D.pools.length - 1)]));
-          r.waves.push(list);
-        }
-      } else if (r.kind === 'boss') {
-        r.bossId = D.bossByFloor[Math.min(fi, D.bossByFloor.length - 1)];
-      }
-      r.level = this.genRoom(r);
-      Traps.place(r, r.level, fi);
-      // 층 시작방 모닥불 (2층부터): 위 키로 한 번 회복
-      const F = CONFIG.floors[Math.min(fi, CONFIG.floors.length - 1)];
-      if (r.kind === 'start' && F.rest > 0) r.rest = { x: 440, y: CONFIG.dungeon.baseY, used: false, heal: F.rest };
-    }
-    this.layoutMinimap(rooms);
-    return { index: fi, rooms };
-  },
-
-  // 미니맵 좌표: 방 폭에 비례, 문 높이에 맞춰 위아래로 어긋나게
-  layoutMinimap(rooms) {
-    const s = 1 / 40, H = 14, shift = 8;
-    let x = 0, prevDoorY = H;
-    for (const r of rooms) {
-      r.mapW = Math.max(14, r.width * s);
-      r.mapH = H;
-      r.mapX = x;
-      r.mapY = prevDoorY - H + (r.leftH ? shift : 0);
-      prevDoorY = r.mapY + H - (r.rightH ? shift : 0);
-      x += r.mapW + 5;
-    }
-  },
-
   // ---------- 방 지형 생성 ----------
+  // room: { width, leftH, rightH, terrain(지형 있음), walls(양옆 벽), exitLanding(오른쪽 평지 폭) }
   genRoom(room) {
     const D = CONFIG.dungeon, base = D.baseY, W = room.width;
-    const flat = room.kind !== 'combat';
+    const flat = !room.terrain;
     const segs = [{ x0: 0, x1: D.landing, h: room.leftH }];
     let x = D.landing, prevH = room.leftH, prevPit = false;
-    const end = W - D.landing;
+    const end = W - (room.exitLanding || D.landing);
     while (x < end - 60) {
       const remain = end - x;
       // 낭떠러지: 바로 앞이 낮은 평지일 때만, 뒤에 땅이 올 자리가 있을 때만
@@ -181,16 +125,22 @@ const Dungeon = {
     const dh = D.doorHeight;
     const lFloor = base - room.leftH, rFloor = base - room.rightH;
     const gates = [];
-    if (room.index === 0) {
+    if (room.walls) {
+      // 런: 양옆 모두 벽 (나가는 길은 오른쪽 끝의 갈림길 문)
+      rects.push({ x: -200, y: -800, w: 200, h: lFloor + 800 });
+      rects.push({ x: W, y: -800, w: 200, h: rFloor + 1400 });
+    } else if (room.index === 0) {
       rects.push({ x: -200, y: -800, w: 200, h: lFloor + 800 });
     } else {
       rects.push({ x: -200, y: -800, w: 200, h: lFloor - dh + 800 });
       rects.push({ x: -200, y: lFloor, w: 200, h: 600 });
       gates.push({ x: 0, y: lFloor - dh, w: 12, h: dh, gate: 'left' });
     }
-    rects.push({ x: W, y: -800, w: 200, h: rFloor - dh + 800 });
-    rects.push({ x: W, y: rFloor, w: 200, h: 600 });
-    gates.push({ x: W - 12, y: rFloor - dh, w: 12, h: dh, gate: 'right' });
+    if (!room.walls) {
+      rects.push({ x: W, y: -800, w: 200, h: rFloor - dh + 800 });
+      rects.push({ x: W, y: rFloor, w: 200, h: 600 });
+      gates.push({ x: W - 12, y: rFloor - dh, w: 12, h: dh, gate: 'right' });
+    }
 
     // 적 소환 위치: 입구에서 떨어진 땅 위
     const spawnSegs = solids.filter((sg) => sg.x1 - sg.x0 >= 80 && sg.x1 > 340);
