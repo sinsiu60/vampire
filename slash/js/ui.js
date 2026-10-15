@@ -17,13 +17,13 @@ const UI = {
     const p = game.player, P = CONFIG.player;
     ctx.textBaseline = 'alphabetic';
     // 체력 / 스태미나
-    this.bar(ctx, 20, 20, 240, 14, p.hp / P.maxHp, '#e23b3b');
-    this.bar(ctx, 20, 40, 180, 8, p.stamina / P.maxStamina,
+    this.bar(ctx, 20, 20, 240, 14, p.hp / p.maxHp, '#e23b3b');
+    this.bar(ctx, 20, 40, 180, 8, p.stamina / p.maxStamina,
       p.stamina < P.dashStamina ? '#8a7a3a' : '#e8d070', '#1c1a10');
     ctx.font = 'bold 11px "Segoe UI", sans-serif';
     ctx.textAlign = 'left';
     ctx.fillStyle = '#fff';
-    ctx.fillText(`${Math.ceil(p.hp)} / ${P.maxHp}`, 26, 31);
+    ctx.fillText(`${Math.ceil(p.hp)} / ${p.maxHp}`, 26, 31);
 
     // 히트 수
     if (game.combo.count > 1) {
@@ -59,7 +59,7 @@ const UI = {
     } else if (p.state === 'charge') {
       ctx.textAlign = 'left';
       ctx.font = 'bold 14px "Segoe UI", sans-serif';
-      ctx.fillStyle = p.chargeLevel >= 2 ? '#fff' : '#5ff';
+      ctx.fillStyle = p.chargeLevel >= p.weaponCfg().charge.maxLevel ? '#fff' : '#5ff';
       ctx.fillText('차지 Lv' + p.chargeLevel, 20, 128);
     }
 
@@ -73,25 +73,143 @@ const UI = {
     const boss = game.boss;
     if (boss) this.bossBar(ctx, game, boss);
 
+    this.gearHud(ctx, game);
+
     if (this.showHelp && !boss) {
       // 키 이름은 KEYBINDS 에서 가져온다 (config.js 에서 바꾸면 도움말도 같이 바뀜)
       const k = (a) => Input.label(a);
       const lines = [
-        `${k('left')}/${k('right')} 이동   ${k('jump')} 점프(2단, 길게=높이)   ${k('dash')} 대시(무적)   빨강 예고 = 회피 / 노랑 = 패링·가드`,
-        `${k('light')} 약공 4타   ${k('heavy')} 강공(길게=차지)   약공 2타 후 ${k('heavy')} 찌르기   후딜 중 ${k('dash')}/${k('jump')} 캔슬`,
-        `${k('down')}+${k('heavy')} 런처(${k('heavy')} 유지 = 같이 점프)   공중 ${k('light')} 3타   공중 ${k('heavy')} 날려베기   공중 ${k('down')}+${k('heavy')} 내려찍기`,
-        `${k('parry')} 탭 = 퍼펙트 패링   ${k('parry')} 누르기 = 가드   패링 직후 ${k('light')} 반격 일섬 / ${k('heavy')} 반격 런처   체간 붕괴 시 ${k('light')} 처형`,
-        `${k('spawn1')}~${k('spawn6')} 적 소환   ${k('debug')} 히트박스   ${k('debugMode')} 패링 디버그   ${k('mode')} 던전/연습장   ${k('help')} 도움말   ${k('pause')} 일시정지`,
+        `${k('left')}/${k('right')} 이동  ${k('jump')} 점프(2단)  ${k('dash')} 대시(무적)  ${k('light')} 약공 콤보  ${k('heavy')} 강공(길게=차지)  약공 2타 후 ${k('heavy')} 찌르기`,
+        `${k('down')}+${k('heavy')} 런처(${k('heavy')} 유지=같이 점프)  공중 ${k('light')} 콤보  공중 ${k('heavy')} 강공  공중 ${k('down')}+${k('heavy')} 내려찍기`,
+        `${k('parry')} 탭 = 패링 / 누르기 = 가드  패링 직후 ${k('light')} 일섬 / ${k('heavy')} 런처  체간 붕괴 시 ${k('light')} 처형`,
+        `${k('swap')} 무기 교체(직후 공격 = 연계기)  ${k('skill1')} ${CONFIG.skills.skill1.name}  ${k('skill2')} ${CONFIG.skills.skill2.name}  ${k('inventory')} 인벤토리`,
+        `${k('spawn1')}~${k('spawn7')} 적·보스  ${k('spawn8')} 아이템  ${k('debug')} 히트박스  ${k('debugMode')} 패링 디버그  ${k('mode')} 던전/연습장  ${k('help')} 도움말`,
       ];
       ctx.textAlign = 'center';
-      ctx.font = '12px "Segoe UI", sans-serif';
+      ctx.font = '11px "Segoe UI", sans-serif';
       for (let i = 0; i < lines.length; i++) {
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.fillText(lines[i], 481, 471 + i * 14);
+        ctx.fillText(lines[i], 581, 471 + i * 14);
         ctx.fillStyle = 'rgba(255,255,255,0.75)';
-        ctx.fillText(lines[i], 480, 470 + i * 14);
+        ctx.fillText(lines[i], 580, 470 + i * 14);
       }
     }
+  },
+
+  // ---------- 무기 / 스킬 (왼쪽 아래) ----------
+  gearHud(ctx, game) {
+    const p = game.player, x0 = 18, y0 = 470;
+    const w = p.weaponItem(), w2 = p.gear.weapons[1 - p.activeWeapon];
+    const W = p.weaponCfg();
+    ctx.save();
+    // 사용 중인 무기 (크게)
+    this.iconBox(ctx, x0, y0, 48, w, p.swapFlash > 0 ? W.trail.glow : null);
+    ctx.font = 'bold 10px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = `rgb(${W.trail.inner})`;
+    ctx.fillText(W.name, x0 + 24, y0 + 60);
+    // 보조 무기 (작게) + 교체 키
+    this.iconBox(ctx, x0 + 54, y0 + 16, 32, w2, null, 0.6);
+    ctx.fillStyle = p.swapCooldown > 0 ? '#777' : '#fff';
+    ctx.font = 'bold 10px "Segoe UI", sans-serif';
+    ctx.fillText(Input.label('swap'), x0 + 70, y0 + 12);
+    if (p.swapTimer > 0) {
+      // 연계 공격 가능 시간
+      ctx.fillStyle = '#e6c8ff';
+      ctx.fillRect(x0, y0 - 6, 48 * p.swapTimer / CONFIG.swap.linkFrames, 3);
+    }
+    // 스킬
+    ['skill1', 'skill2'].forEach((key, i) => {
+      const x = x0 + 96 + i * 44, y = y0 + 12;
+      const S = CONFIG.skills[key], cd = p.skillCd[key];
+      const shake = p.skillDeny[key] > 0 ? Math.sin(p.skillDeny[key] * 1.6) * 3 : 0;
+      const bx = x + shake, s = 36;
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx.fillRect(bx - 2, y - 2, s + 4, s + 4);
+      ctx.fillStyle = cd > 0 ? '#1a1820' : '#2a2a3a';
+      ctx.fillRect(bx, y, s, s);
+      this.skillIcon(ctx, S.id, bx + s / 2, y + s / 2, cd > 0 ? '#666' : '#e8f6ff');
+      if (cd > 0) {
+        // 쿨타임: 시계 방향으로 걷히는 어둠 + 남은 초
+        const t = cd / p.skillCdMax[key];
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.beginPath();
+        ctx.moveTo(bx + s / 2, y + s / 2);
+        ctx.arc(bx + s / 2, y + s / 2, s * 0.72, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * t);
+        ctx.closePath();
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(bx, y, s, s);
+        ctx.clip();
+        ctx.beginPath();
+        ctx.moveTo(bx + s / 2, y + s / 2);
+        ctx.arc(bx + s / 2, y + s / 2, s * 0.72, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * t);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 12px "Segoe UI", sans-serif';
+        ctx.fillText((cd / 60).toFixed(cd < 60 ? 1 : 0), bx + s / 2, y + s / 2 + 4);
+      } else {
+        ctx.strokeStyle = 'rgba(160,230,255,0.7)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(bx + 0.5, y + 0.5, s - 1, s - 1);
+      }
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 10px "Segoe UI", sans-serif';
+      ctx.fillText(Input.label(key), bx + s / 2, y - 4);
+    });
+    ctx.restore();
+  },
+
+  iconBox(ctx, x, y, s, item, glow, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha || 1;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(x - 2, y - 2, s + 4, s + 4);
+    ctx.fillStyle = '#1c1a22';
+    ctx.fillRect(x, y, s, s);
+    if (item) {
+      ctx.strokeStyle = Loot.color(item);
+      ctx.lineWidth = 1.5;
+      if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = 12; }
+      ctx.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1);
+      ctx.shadowBlur = 0;
+      Loot.drawIcon(ctx, item, x + s / 2, y + s / 2, s / 30);
+    }
+    ctx.restore();
+  },
+
+  // 스킬 아이콘: 회오리 / 지면 강타
+  skillIcon(ctx, id, x, y, color) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    if (id === 'whirl') {
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.ellipse(x, y + 4 - i * 6, 12 - i * 2.5, 3.2, 0, Math.PI * (0.1 + i * 0.3), Math.PI * (1.6 + i * 0.3));
+        ctx.stroke();
+      }
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(x - 13, y + 9); ctx.lineTo(x + 13, y + 9);
+      ctx.stroke();
+      for (let i = 0; i < 3; i++) {
+        const bx = x - 7 + i * 8, h = 6 + i * 3;
+        ctx.beginPath();
+        ctx.moveTo(bx - 3, y + 9); ctx.lineTo(bx, y + 9 - h); ctx.lineTo(bx + 3, y + 9);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.beginPath();
+      ctx.moveTo(x - 9, y - 10); ctx.lineTo(x - 9, y - 2);
+      ctx.moveTo(x - 12, y - 5); ctx.lineTo(x - 9, y - 2); ctx.lineTo(x - 6, y - 5);
+      ctx.stroke();
+    }
+    ctx.restore();
   },
 
   // ---------- 미니맵 (왼쪽 위) ----------

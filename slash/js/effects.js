@@ -85,14 +85,15 @@ const Effects = {
   },
 
   // 찌르기 궤적 (가시 모양)
-  thrust(owner, r, facing, life, color) {
-    this.slashes.push({ owner, r, facing, life, max: life, color: color || '#5ff' });
+  thrust(owner, r, facing, life, color, dy) {
+    this.slashes.push({ owner, r, facing, life, max: life, color: color || '#5ff', dy: dy || 0 });
   },
 
   // 검기 리본 점 하나 추가. id 가 같은 점끼리 이어서 그린다 (한 번의 휘두르기 = 한 id)
   // (ix,iy) 칼 안쪽, (ox,oy) 칼끝 바깥
-  trailPoint(id, ix, iy, ox, oy, life, heavy) {
-    this.trail.push({ id, ix, iy, ox, oy, life, max: life, heavy: !!heavy });
+  // pal: 색 { glow, outer: 'r,g,b', inner: 'r,g,b' } (무기별, 없으면 청록)
+  trailPoint(id, ix, iy, ox, oy, life, heavy, pal) {
+    this.trail.push({ id, ix, iy, ox, oy, life, max: life, heavy: !!heavy, pal });
   },
 
   // 칼 부딪힘 섬광 (작은 원이 퍼지며 사라짐)
@@ -249,12 +250,13 @@ const Effects = {
       ctx.closePath();
       ctx.fill();
     };
+    const pal = tr[i1].pal;
     ctx.save();
-    ctx.shadowColor = '#3ff';
+    ctx.shadowColor = pal ? pal.glow : '#3ff';
     ctx.shadowBlur = 16;
-    layer(1, `rgba(90,230,255,${((heavy ? 0.5 : 0.4) * newest).toFixed(3)})`);
+    layer(1, `rgba(${pal ? pal.outer : '90,230,255'},${((heavy ? 0.5 : 0.4) * newest).toFixed(3)})`);
     ctx.shadowBlur = 0;
-    layer(0.35, `rgba(200,255,255,${(0.85 * newest).toFixed(3)})`);
+    layer(0.35, `rgba(${pal ? pal.inner : '200,255,255'},${(0.85 * newest).toFixed(3)})`);
     // 칼끝 가장자리 선
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -286,7 +288,7 @@ const Effects = {
     for (const s of this.slashes) {
       const t = s.life / s.max;
       ctx.save();
-      ctx.translate(s.owner.x, s.owner.y - 34);
+      ctx.translate(s.owner.x, s.owner.y - 34 + s.dy);
       ctx.scale(s.facing, 1);
       ctx.globalAlpha = t;
       ctx.shadowColor = s.color;

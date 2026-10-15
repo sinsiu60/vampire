@@ -366,30 +366,48 @@ const Render = {
     Anim.drawFigure(ctx, fig, { color: col, back, glow, glowBlur: blur }, p.scarf);
 
     // 칼: 검은 칼날 (궤적만 청록). 패링 성공 후 크리티컬 확정 상태면 금빛
-    const b = fig.blade;
+    const b = fig.blade, B = b.spec, pal = p.trailPal();
     ctx.save();
     if (p.critReady > 0) { ctx.shadowColor = '#ffc830'; ctx.shadowBlur = 10 + Math.sin(p.critReady * 0.3) * 4; }
     else if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = 10; }
-    Anim.drawBlade(ctx, b.base, b.tip, 2.4, 1.1, col);
-    // 코등이
-    const gx = b.guard.x, gy2 = b.guard.y;
-    const dx = b.tip.x - b.base.x, dy = b.tip.y - b.base.y, L = Math.hypot(dx, dy) || 1;
-    ctx.strokeStyle = col;
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(gx - dy / L * 4, gy2 + dx / L * 4);
-    ctx.lineTo(gx + dy / L * 4, gy2 - dx / L * 4);
-    ctx.stroke();
+    else if (p.swapFlash > 0) { ctx.shadowColor = pal.glow; ctx.shadowBlur = p.swapFlash; }
+    if (B.fist) {
+      // 건틀릿: 양손에 쇠주먹 (판정 중엔 앞주먹이 빛남)
+      const hot = p.isActiveFrame();
+      if (hot) { ctx.shadowColor = pal.glow; ctx.shadowBlur = 14; }
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(fig.j.handB.x, fig.j.handB.y, 3.4, 0, Math.PI * 2);
+      ctx.arc(b.hand.x, b.hand.y, 4.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = hot ? `rgb(${pal.inner})` : `rgba(${pal.outer},0.55)`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(b.hand.x, b.hand.y, 4.2, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      Anim.drawBlade(ctx, b.base, b.tip, B.w0, B.w1, col);
+      // 코등이
+      const gx = b.guard.x, gy2 = b.guard.y;
+      const dx = b.tip.x - b.base.x, dy = b.tip.y - b.base.y, L = Math.hypot(dx, dy) || 1;
+      const gw = 3 + B.w0 * 0.6;
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(gx - dy / L * gw, gy2 + dx / L * gw);
+      ctx.lineTo(gx + dy / L * gw, gy2 - dx / L * gw);
+      ctx.stroke();
+    }
     ctx.restore();
 
     // 판정 중: 칼날을 따라 검기가 뻗어나감
-    if (p.isActiveFrame() && p.state === 'attack' && !p.move.swing.thrust) {
+    if (p.isActiveFrame() && p.state === 'attack' && !p.move.swing.thrust && !B.fist) {
       const far = p.bladePoint(b.pose, b.pose.r, {});
       ctx.save();
-      ctx.shadowColor = '#3ff';
+      ctx.shadowColor = pal.glow;
       ctx.shadowBlur = 14;
-      ctx.strokeStyle = 'rgba(210,255,255,0.95)';
+      ctx.strokeStyle = `rgba(${pal.inner},0.95)`;
       ctx.lineWidth = 2.5;
       ctx.lineCap = 'round';
       ctx.beginPath();

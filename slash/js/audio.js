@@ -294,6 +294,63 @@ const Sound = {
       case 'telegraph':
         this._tone(0.07, 'square', 900, 700, 0.06);
         break;
+      // ----- 8단계: 무기 / 스킬 / 아이템 -----
+      case 'punch':             // 건틀릿 잽: 짧은 바람 + 둔탁
+        this._noise(0.06, 'bandpass', 1400, 3000, 0.3, 1.4);
+        break;
+      case 'punchHeavy':
+        this._noise(0.14, 'bandpass', 700, 2400, 0.45, 1);
+        this._tone(0.1, 'sine', 180, 70, 0.25);
+        break;
+      case 'whirl':             // 회오리: 길게 휘감기는 바람
+        this._noise(0.5, 'bandpass', 700, 3600, 0.45, 0.8, 0.3);
+        this._noise(0.5, 'bandpass', 3600, 900, 0.25, 1.5);
+        break;
+      case 'swap':              // 무기 교체: 금속 스치는 소리
+        this._metal(1300, 0.18, 0.12, 0.4, [1, 2.4, 3.9]);
+        this._noise(0.08, 'highpass', 4000, 6000, 0.2);
+        break;
+      case 'skill':
+        this._tone(0.18, 'triangle', 500, 1100, 0.15, 0, 0.4);
+        break;
+      case 'deny':              // 쿨타임 중
+        this._tone(0.08, 'square', 180, 150, 0.08);
+        break;
+      case 'quake':             // 지면 강타: 묵직한 땅울림
+        this._noise(0.5, 'lowpass', 900, 50, 1.0, 0, 0.3);
+        this._tone(0.5, 'sine', 80, 30, 0.9);
+        break;
+      case 'thunder':           // 번개
+        this._noise(0.35, 'highpass', 6000, 1200, 0.6, 0, 0.4);
+        this._tone(0.3, 'sawtooth', 120, 40, 0.25);
+        break;
+      case 'pickup':
+        this._tone(0.08, 'triangle', 700, 900, 0.15);
+        this._tone(0.12, 'triangle', 1050, 1400, 0.13, 0.06);
+        break;
+      case 'dropRare':          // 영웅 아이템 떨어짐
+        this._tone(0.3, 'triangle', 880, 880, 0.12, 0, 0.5);
+        this._tone(0.4, 'triangle', 1320, 1320, 0.1, 0.1, 0.5);
+        break;
+      case 'dropLegend':        // 전설: 화음 + 긴 울림
+        this._tone(0.6, 'triangle', 660, 660, 0.14, 0, 0.6);
+        this._tone(0.6, 'triangle', 990, 990, 0.12, 0.08, 0.6);
+        this._tone(0.8, 'triangle', 1320, 1320, 0.12, 0.16, 0.7);
+        this._metal(1760, 0.9, 0.06, 0.8, [1, 2.76]);
+        break;
+      case 'equip':
+        this._metal(900, 0.12, 0.12, 0.2, [1, 2.2]);
+        break;
+      case 'discard':
+        this._noise(0.12, 'lowpass', 1200, 300, 0.3);
+        break;
+      case 'invOpen':
+        this._noise(0.1, 'bandpass', 800, 1600, 0.2);
+        this._tone(0.08, 'sine', 400, 600, 0.08);
+        break;
+      case 'invClose':
+        this._tone(0.08, 'sine', 600, 400, 0.08);
+        break;
     }
   },
 };

@@ -103,6 +103,13 @@ const Anim = (() => {
     gKneel: P({ torso: 34, head: 34, thF: 85, shF: -150, thB: -40, shB: -100, arB1: 10, arB2: 10, arF1: 20, arF2: 10, wpn: 105 }),
     // 플레이어 패링 자세: 칼을 세워 막음
     parry: P({ torso: -8, head: -4, thF: 34, shF: -40, thB: -26, shB: -24, arB1: -40, arB2: 70 }),
+    // 건틀릿: 뒷손은 턱 앞에 가드
+    jabWind: P({ torso: 6, head: 2, thF: 30, shF: -30, thB: -24, shB: -22, arB1: 125, arB2: -115 }),
+    jabStrike: P({ torso: 22, head: 8, thF: 44, shF: -40, thB: -34, shB: -14, arB1: 130, arB2: -120 }),
+    crossStrike: P({ torso: 32, head: 12, thF: 52, shF: -48, thB: -46, shB: -10, arB1: 95, arB2: -90 }),
+    hookWind: P({ torso: -8, head: -2, thF: 30, shF: -26, thB: -26, shB: -24, arB1: 120, arB2: -110 }),
+    hookStrike: P({ torso: 26, head: 6, thF: 46, shF: -42, thB: -38, shB: -14, arB1: 110, arB2: -100 }),
+    knee: P({ torso: 14, head: 4, thF: 115, shF: -150, thB: -20, shB: -30, arB1: 120, arB2: -100 }),
   };
 
   // 기술 → (예비, 휘두름) 포즈와 특수 연출
@@ -172,16 +179,20 @@ const Anim = (() => {
     switch (p.state) {
       case 'attack': {
         const m = p.move;
-        const set = MOVE_POSES[p.moveId] || MOVE_POSES.L1;
+        const set = m.pose || MOVE_POSES[p.moveId] || MOVE_POSES.L1;
         const wind = POSES[set[0]], strike = POSES[set[1]];
         const base = p.onGround ? breathe(POSES.idle, t) : airBase();
         const end = m.startup + m.active;
         if (f < m.startup) r.pose = lerpPose(base, wind, ease.outCubic(f / m.startup));
         else if (f < end) r.pose = lerpPose(wind, strike, ease.outCubic((f - m.startup + 1) / m.active));
         else r.pose = lerpPose(strike, base, ease.inOut(clamp01((f - end) / m.recovery)));
+        if (set[2] === 'rapid' && f >= m.startup && f < end) {
+          // 연타: 두 포즈를 빠르게 번갈아
+          r.pose = lerpPose(wind, strike, ((f >> 1) & 1) ? 1 : 0.2);
+        }
         if (set[2] === 'spinX' && f >= m.startup && f < end + 3) {
-          // 가로 회전베기: 몸이 한 바퀴 도는 느낌 (좌우 뒤집힘)
-          const c = Math.cos(2 * Math.PI * clamp01((f - m.startup) / (m.active + 3)));
+          // 가로 회전베기: 몸이 한 바퀴 도는 느낌 (좌우 뒤집힘). spins: 회전 수 (회오리 베기)
+          const c = Math.cos(2 * Math.PI * (m.spins || 1) * clamp01((f - m.startup) / (m.active + 3)));
           r.sx = Math.sign(c || 1) * Math.max(0.25, Math.abs(c));
         }
         if (set[2] === 'flip' && f >= m.startup) {
@@ -527,12 +538,14 @@ const Anim = (() => {
     const pa = playerPose(p);
     const fig = build(pa, DIMS.player, p.x, p.y, p.facing);
     const bp = p.bladePose();
+    const B = p.weaponCfg().blade;   // 무기별 칼 길이 / 손 위치 (건틀릿은 주먹)
     fig.blade = {
       pose: bp,
-      base: p.bladePoint(bp, 8, {}),
-      hand: p.bladePoint(bp, CONFIG.player.trailInner, {}),
-      guard: p.bladePoint(bp, CONFIG.player.trailInner + 2, {}),
-      tip: p.bladePoint(bp, CONFIG.player.trailInner + CONFIG.player.bladeLength, {}),
+      spec: B,
+      base: p.bladePoint(bp, B.fist ? B.hand : 8, {}),
+      hand: p.bladePoint(bp, B.hand, {}),
+      guard: p.bladePoint(bp, B.hand + 2, {}),
+      tip: p.bladePoint(bp, B.hand + B.length + (B.fist ? 3 : 0), {}),
     };
     reach(fig, fig.blade.hand);
     return fig;
@@ -594,7 +607,7 @@ const Anim = (() => {
     const j = {};
     for (const k in fig.j) j[k] = { x: fig.j[k].x, y: fig.j[k].y };
     const out = { j, dim: fig.dim, facing: fig.facing, sx: fig.sx };
-    if (fig.blade) out.blade = { base: { ...fig.blade.base }, tip: { ...fig.blade.tip } };
+    if (fig.blade && !(fig.blade.spec && fig.blade.spec.fist)) out.blade = { base: { ...fig.blade.base }, tip: { ...fig.blade.tip } };
     return out;
   }
 

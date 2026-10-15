@@ -32,6 +32,8 @@ const KEYBINDS = {
   spawn1: ['Digit1'], spawn2: ['Digit2'], spawn3: ['Digit3'],
   spawn4: ['Digit4'], spawn5: ['Digit5'], spawn6: ['Digit6'],
   spawn7: ['Digit7'],           // 보스 소환 (개발용)
+  spawn8: ['Digit8'],           // 아이템 떨어뜨리기 (개발용)
+  discard: ['KeyX'],            // 인벤토리: 아이템 버리기
   help: ['F1'],                 // 조작 도움말 표시/숨기기
 };
 
@@ -291,6 +293,363 @@ const CONFIG = {
     moveSpeedMult: 0,          // 차지 중 이동 (0 = 제자리)
   },
 
+  // ---------- 무기 3종 (8단계) ----------
+  // 무기마다 기술표(moves)를 따로 가진다. 여기 없는 기술은 위의 moves(검)를 그대로 쓴다.
+  // pose: 애니메이션 [예비 포즈, 휘두름 포즈, 특수] (anim.js POSES 이름) / pts: 스타일 점수
+  // multiHit: { interval, count } 판정 동안 interval 프레임마다 다시 맞힘
+  // quake: 판정 시작 때 앞으로 지면 충격파 발사 { damage, range, speed, height, stun }
+  // armor: 이 기술(차지 포함) 중엔 맞아도 경직 없음 (데미지 armorMult 배)
+  weapons: {
+    sword: {
+      name: '검', desc: '균형형 · 4타 콤보 · 찌르기 · 차지 2단',
+      blade: { length: 40, hand: 14, w0: 2.4, w1: 1.1, guard: true },
+      trail: { glow: '#3ff', outer: '90,230,255', inner: '200,255,255' },
+      charge: { framesPerLevel: 28, staminaPerLevel: 18, maxLevel: 2 },
+      speedMult: 1,
+      moves: {},
+    },
+    greatsword: {
+      name: '대검', desc: '느리지만 강함 · 3타 콤보 · 차지 3단 (차지 중엔 경직 없음)',
+      // rest / runAng / airAng: 평소 칼 각도 (대검은 어깨에 걸침, 바닥에 박히지 않게)
+      blade: { length: 64, hand: 14, w0: 4.6, w1: 3.2, guard: true, rest: -150, runAng: -165, airAng: -140 },
+      trail: { glow: '#f83', outer: '255,140,60', inner: '255,225,180' },
+      charge: { framesPerLevel: 24, staminaPerLevel: 16, maxLevel: 3, armor: true },
+      armorMult: 0.6,            // 경직 없이 버틸 때 받는 데미지 배율
+      speedMult: 0.9,            // 이동 속도 배율
+      moves: {
+        L1: {
+          name: '대검 내려치기', startup: 11, active: 5, recovery: 18, chainDelay: 6,
+          damage: 20, hitbox: { x: -4, y: -80, w: 94, h: 80 },
+          knock: { x: 5, y: -1 }, hitstun: 30, hitstop: 8, shake: 5,
+          lunge: 3, next: 'L2', sfx: 'swingHeavy', heavy: true, pts: 10,
+          swing: { from: -150, to: 70, r: 90, squash: 1 }, pose: ['cutWind', 'cutStrike'],
+        },
+        L2: {
+          name: '대검 올려베기', startup: 10, active: 5, recovery: 18, chainDelay: 6,
+          damage: 22, hitbox: { x: -4, y: -92, w: 92, h: 92 },
+          knock: { x: 4, y: -5 }, hitstun: 32, hitstop: 8, shake: 5,
+          lunge: 2.5, next: 'L3', sfx: 'swingHeavy', heavy: true, pts: 10,
+          swing: { from: 70, to: -140, r: 92, squash: 1 }, pose: ['riseWind', 'riseStrike'],
+        },
+        L3: {
+          name: '대회전 베기', startup: 14, active: 8, recovery: 26,
+          damage: 34, hitbox: { x: -72, y: -66, w: 176, h: 58 },
+          knock: { x: 11, y: -5 }, hitstun: 40, hitstop: 12, shake: 9,
+          lunge: 4, next: null, sfx: 'swingHeavy', heavy: true, pts: 16, armor: true,
+          swing: { from: 180, to: -180, r: 104, squash: 0.3, py: -28 }, pose: ['spinWind', 'spinStrike', 'spinX'],
+        },
+        THRUST: {
+          name: '파쇄 찌르기', startup: 12, active: 7, recovery: 22,
+          damage: 38, posture: 40, hitbox: { x: 4, y: -46, w: 124, h: 30 },
+          knock: { x: 12, y: -2 }, hitstun: 36, hitstop: 11, shake: 8,
+          lunge: 11, next: null, sfx: 'swingHeavy', heavy: true, pts: 16,
+          swing: { from: 0, to: 0, r: 128, thrust: true }, pose: ['thrustWind', 'thrustStrike'],
+        },
+        HEAVY: [
+          {
+            name: '대검 강베기', startup: 16, active: 6, recovery: 26,
+            damage: 34, hitbox: { x: -8, y: -92, w: 104, h: 92 },
+            knock: { x: 8, y: -3 }, hitstun: 36, hitstop: 10, shake: 7,
+            lunge: 3, sfx: 'swingHeavy', heavy: true, pts: 14, armor: true,
+            swing: { from: -165, to: 75, r: 98, squash: 1 },
+          },
+          {
+            name: '대검 차지 Lv1', startup: 8, active: 6, recovery: 24,
+            damage: 52, hitbox: { x: -10, y: -104, w: 120, h: 104 },
+            knock: { x: 11, y: -4 }, hitstun: 40, hitstop: 12, shake: 10,
+            lunge: 4, sfx: 'swingHeavy', heavy: true, pts: 20, armor: true,
+            swing: { from: -170, to: 80, r: 110, squash: 1 },
+          },
+          {
+            name: '대검 차지 Lv2', startup: 8, active: 7, recovery: 26,
+            damage: 76, hitbox: { x: -14, y: -120, w: 140, h: 120 },
+            knock: { x: 14, y: -6 }, hitstun: 46, hitstop: 15, shake: 13,
+            lunge: 5, sfx: 'swingHeavy', heavy: true, pts: 28, armor: true, impactFrame: true,
+            swing: { from: -175, to: 85, r: 124, squash: 1 },
+          },
+          {
+            name: '대검 차지 Lv3 · 천붕', startup: 8, active: 8, recovery: 30,
+            damage: 110, hitbox: { x: -20, y: -144, w: 176, h: 144 },
+            knock: { x: 16, y: -8 }, hitstun: 54, hitstop: 18, shake: 18,
+            lunge: 6, sfx: 'swingHeavy', heavy: true, pts: 38, armor: true, impactFrame: true,
+            swing: { from: -178, to: 88, r: 142, squash: 1 },
+            quake: { damage: 30, range: 300, speed: 9, height: 70, stun: 70, bossPosture: 30 },
+          },
+        ],
+        LAUNCHER: {
+          name: '대검 올려치기', startup: 12, active: 6, recovery: 24,
+          damage: 18, hitbox: { x: -6, y: -106, w: 84, h: 106 },
+          knock: { x: 1, y: -12.6 }, hitstun: 32, hitstop: 8, shake: 6,
+          lunge: 1.5, sfx: 'launcher', launch: true, pts: 16,
+          swing: { from: 100, to: -110, r: 96, squash: 1 }, pose: ['launchWind', 'launchStrike'],
+        },
+        A1: {
+          name: '공중 내려치기', startup: 8, active: 5, recovery: 16, air: true,
+          damage: 16, hitbox: { x: -4, y: -72, w: 86, h: 78 },
+          knock: { x: 2, y: -3.8 }, hitstun: 32, hitstop: 7, shake: 4,
+          lunge: 1.5, next: 'A2', sfx: 'swingHeavy', heavy: true, pts: 10,
+          swing: { from: -120, to: 60, r: 86, squash: 1 }, pose: ['airWind', 'airStrike'],
+        },
+        A2: {
+          name: '공중 대회전', startup: 10, active: 7, recovery: 20, air: true,
+          damage: 22, hitbox: { x: -48, y: -80, w: 132, h: 88 },
+          knock: { x: 5, y: -2.5 }, hitstun: 36, hitstop: 9, shake: 6,
+          lunge: 2, next: null, sfx: 'swingHeavy', heavy: true, pts: 16,
+          swing: { from: -200, to: 160, r: 92, squash: 1 }, pose: ['tuck', 'tuck', 'flip'],
+        },
+        AIR_HEAVY: {
+          name: '투구 깨기', startup: 12, active: 6, recovery: 22, air: true,
+          damage: 28, hitbox: { x: -4, y: -74, w: 90, h: 84 },
+          knock: { x: 4, y: 9 }, hitstun: 34, hitstop: 11, shake: 8,
+          lunge: 2, sfx: 'swingHeavy', heavy: true, pts: 14,
+          swing: { from: -160, to: 80, r: 96, squash: 1 }, pose: ['airWind', 'airStrike'],
+        },
+        SLAM_WAVE: {
+          name: '대검 충격파', damage: 20, radius: 150, height: 56,
+          knock: { x: 5, y: -6 }, hitstun: 34, hitstop: 11, shake: 14,
+        },
+      },
+    },
+    gauntlet: {
+      name: '건틀릿', desc: '빠른 6타 연타 · 공중 5타 · 공중 체공이 길다',
+      blade: { length: 0, hand: 18, fist: true, rest: -20, runAng: 30 },   // 주먹을 들어 가드
+      trail: { glow: '#b6f', outer: '180,120,255', inner: '235,215,255' },
+      charge: { framesPerLevel: 22, staminaPerLevel: 16, maxLevel: 1 },
+      speedMult: 1.08,
+      airGravityMult: 0.22,      // 공중 공격 중 중력 (검은 air.attackGravityMult)
+      airHangMult: 1.3,          // 공중 적중 시 머무는 힘 배율
+      moves: {
+        L1: {
+          name: '잽', startup: 3, active: 2, recovery: 9, chainDelay: 2,
+          damage: 5, hitbox: { x: 2, y: -46, w: 46, h: 24 },
+          knock: { x: 1.2, y: 0 }, hitstun: 16, hitstop: 3, shake: 1,
+          lunge: 2, next: 'L2', sfx: 'punch', pts: 4,
+          swing: { thrust: true, r: 48, from: 0, to: 0 }, pose: ['jabWind', 'jabStrike'],
+        },
+        L2: {
+          name: '스트레이트', startup: 3, active: 2, recovery: 9, chainDelay: 2,
+          damage: 6, hitbox: { x: 2, y: -46, w: 50, h: 24 },
+          knock: { x: 1.6, y: 0 }, hitstun: 18, hitstop: 3, shake: 1,
+          lunge: 2.4, next: 'L3', sfx: 'punch', pts: 4,
+          swing: { thrust: true, r: 52, from: 0, to: 0 }, pose: ['jabWind', 'crossStrike'],
+        },
+        L3: {
+          name: '훅', startup: 4, active: 3, recovery: 10, chainDelay: 2,
+          damage: 7, hitbox: { x: -4, y: -52, w: 54, h: 34 },
+          knock: { x: 2, y: 0 }, hitstun: 20, hitstop: 4, shake: 2,
+          lunge: 2.4, next: 'L4', sfx: 'punch', pts: 5,
+          swing: { from: -70, to: 40, r: 46, squash: 0.5, py: -34 }, pose: ['hookWind', 'hookStrike'],
+        },
+        L4: {
+          name: '어퍼컷', startup: 4, active: 3, recovery: 10, chainDelay: 2,
+          damage: 7, hitbox: { x: -2, y: -66, w: 50, h: 56 },
+          knock: { x: 1.4, y: -3 }, hitstun: 22, hitstop: 4, shake: 2,
+          lunge: 2, next: 'L5', sfx: 'punch', pts: 5,
+          swing: { from: 80, to: -100, r: 46, squash: 1 }, pose: ['riseWind', 'riseStrike'],
+        },
+        L5: {
+          name: '연타 러시', startup: 4, active: 16, recovery: 12, chainDelay: 2,
+          damage: 4, hitbox: { x: 2, y: -52, w: 56, h: 34 }, multiHit: { interval: 4, count: 4 },
+          knock: { x: 0.8, y: 0 }, hitstun: 20, hitstop: 2, shake: 1,
+          lunge: 1.2, next: 'L6', sfx: 'punch', pts: 8,
+          swing: { thrust: true, r: 54, from: 0, to: 0 }, pose: ['jabStrike', 'crossStrike', 'rapid'],
+        },
+        L6: {
+          name: '붕권', startup: 8, active: 4, recovery: 18,
+          damage: 16, hitbox: { x: 2, y: -50, w: 66, h: 30 },
+          knock: { x: 9, y: -3 }, hitstun: 30, hitstop: 8, shake: 6,
+          lunge: 5, next: null, sfx: 'punchHeavy', heavy: true, pts: 12,
+          swing: { thrust: true, r: 68, from: 0, to: 0 }, pose: ['thrustWind', 'thrustStrike'],
+        },
+        THRUST: {
+          name: '돌진 정권', startup: 6, active: 8, recovery: 16,
+          damage: 16, hitbox: { x: 0, y: -48, w: 64, h: 28 },
+          knock: { x: 9, y: -2 }, hitstun: 30, hitstop: 7, shake: 5,
+          lunge: 13, next: null, sfx: 'punchHeavy', heavy: true, pts: 12,
+          swing: { thrust: true, r: 64, from: 0, to: 0 }, pose: ['thrustWind', 'thrustStrike'],
+        },
+        HEAVY: [
+          {
+            name: '강펀치', startup: 9, active: 4, recovery: 18,
+            damage: 15, hitbox: { x: 2, y: -50, w: 62, h: 30 },
+            knock: { x: 8, y: -2 }, hitstun: 30, hitstop: 7, shake: 5,
+            lunge: 4, sfx: 'punchHeavy', heavy: true, pts: 10,
+            swing: { thrust: true, r: 62, from: 0, to: 0 }, pose: ['thrustWind', 'thrustStrike'],
+          },
+          {
+            name: '폭쇄권', startup: 5, active: 5, recovery: 20,
+            damage: 30, hitbox: { x: 0, y: -60, w: 80, h: 44 },
+            knock: { x: 13, y: -5 }, hitstun: 38, hitstop: 12, shake: 10,
+            lunge: 6, sfx: 'punchHeavy', heavy: true, pts: 18, impactFrame: true,
+            swing: { thrust: true, r: 80, from: 0, to: 0 }, pose: ['thrustWind', 'thrustStrike'],
+          },
+        ],
+        LAUNCHER: {
+          name: '승천권', startup: 5, active: 5, recovery: 16,
+          damage: 10, hitbox: { x: -6, y: -100, w: 58, h: 100 },
+          knock: { x: 0.6, y: -13.4 }, hitstun: 32, hitstop: 6, shake: 5,
+          lunge: 1.5, sfx: 'launcher', launch: true, pts: 14,
+          swing: { from: 80, to: -100, r: 52, squash: 1 }, pose: ['launchWind', 'launchStrike'],
+        },
+        A1: {
+          name: '공중 잽', startup: 3, active: 2, recovery: 9, chainDelay: 2, air: true,
+          damage: 5, hitbox: { x: 0, y: -54, w: 50, h: 40 },
+          knock: { x: 0.8, y: -4.6 }, hitstun: 30, hitstop: 3, shake: 1,
+          lunge: 1, next: 'A2', sfx: 'punch', pts: 5,
+          swing: { thrust: true, r: 48, from: 0, to: 0 }, pose: ['airWind', 'jabStrike'],
+        },
+        A2: {
+          name: '공중 스트레이트', startup: 3, active: 2, recovery: 9, chainDelay: 2, air: true,
+          damage: 5, hitbox: { x: 0, y: -54, w: 52, h: 40 },
+          knock: { x: 0.8, y: -4.6 }, hitstun: 30, hitstop: 3, shake: 1,
+          lunge: 1, next: 'A3', sfx: 'punch', pts: 5,
+          swing: { thrust: true, r: 52, from: 0, to: 0 }, pose: ['airWind', 'crossStrike'],
+        },
+        A3: {
+          name: '공중 훅', startup: 4, active: 3, recovery: 10, chainDelay: 2, air: true,
+          damage: 6, hitbox: { x: -6, y: -60, w: 58, h: 46 },
+          knock: { x: 1, y: -4.8 }, hitstun: 30, hitstop: 4, shake: 2,
+          lunge: 1, next: 'A4', sfx: 'punch', pts: 6,
+          swing: { from: -70, to: 40, r: 46, squash: 0.5, py: -34 }, pose: ['hookWind', 'hookStrike'],
+        },
+        A4: {
+          name: '공중 니킥', startup: 4, active: 3, recovery: 10, chainDelay: 2, air: true,
+          damage: 7, hitbox: { x: -4, y: -50, w: 50, h: 46 },
+          knock: { x: 1, y: -5 }, hitstun: 30, hitstop: 4, shake: 2,
+          lunge: 1.4, next: 'A5', sfx: 'punch', pts: 6,
+          swing: { from: 90, to: -60, r: 44, squash: 1 }, pose: ['airRiseWind', 'knee'],
+        },
+        A5: {
+          name: '공중 회축', startup: 5, active: 6, recovery: 14, air: true,
+          damage: 12, hitbox: { x: -34, y: -70, w: 90, h: 78 },
+          knock: { x: 4, y: -3 }, hitstun: 34, hitstop: 7, shake: 5,
+          lunge: 2, next: null, sfx: 'punchHeavy', heavy: true, pts: 12,
+          swing: { from: -200, to: 160, r: 56, squash: 1 }, pose: ['tuck', 'tuck', 'flip'],
+        },
+        AIR_HEAVY: {
+          name: '유성 낙하권', startup: 7, active: 5, recovery: 16, air: true,
+          damage: 14, hitbox: { x: -4, y: -56, w: 64, h: 70 },
+          knock: { x: 2, y: 10 }, hitstun: 32, hitstop: 8, shake: 6,
+          lunge: 2, sfx: 'punchHeavy', heavy: true, pts: 12,
+          swing: { from: -40, to: 100, r: 56, squash: 1 }, pose: ['airWind', 'airStrike'],
+        },
+      },
+    },
+  },
+
+  // ---------- 무기 교체 ----------
+  // R 로 즉시 교체 (공격 후딜 중에도 가능). 교체 직후 linkFrames 안에 공격하면 새 무기의 연계 공격
+  swap: {
+    cooldown: 24,
+    linkFrames: 40,
+    moves: {
+      sword: {
+        name: '전환 · 질풍 베기', startup: 3, active: 5, recovery: 16,
+        damage: 22, posture: 24, hitbox: { x: -10, y: -60, w: 104, h: 58 },
+        knock: { x: 6, y: -2 }, hitstun: 34, hitstop: 8, shake: 5,
+        lunge: 12, sfx: 'swingHeavy', heavy: true, pts: 22,
+        swing: { from: 170, to: -40, r: 86, squash: 0.45, py: -30 }, pose: ['spinWind', 'thrustStrike'],
+      },
+      greatsword: {
+        name: '전환 · 대지 가르기', startup: 8, active: 6, recovery: 22,
+        damage: 44, posture: 34, hitbox: { x: -12, y: -112, w: 132, h: 112 },
+        knock: { x: 10, y: -6 }, hitstun: 44, hitstop: 13, shake: 11,
+        lunge: 6, sfx: 'swingHeavy', heavy: true, impactFrame: true, pts: 24, armor: true,
+        swing: { from: -175, to: 85, r: 120, squash: 1 }, pose: ['cutWind', 'cutStrike'],
+        quake: { damage: 20, range: 240, speed: 9, height: 70, stun: 50, bossPosture: 20 },
+      },
+      gauntlet: {
+        name: '전환 · 승룡권', startup: 3, active: 6, recovery: 14,
+        damage: 18, posture: 20, hitbox: { x: -6, y: -112, w: 62, h: 112 },
+        knock: { x: 0.8, y: -13.6 }, hitstun: 34, hitstop: 8, shake: 6,
+        lunge: 3, sfx: 'launcher', launch: true, autoFollow: true, pts: 22,
+        swing: { from: 80, to: -110, r: 56, squash: 1 }, pose: ['launchWind', 'launchStrike'],
+      },
+    },
+  },
+
+  // ---------- 스킬 ----------
+  // cooldown: 프레임 (아이템 '스킬 쿨타임 감소' 로 줄어듦). move: 기술 데이터 (위와 같은 형식)
+  skills: {
+    skill1: {
+      id: 'whirl', name: '회오리 베기', desc: '주변 360° 를 3번 베고 마지막에 살짝 띄움', cooldown: 360,
+      move: {
+        name: '회오리 베기', startup: 6, active: 30, recovery: 16,
+        damage: 9, hitbox: { x: -76, y: -78, w: 152, h: 86 }, multiHit: { interval: 10, count: 3 }, omni: true,
+        knock: { x: 2, y: -2.5 }, lastHit: { knock: { x: 2.5, y: -7.5 }, launch: true },
+        hitstun: 30, hitstop: 4, shake: 3, lunge: 0, sfx: 'whirl', pts: 18, skill: true, spins: 3,
+        swing: { from: 0, to: -1080, r: 86, squash: 0.32, py: -28 }, pose: ['spinWind', 'spinStrike', 'spinX'],
+      },
+    },
+    skill2: {
+      id: 'quake', name: '지면 강타', desc: '앞으로 충격파를 보내 적을 기절시킴 (지상)', cooldown: 480, groundOnly: true,
+      move: {
+        name: '지면 강타', startup: 16, active: 4, recovery: 22,
+        damage: 14, hitbox: { x: -10, y: -60, w: 74, h: 62 },
+        knock: { x: 3, y: -2 }, hitstun: 30, hitstop: 8, shake: 10, lunge: 1,
+        sfx: 'swingHeavy', heavy: true, pts: 18, skill: true,
+        swing: { from: -175, to: 95, r: 78, squash: 1 }, pose: ['smashWind', 'cutStrike'],
+        // 충격파: 바닥을 따라 range 까지. 맞은 적 stun 프레임 기절 (보스는 대신 그로기 bossPosture)
+        quake: { damage: 18, range: 400, speed: 8, height: 70, stun: 110, bossPosture: 40 },
+      },
+    },
+  },
+
+  // ---------- 장비 / 루팅 ----------
+  loot: {
+    // 등급: opts = 랜덤 옵션 수, power = 무기 공격력 배율, optMult = 옵션 수치 배율
+    rarities: [
+      { name: '일반', color: '#e8e8e8', opts: 1, power: 1.0, optMult: 1 },
+      { name: '희귀', color: '#4aa8ff', opts: 2, power: 1.1, optMult: 1.2 },
+      { name: '영웅', color: '#b45cff', opts: 3, power: 1.22, optMult: 1.45 },
+      { name: '전설', color: '#ff9a2a', opts: 4, power: 1.38, optMult: 1.75 },
+    ],
+    // 랜덤 옵션 (일반 등급 기준 굴림 범위 × optMult)
+    options: {
+      atk: { name: '공격력', min: 4, max: 9, unit: '%' },
+      aspd: { name: '공격 속도', min: 3, max: 7, unit: '%' },
+      crit: { name: '치명타 확률', min: 2, max: 5, unit: '%' },
+      lifesteal: { name: '흡혈', min: 1, max: 2.5, unit: '%', dec: 1 },
+      cdr: { name: '스킬 쿨타임 감소', min: 4, max: 9, unit: '%' },
+      stamina: { name: '최대 스태미나', min: 8, max: 18, unit: '' },
+      maxHp: { name: '최대 체력', min: 6, max: 14, unit: '' },
+      posture: { name: '체간 피해', min: 5, max: 12, unit: '%' },
+    },
+    limits: { aspd: 40, crit: 60, lifesteal: 15, cdr: 50 },   // 합계 상한
+    // 장비 기본 능력치 (등급별)
+    armorBase: [{ maxHp: 10, reduce: 3 }, { maxHp: 16, reduce: 5 }, { maxHp: 24, reduce: 8 }, { maxHp: 34, reduce: 12 }],
+    ringBase: [{ crit: 2 }, { crit: 3 }, { crit: 4 }, { crit: 6 }],
+    // 전설 고유 효과
+    uniques: {
+      thunder: { name: '뇌신', desc: '3번째 타격마다 번개가 내리꽂힘', every: 3, damage: 16, stun: 24 },
+      parryBlast: { name: '폭염', desc: '퍼펙트 패링 성공 시 주변 폭발', damage: 30, radius: 130, posture: 20 },
+      bloodthirst: { name: '피의 갈망', desc: '적 처치 시 체력 6 회복', heal: 6 },
+      phantom: { name: '그림자', desc: '대시로 통과한 적에게 피해', damage: 14 },
+      frenzy: { name: '광란', desc: 'S 랭크 이상일 때 공격력 +25%', atk: 25, minRank: 4 },
+    },
+    slotWeights: { weapon: 4, armor: 3, ring: 3 },
+    weaponTypes: ['sword', 'greatsword', 'gauntlet'],
+    nouns: { sword: '검', greatsword: '대검', gauntlet: '건틀릿', armor: '갑옷', ring: '반지' },
+    // 일반 / 희귀 / 영웅 이름 (전설은 '<고유효과>의 <종류>')
+    names: {
+      sword: ['녹슨 검', '강철 검', '명장의 검'],
+      greatsword: ['무딘 대검', '강철 대검', '용살의 대검'],
+      gauntlet: ['가죽 건틀릿', '강철 건틀릿', '수라의 건틀릿'],
+      armor: ['가죽 갑옷', '사슬 갑옷', '흑철 갑옷'],
+      ring: ['구리 반지', '은 반지', '흑요석 반지'],
+    },
+    // 등급 확률 가중치 (층별) [일반, 희귀, 영웅, 전설]
+    rarityWeights: [[70, 25, 5, 0.6], [55, 32, 11, 2.2], [42, 36, 18, 4.5]],
+    chestLuck: 0.35,           // 상자: 방 최고 랭크 1당 높은 등급 가중치 +35%
+    enemyDropChance: [0.1, 0.12, 0.14],   // 층별 일반 적 드랍 확률
+    bossDrops: 2,              // 보스 드랍 수 (영웅 이상 확정)
+    bossMinRarity: 2,
+    chestHealMult: 0.5,        // 상자 체력 회복 (스타일 clearHeal × 이 배율)
+    pickupDelay: 30,           // 떨어진 뒤 주울 수 있을 때까지
+    pickupRange: 26,
+    bagSize: 12,
+  },
+
   // ---------- 패링 / 가드 (세키로식 검극) ----------
   // 판정은 모두 "게임 시간(ms)" 기준: 히트스톱 중엔 멈추고, 슬로모션 중엔 같이 느려짐
   // 키 입력은 keydown 이벤트 시각(타임스탬프)으로 기록해서 프레임 단위 오차 없이 비교
@@ -411,6 +770,8 @@ const CONFIG = {
     dodgeCounterFrames: 60,    // 회피 후 이 시간 안에 맞히면 반격 보너스
     kill: 18,
     postureBreak: 30,
+    swapLink: 12,              // 무기 교체 연계 공격 보너스
+    skill: 6,                  // 스킬 적중 추가
     execution: 160,            // 처형: 대폭 상승
     executionMinRanks: 1,      // 처형 시 최소 이만큼 랭크 상승 보장
     // 하락
@@ -421,7 +782,7 @@ const CONFIG = {
     guardLoss: 4,              // 가드로 받을 때 약간 하락
     rankUpAnim: 26,            // 랭크 오를 때 글자가 튀는 시간
     feedLife: 70,              // 보너스 문구 표시 시간
-    // 방(웨이브) 클리어 보상: 최고 랭크별 (지금은 체력 회복, 8단계에서 아이템 보상 추가)
+    // 방(웨이브) 클리어 보상: 최고 랭크별 체력 회복 (던전에선 상자에서 아이템 + 이 값의 절반 회복)
     clearHeal: [0, 5, 10, 16, 24, 34, 50],
     clearBannerFrames: 150,
   },

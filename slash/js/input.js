@@ -13,6 +13,8 @@ const Input = {
   _releaseQ: Object.create(null),
   onFirstInput: null,
   map: KEYBINDS,
+  mx: -1, my: -1,              // 마우스 위치 (브라우저 화면 좌표)
+  mouseMoved: false,
 
   init() {
     window.addEventListener('keydown', (e) => {
@@ -32,6 +34,8 @@ const Input = {
       this._press(code, this._stamp(e));
     });
     window.addEventListener('mouseup', (e) => this._release('Mouse' + e.button));
+    // 마우스 위치 (화면 좌표, 인벤토리용)
+    window.addEventListener('mousemove', (e) => { this.mx = e.clientX; this.my = e.clientY; this.mouseMoved = true; });
     // 우클릭 시 브라우저 메뉴가 뜨지 않게
     window.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -96,6 +100,10 @@ const Input = {
     const codes = this.map[action];
     for (let i = 0; i < codes.length; i++) if (this.released[codes[i]]) return true;
     return false;
+  },
+  // 마우스 위치 → 게임 화면(960×540) 좌표
+  mouse() {
+    return { x: (this.mx - Game.offX) / Game.scale, y: (this.my - Game.offY) / Game.scale };
   },
   // -1 / 0 / 1
   axisX() {

@@ -2,6 +2,7 @@
 // 플레이어: 이동, 점프(코요테/버퍼/2단/가변 높이), 대시, 지상 콤보, 차지 강공격,
 //          런처, 공중 3타, 공중 강공, 내려찍기
 // 상태: free | attack | charge | slam | dash | parry | guard | guardBreak | execute | hurt | dead
+// 8단계: 무기 2개 장착(R 교체 + 연계 공격), 무기별 기술표, Q/E 스킬, 장비 능력치(stats), 전설 고유 효과
 //  parry     : F 를 누른 직후. windowMs(게임 시간) 동안 퍼펙트 패링 판정
 //  guard     : F 를 계속 누르고 있음. 데미지 감소, 대신 체간 증가
 //  guardBreak: 체간이 가득 차 경직
@@ -24,8 +25,6 @@ class Player {
     this.facing = 1;
     this.onGround = false;
     this.wasOnGround = false;
-    this.hp = P.maxHp;
-    this.stamina = P.maxStamina;
     this.staminaDelay = 0;
     this.dead = false;
 
@@ -44,7 +43,7 @@ class Player {
     this.dashDir = 1;
 
     // 입력 버퍼 (남은 프레임)
-    this.buf = { jump: 0, light: 0, heavy: 0, dash: 0, parry: 0 };
+    this.buf = { jump: 0, light: 0, heavy: 0, dash: 0, parry: 0, skill1: 0, skill2: 0, swap: 0 };
     this.heavyDown = false;       // 강공을 누를 때 아래를 같이 눌렀는가
 
     // 공격
@@ -84,7 +83,149 @@ class Player {
     this.runPhase = 0;            // 달리기 주기
     this.flipTimer = 0;           // 2단 점프 공중제비
     this.initScarf();
+
+    // ----- 장비 / 무기 / 스킬 (8단계) -----
+    // 시작 장비: 검 + 대검 장착, 건틀릿은 가방에
+    this.gear = {
+      weapons: [Loot.make('weapon', 'sword', 0, [{ k: 'atk', v: 5 }]), Loot.make('weapon', 'greatsword', 0, [{ k: 'posture', v: 8 }])],
+      armor: null,
+      ring: null,
+    };
+    this.bag = [Loot.make('weapon', 'gauntlet', 0, [{ k: 'aspd', v: 5 }])];
+    this.activeWeapon = 0;
+    this.swapCooldown = 0;
+    this.swapTimer = 0;           // 교체 직후 연계 공격 가능 시간
+    this.swapLinkPending = false; // 연계 공격 적중 보너스 대기
+    this.swapFlash = 0;
+    this.skillCd = { skill1: 0, skill2: 0 };
+    this.skillCdMax = { skill1: 1, skill2: 1 };
+    this.skillDeny = { skill1: 0, skill2: 0 };   // 쿨타임 중 눌렀을 때 HUD 흔들림
+    this.hitIndex = 0;            // 다단히트 기술의 몇 번째 타
+    this.hitCount = 0;            // 전설 '뇌신' 카운트
+    this.lifeAcc = 0;             // 흡혈 소수점 누적
+    this.dashHits = new Set();    // 전설 '그림자': 이번 대시에 맞힌 적
+    this.styleId = null;
+    this.recalcStats();
+    this.hp = this.maxHp;
+    this.stamina = this.maxStamina;
   }
+
+  // ---------- 장비 / 무기 ----------
+  weaponItem() { return this.gear.weapons[this.activeWeapon]; }
+  weaponType() { const it = this.weaponItem(); return it ? it.type : 'sword'; }
+  weaponCfg() { return CONFIG.weapons[this.weaponType()]; }
+  // 현재 무기의 기술 데이터 (없으면 기본 검 기술)
+  moveData(id) { return this.weaponCfg().moves[id] || CONFIG.moves[id]; }
+
+  // 장비가 바뀌면 다시 계산
+  recalcStats() {
+    const P = CONFIG.player;
+    if (!this.gear.weapons[this.activeWeapon] && this.gear.weapons[1 - this.activeWeapon]) this.activeWeapon = 1 - this.activeWeapon;
+    this.stats = Loot.computeStats(this.gear, this.activeWeapon);
+    this.maxHp = P.maxHp + this.stats.maxHp;
+    this.maxStamina = P.maxStamina + this.stats.stamina;
+    if (this.hp > this.maxHp) this.hp = this.maxHp;
+    if (this.stamina > this.maxStamina) this.stamina = this.maxStamina;
+  }
+
+  // 공격력 배율: 무기 등급 × (1 + 공격력%) (+ 전설 '광란')
+  damageMult() {
+    const s = this.stats;
+    let atk = s.atk;
+    const F = CONFIG.loot.uniques.frenzy;
+    if (s.uniques.frenzy && Style.rank >= F.minRank) atk += F.atk;
+    return s.power * (1 + atk / 100);
+  }
+  critChance() { return CONFIG.player.critChance + this.stats.crit / 100; }
+  postureMult() { return 1 + this.stats.posture / 100; }
+
+  // 흡혈: 준 피해의 일부 회복
+  onDealDamage(dmg) {
+    const ls = this.stats.lifesteal;
+    if (ls <= 0 || this.dead) return;
+    this.lifeAcc += dmg * ls / 100;
+    if (this.lifeAcc >= 1) {
+      const n = Math.floor(this.lifeAcc);
+      this.lifeAcc -= n;
+      this.heal(n);
+    }
+  }
+  heal(n) {
+    if (this.dead) return;
+    this.hp = Math.min(this.maxHp, this.hp + n);
+  }
+
+  // 아이템 줍기: 빈 장비 칸이면 바로 장착, 아니면 가방에
+  pickup(item) {
+    const g = this.gear;
+    if (item.slot === 'weapon' && !g.weapons[1 - this.activeWeapon]) { g.weapons[1 - this.activeWeapon] = item; this.recalcStats(); return true; }
+    if (item.slot === 'armor' && !g.armor) { g.armor = item; this.recalcStats(); return true; }
+    if (item.slot === 'ring' && !g.ring) { g.ring = item; this.recalcStats(); return true; }
+    if (this.bag.length >= CONFIG.loot.bagSize) return false;
+    this.bag.push(item);
+    return true;
+  }
+
+  // 대검 차지 / 일부 기술: 맞아도 경직 없음
+  hasArmor() {
+    const W = this.weaponCfg();
+    if (this.state === 'charge') return !!W.charge.armor;
+    if (this.state === 'attack' && this.move && this.move.armor) return this.stateFrame < this.move.startup + this.move.active + 2;
+    return false;
+  }
+
+  // 무기 교체 (R): 즉시 바뀌고, linkFrames 안에 공격하면 연계 공격
+  trySwap() {
+    if (this.buf.swap <= 0) return false;
+    this.buf.swap = 0;
+    const other = 1 - this.activeWeapon;
+    if (this.swapCooldown > 0 || !this.gear.weapons[other]) return false;
+    this.activeWeapon = other;
+    this.recalcStats();
+    this.swapCooldown = CONFIG.swap.cooldown;
+    this.swapTimer = CONFIG.swap.linkFrames;
+    this.swapFlash = 16;
+    this.lastMoveId = null;
+    this.comboGrace = 0;
+    this.chargeLevel = 0;
+    if (this.state === 'attack' || this.state === 'charge') { this.move = null; this.setState('free'); }
+    const W = this.weaponCfg();
+    Effects.afterimage(Anim.snapshot(Anim.playerFigure(this)), `rgb(${W.trail.outer})`, 20);
+    Effects.ring(this.x, this.y - this.h * 0.55, W.trail.glow, 38);
+    Effects.popText(this.x, this.y - this.h - 22, W.name, `rgb(${W.trail.inner})`, 14);
+    Sound.play('swap');
+    return true;
+  }
+
+  // 스킬 (Q / E)
+  trySkill(ax) {
+    for (const key of ['skill1', 'skill2']) {
+      if (this.buf[key] <= 0) continue;
+      const S = CONFIG.skills[key];
+      if (this.skillCd[key] > 0) {
+        this.buf[key] = 0;
+        this.skillDeny[key] = 14;
+        Sound.play('deny');
+        continue;
+      }
+      if (S.groundOnly && !this.onGround) continue;   // 착지하면 (버퍼 안이면) 나감
+      this.buf[key] = 0;
+      const cd = Math.round(S.cooldown * (1 - this.stats.cdr / 100));
+      this.skillCd[key] = cd;
+      this.skillCdMax[key] = cd;
+      const m = this.onGround ? S.move : Object.assign({}, S.move, { air: true });
+      this.startAttack('SKILL_' + S.id.toUpperCase(), ax, m);
+      const W = this.weaponCfg();
+      Effects.ring(this.x, this.y - this.h * 0.5, W.trail.glow, 30);
+      Effects.popText(this.x, this.y - this.h - 22, S.name, '#fff', 15);
+      Sound.play('skill');
+      return true;
+    }
+    return false;
+  }
+
+  // 검기 색 (무기별)
+  trailPal() { return this.weaponCfg().trail; }
 
   // ---------- 목도리 (뒤로 휘날리는 사슬 물리) ----------
   initScarf() {
@@ -138,6 +279,9 @@ class Player {
       this.heavyDown = input.isDown('down');
     }
     if (input.isPressed('dash')) this.buf.dash = 6;
+    if (input.isPressed('skill1')) this.buf.skill1 = P.attackBufferFrames;
+    if (input.isPressed('skill2')) this.buf.skill2 = P.attackBufferFrames;
+    if (input.isPressed('swap')) this.buf.swap = 8;
     if (input.isPressed('parry')) {
       // 누른 정확한 시각(게임 시간)을 기록
       const tp = game ? game.realToSim(input.pressTime('parry')) : 0;
@@ -218,7 +362,8 @@ class Player {
   // fr: 공격 시작 후 경과 프레임 (소수 가능). 반환: 각도(도), 검기 반지름, 세로 납작함, 어깨 높이
   bladePose(fr) {
     const P = CONFIG.player;
-    const REST = P.bladeRestAngle;
+    const B = this.weaponCfg().blade;
+    const REST = B.rest !== undefined ? B.rest : P.bladeRestAngle;
     const pose = { ang: REST, r: P.bladeLength, squash: 1, py: -32 };
     if (fr === undefined) fr = this.stateFrame;
 
@@ -242,7 +387,8 @@ class Player {
         pose.ang = sw.from + (endA - sw.from) * ease.outQuad(t);
       } else {
         const t = Math.min(1, (fr - m.startup - m.active) / m.recovery);
-        const rest = nearestAngle(REST, endA);
+        // 복귀: 가까운 쪽으로 (대검은 위로 들어 올려 어깨에 다시 걸침 — 바닥을 긁지 않게)
+        const rest = B.rest !== undefined && Math.abs(endA) <= 360 ? REST : nearestAngle(REST, endA);
         pose.ang = endA + (rest - endA) * ease.inOut(t);
       }
       return pose;
@@ -260,8 +406,8 @@ class Player {
         pose.ang = this.slamPhase === 'hang' && this.stateFrame < 4 ? -100 : 90;
         break;
       default:
-        if (!this.onGround) pose.ang = this.vy < 0 ? 120 : 60;
-        else if (Math.abs(this.vx) > 1) pose.ang = 140;   // 달릴 때 칼을 뒤로
+        if (!this.onGround) pose.ang = B.airAng !== undefined ? B.airAng : this.vy < 0 ? 120 : 60;
+        else if (Math.abs(this.vx) > 1) pose.ang = B.runAng !== undefined ? B.runAng : 140;   // 달릴 때 칼을 뒤로
     }
     return pose;
   }
@@ -291,7 +437,7 @@ class Player {
       const pose = this.bladePose(fr);
       this.bladePoint(pose, inner, a);
       this.bladePoint(pose, pose.r, b);
-      Effects.trailPoint(this.swingId, a.x, a.y, b.x, b.y, life, m.heavy);
+      Effects.trailPoint(this.swingId, a.x, a.y, b.x, b.y, life, m.heavy, this.trailPal());
     }
   }
 
@@ -325,7 +471,16 @@ class Player {
 
     // 스태미나 회복
     if (this.staminaDelay > 0) this.staminaDelay--;
-    else if (this.state !== 'charge') this.stamina = Math.min(P.maxStamina, this.stamina + P.staminaRegen);
+    else if (this.state !== 'charge') this.stamina = Math.min(this.maxStamina, this.stamina + P.staminaRegen);
+
+    // 무기 교체 / 스킬 쿨타임
+    if (this.swapCooldown > 0) this.swapCooldown--;
+    if (this.swapTimer > 0) this.swapTimer--;
+    if (this.swapFlash > 0) this.swapFlash--;
+    for (const k in this.skillCd) {
+      if (this.skillCd[k] > 0 && --this.skillCd[k] === 0) Effects.popText(this.x, this.y - this.h - 22, CONFIG.skills[k].name + ' 준비', '#bdf', 11);
+      if (this.skillDeny[k] > 0) this.skillDeny[k]--;
+    }
 
     // 코요테 타임
     if (this.onGround) {
@@ -360,7 +515,10 @@ class Player {
       let g = CONFIG.physics.gravity;
       // 공중 공격 중엔 살짝 체공
       if (this.state === 'attack' && this.move && this.move.air &&
-          this.stateFrame < this.move.startup + this.move.active + 4) g *= A.attackGravityMult;
+          this.stateFrame < this.move.startup + this.move.active + 4) {
+        const W = this.weaponCfg();
+        g *= W.airGravityMult !== undefined && !this.move.skill ? W.airGravityMult : A.attackGravityMult;
+      }
       this.vy = Math.min(this.vy + g, CONFIG.physics.maxFall);
       // 가변 점프: 키를 떼면 상승 속도 감소
       if (this.vy < 0 && !input.isDown('jump') && this.jumpCut) {
@@ -387,7 +545,7 @@ class Player {
         Sound.play('land');
       }
       // 공중 기술 도중 착지하면 기술 종료
-      if (this.state === 'attack' && this.move && this.move.air) {
+      if (this.state === 'attack' && this.move && this.move.air && !this.move.skill) {
         this.move = null;
         this.setState('free');
       }
@@ -444,6 +602,7 @@ class Player {
     this.vy = 0;
     this.move = null;
     this.launchFollow = false;
+    this.dashHits.clear();
     this.setState('dash');
     Effects.dust(this.x, this.y, 8, this.dashDir);
     Sound.play('dash');
@@ -452,7 +611,6 @@ class Player {
 
   // 공격 입력 처리. 콤보 연결 규칙은 여기 한 곳에서.
   tryAttack(ax, input) {
-    const M = CONFIG.moves;
     const downHeld = this.heavyDown || input.isDown('down');
     const game = this.game;
 
@@ -478,10 +636,22 @@ class Player {
         this.counterTimer = 0;
         this.counterTarget = null;
         this.facing = Math.sign(ct.x - this.x) || this.facing;
-        this.startAttack('COUNTER_LAUNCH', 0);
+        this.startAttack('COUNTER_LAUNCH', 0, CONFIG.moves.COUNTER_LAUNCH);
         Effects.popText(this.x, this.y - this.h - 20, 'COUNTER', '#7ff', 16);
         return true;
       }
+    }
+    // 무기 교체 직후: 새 무기의 연계 공격
+    if (this.swapTimer > 0 && (this.buf.light > 0 || this.buf.heavy > 0)) {
+      this.buf.light = 0;
+      this.buf.heavy = 0;
+      this.swapTimer = 0;
+      const t = this.weaponType();
+      const base = CONFIG.swap.moves[t];
+      this.startAttack('SWAP_' + t.toUpperCase(), ax, this.onGround ? base : Object.assign({}, base, { air: true }));
+      this.swapLinkPending = true;
+      Effects.popText(this.x, this.y - this.h - 22, 'SWITCH', `rgb(${this.weaponCfg().trail.inner})`, 16);
+      return true;
     }
 
     // ----- 공중 -----
@@ -494,7 +664,7 @@ class Player {
       }
       if (this.buf.light > 0) {
         this.buf.light = 0;
-        const prev = this.lastMoveId && M[this.lastMoveId];
+        const prev = this.lastMoveId && this.moveData(this.lastMoveId);
         const next = prev && prev.air && prev.next ? prev.next : 'A1';
         this.startAttack(next, ax);
         return true;
@@ -516,7 +686,7 @@ class Player {
     }
     if (this.buf.light > 0) {
       this.buf.light = 0;
-      const prev = this.lastMoveId && M[this.lastMoveId];
+      const prev = this.lastMoveId && this.moveData(this.lastMoveId);
       const next = prev && !prev.air && prev.next ? prev.next : 'L1';
       this.startAttack(next, ax);
       return true;
@@ -534,10 +704,23 @@ class Player {
   }
 
   startAttack(id, ax, moveData) {
-    const move = moveData || CONFIG.moves[id];
+    let move = moveData || this.moveData(id);
+    // 공격 속도: 선딜·후딜이 짧아짐 (스킬 제외)
+    const sp = 1 + this.stats.aspd / 100;
+    if (sp > 1.001 && !move.skill) {
+      move = Object.assign({}, move);
+      move.startup = Math.max(1, Math.round(move.startup / sp));
+      move.recovery = Math.max(2, Math.round(move.recovery / sp));
+      if (move.chainDelay !== undefined) move.chainDelay = Math.round(move.chainDelay / sp);
+    }
     if (ax !== 0) this.facing = ax;    // 공격 시작 시 방향 전환 허용
     this.move = move;
     this.moveId = id;
+    // 스타일 랭크용 이름: 무기가 다르면 다른 기술로 취급 (다양성)
+    const pre = { greatsword: 'GS_', gauntlet: 'GT_' }[this.weaponType()];
+    this.styleId = pre && !move.skill && !/^(SWAP|COUNTER)/.test(id) ? pre + id : id;
+    this.hitIndex = 0;
+    this.swapLinkPending = false;
     this.lastMoveId = null;
     this.hitList.clear();
     this.swingId++;
@@ -565,15 +748,17 @@ class Player {
     this.counterTimer = 0;
     this.counterTarget = null;
     this.facing = Math.sign(enemy.x - this.x) || -dir;
-    this.startAttack('COUNTER', 0);
+    this.startAttack('COUNTER', 0, CONFIG.moves.COUNTER);
     Effects.popText(this.x, this.y - this.h - 20, 'COUNTER', '#7ff', 16);
     Sound.play('teleport');
   }
 
   startSlam(ax) {
     if (ax !== 0) this.facing = ax;
-    this.move = CONFIG.moves.SLAM;
+    this.move = this.moveData('SLAM');
     this.moveId = 'SLAM';
+    const pre = { greatsword: 'GS_', gauntlet: 'GT_' }[this.weaponType()];
+    this.styleId = pre ? pre + 'SLAM' : 'SLAM';
     this.lastMoveId = null;
     this.hitList.clear();
     this.swingId++;
@@ -598,15 +783,18 @@ class Player {
     // 패링 불가 시간에 F 를 누르고 있으면 가드
     if (this.parryLocked() && input.isDown('parry')) { this.setState('guard'); return; }
     if (this.tryDash(ax)) return;
+    this.trySwap();
+    if (this.trySkill(ax)) return;
     if (this.tryJump(input)) { /* 점프 후에도 이동은 계속 */ }
     if (this.tryAttack(ax, input)) return;
 
+    const run = P.runSpeed * this.weaponCfg().speedMult;
     const accel = this.onGround ? P.groundAccel : P.airAccel;
     const decel = this.onGround ? P.groundDecel : P.airDecel;
     if (ax !== 0) {
       this.facing = ax;
       this.vx += ax * accel;
-      if (Math.abs(this.vx) > P.runSpeed) this.vx = Math.sign(this.vx) * P.runSpeed;
+      if (Math.abs(this.vx) > run) this.vx = Math.sign(this.vx) * run;
     } else {
       const s = Math.abs(this.vx) - decel;
       this.vx = s > 0 ? Math.sign(this.vx) * s : 0;
@@ -623,7 +811,16 @@ class Player {
     // 예비동작 → 판정 시작 순간에 전진
     if (f === m.startup) {
       this.vx = this.facing * m.lunge;
-      if (m.swing.thrust) Effects.thrust(this, m.swing.r, this.facing, m.active + 8);
+      if (m.swing.thrust) Effects.thrust(this, m.swing.r, this.facing, (m.multiHit ? m.multiHit.interval : m.active) + 8, this.trailPal().glow, (m.swing.py || -32) + 32);
+      if (m.quake) Skills.quake(game, this, m.quake);
+      Sound.play(m.sfx);
+    }
+    // 다단히트: interval 마다 판정 초기화
+    if (m.multiHit && f > m.startup && f < end && (f - m.startup) % m.multiHit.interval === 0 && this.hitIndex < m.multiHit.count - 1) {
+      this.hitIndex++;
+      this.hitList.clear();
+      this.swingId++;
+      if (m.swing.thrust) Effects.thrust(this, m.swing.r, this.facing, m.multiHit.interval + 6, this.trailPal().glow, (Math.random() - 0.5) * 14);
       Sound.play(m.sfx);
     }
     // 마찰
@@ -651,6 +848,8 @@ class Player {
     if (f >= end) {
       if (this.tryParry()) return;
       if (this.tryDash(ax)) return;
+      if (this.trySwap()) return;
+      if (this.trySkill(ax)) return;
       if (this.buf.jump > 0 && (this.onGround || this.coyote > 0 || this.jumpsUsed < 2)) {
         this.endMove();
         this.tryJump(input);
@@ -687,7 +886,7 @@ class Player {
       const pose = this.bladePose();
       this.bladePoint(pose, CONFIG.player.trailInner, a);
       this.bladePoint(pose, 70, b);
-      Effects.trailPoint(this.swingId, a.x - this.facing * 6, a.y - 30, b.x, b.y, 10, true);
+      Effects.trailPoint(this.swingId, a.x - this.facing * 6, a.y - 30, b.x, b.y, 10, true, this.trailPal());
       if (this.onGround) {
         this.slamPhase = 'land';
         this.stateFrame = 0;
@@ -710,10 +909,11 @@ class Player {
   }
 
   updateCharge(game, input, ax) {
-    const C = CONFIG.charge;
+    const C = this.weaponCfg().charge;
     this.vx *= 0.75;
-    if (this.tryParry()) return;    // 차지 중 패링 / 대시로 취소 가능
+    if (this.tryParry()) return;    // 차지 중 패링 / 대시 / 무기 교체로 취소 가능
     if (this.tryDash(ax)) return;
+    if (this.trySwap()) return;
     this.chargeFrames++;
     if (this.chargeLevel < C.maxLevel && this.chargeFrames >= (this.chargeLevel + 1) * C.framesPerLevel) {
       if (this.useStamina(C.staminaPerLevel)) {
@@ -727,7 +927,7 @@ class Player {
     }
     if (!input.isDown('heavy')) {
       const lv = this.chargeLevel;
-      this.startAttack('HEAVY' + lv, 0, CONFIG.moves.HEAVY[lv]);
+      this.startAttack('HEAVY' + lv, 0, this.moveData('HEAVY')[lv]);
     }
   }
 
@@ -736,6 +936,7 @@ class Player {
     this.vx = this.dashDir * P.dashSpeed;
     this.vy = 0;
     if (this.stateFrame % 2 === 0) this.addAfterimage();
+    if (this.stats.uniques.phantom) Skills.phantom(game, this);
     if (this.stateFrame >= P.dashFrames) {
       this.vx *= P.dashEndSpeedMult;
       this.dashCooldown = P.dashCooldown;
@@ -790,6 +991,8 @@ class Player {
     if (ax !== 0) this.facing = ax;
     // 가드 중에도 대시 / 공격으로 바로 전환 가능
     if (this.tryDash(ax)) return;
+    if (this.trySwap()) { this.setState('free'); return; }
+    if (this.trySkill(ax)) return;
     if ((this.buf.light > 0 || this.buf.heavy > 0) && this.tryAttack(ax, input)) return;
     if (!input.isDown('parry')) this.setState('free');
   }
@@ -805,7 +1008,7 @@ class Player {
   // 가드로 막음: 데미지 감소, 체간 증가, 밀려남
   onGuardBlock(dmg, dir) {
     const PR = CONFIG.parry;
-    const taken = dmg * PR.guardDamageMult;
+    const taken = dmg * PR.guardDamageMult * (1 - this.stats.reduce / 100);
     this.hp = Math.max(0, this.hp - taken);
     this.vx = dir * PR.guardPush;
     this.guardFlash = 8;
@@ -842,12 +1045,24 @@ class Player {
   // 공중 공격이 적중했을 때: 살짝 머무름 (적의 저글링 감쇠와 같이 줄어듦)
   airHang(mult) {
     if (this.onGround || this.launchFollow) return;
-    this.vy = CONFIG.air.hitHangVy * mult;
+    this.vy = CONFIG.air.hitHangVy * mult * (this.weaponCfg().airHangMult || 1);
     this.jumpCut = false;
   }
 
+  // 반환: 실제로 받은 데미지
   takeHit(dmg, dir, knock) {
     const P = CONFIG.player;
+    dmg *= 1 - this.stats.reduce / 100;
+    // 경직 없이 버팀 (대검 차지 등)
+    if (this.hasArmor()) {
+      dmg *= this.weaponCfg().armorMult || 1;
+      this.hp = Math.max(0, this.hp - dmg);
+      this.flash = 4;
+      this.invuln = 20;
+      Effects.sparks(this.x, this.y - this.h * 0.6, dir, 8, '#ffb070');
+      if (this.hp <= 0) { this.dead = true; this.move = null; this.setState('dead'); }
+      return dmg;
+    }
     this.parryChain = 0;          // 피격 시 연속 패링 체인 리셋
     this.counterTimer = 0;
     this.counterTarget = null;
@@ -867,5 +1082,6 @@ class Player {
     } else {
       this.setState('hurt');
     }
+    return dmg;
   }
 }

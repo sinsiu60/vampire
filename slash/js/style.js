@@ -71,9 +71,10 @@ const Style = {
 
   // ---------- 득점 이벤트 ----------
   // 기술 적중. id: 기술 이름, air: 공중 콤보 여부, armor: 슈퍼아머에 맞음
-  onHit(id, air, armor) {
+  // pts: 기술 데이터에 점수가 있으면 그 값 (무기별 기술)
+  onHit(id, air, armor, movePts) {
     const S = CONFIG.style;
-    const base = S.movePoints[id] !== undefined ? S.movePoints[id] : S.defaultPoints;
+    const base = movePts !== undefined ? movePts : S.movePoints[id] !== undefined ? S.movePoints[id] : S.defaultPoints;
     // 다양성: 최근에 같은 기술을 몇 번 썼나
     const repeats = this.history.filter((h) => h === id).length;
     let mult = S.repeatMult[Math.min(repeats, S.repeatMult.length - 1)];
@@ -91,6 +92,12 @@ const Style = {
     }
     if (air && repeats === 0) this.pushFeed('AIR', '#9df');
     this.gain(pts);
+  },
+
+  // 무기 교체 연계 공격 적중
+  onSwapLink() {
+    this.gain(CONFIG.style.swapLink);
+    this.pushFeed('SWITCH', '#e6c8ff');
   },
 
   onParry(tier, chain) {

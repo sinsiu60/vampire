@@ -68,28 +68,41 @@ const Combat = {
     const P = CONFIG.player;
     // 패링 성공 후엔 크리티컬 확정
     const sure = player.critReady > 0;
-    const crit = sure || Math.random() < P.critChance;
+    const crit = sure || Math.random() < player.critChance();
     if (sure) player.critReady = 0;
-    const dmg = move.damage * (crit ? P.critMult : 1);
-    const dir = player.facing;
+    const dmg = move.damage * player.damageMult() * (crit ? P.critMult : 1);
+    // 회오리 베기 등 360° 기술은 적이 있는 쪽으로 밀어냄
+    const dir = move.omni ? (Math.sign(enemy.x - player.x) || player.facing) : player.facing;
     const wasDeflected = enemy.state === 'deflected' || enemy.state === 'stun';
+    // 다단히트 마지막 타: 따로 지정된 넉백 (띄우기 등)
+    const last = move.lastHit && move.multiHit && player.hitIndex >= move.multiHit.count - 1 ? move.lastHit : null;
+    const knock = last ? last.knock : move.knock;
 
     const res = this.applyHit(game, enemy, dmg, crit, {
       dir,
-      knockX: move.knock.x,
-      knockY: move.knock.y,
+      knockX: knock.x,
+      knockY: knock.y,
       hitstun: move.hitstun,
-      launch: !!move.launch,
+      launch: !!(move.launch || (last && last.launch)),
       slam: !!move.slam,
-      attackerX: player.x,
+      attackerX: move.omni ? enemy.x - dir * 10 : player.x,
     }, {
       hitstop: move.hitstop, shake: move.shake, heavy: move.heavy, impact: move.impactFrame,
-      launchSfx: move.launch, styleId: player.moveId,
+      launchSfx: move.launch, styleId: player.styleId || player.moveId, pts: move.pts,
     });
+
+    if (res !== 'blocked') {
+      // 무기 교체 연계 공격 적중 보너스
+      if (player.swapLinkPending) { player.swapLinkPending = false; Style.onSwapLink(); }
+      if (move.skill) Style.gain(CONFIG.style.skill);
+      // 전설 '뇌신': 3번째 타격마다 번개
+      const U = CONFIG.loot.uniques.thunder;
+      if (player.stats.uniques.thunder && ++player.hitCount % U.every === 0 && !enemy.dead) Skills.thunder(game, player, enemy);
+    }
 
     // 체간: 공격이 들어갈수록 차오름 (방패에 막혀도 조금)
     const PO = CONFIG.posture;
-    let pd = move.posture !== undefined ? move.posture : move.damage * PO.hitMult;
+    let pd = (move.posture !== undefined ? move.posture : move.damage * PO.hitMult) * player.postureMult();
     if (wasDeflected) pd *= PO.deflectedHitMult;   // 휘청이는 빈틈을 공략하면 더 크게
     if (enemy.cfg.hitPostureMult !== undefined) pd *= enemy.cfg.hitPostureMult;   // 보스: 공격보다 패링으로
     if (res === 'blocked') enemy.addPosture(move.damage * PO.blockMult, game);
@@ -111,7 +124,10 @@ const Combat = {
     // 공중 콤보 판정: 내가 공중이거나 적이 떠 있을 때
     const air = !game.player.onGround || enemy.state === 'launched';
     const res = enemy.takeHit(dmg, info);
-    if (res !== 'blocked' && fx.styleId) Style.onHit(fx.styleId, air, res === 'armor');
+    if (res !== 'blocked' && fx.styleId) {
+      Style.onHit(fx.styleId, air, res === 'armor', fx.pts);
+      game.player.onDealDamage(dmg);      // 흡혈
+    }
     const dir = info.dir;
     const hx = fx.x !== undefined ? fx.x : enemy.x - dir * enemy.w * 0.2;
     const hy = fx.y !== undefined ? fx.y : enemy.y - enemy.h * 0.6;
@@ -169,7 +185,7 @@ const Combat = {
 
   // 내려찍기 착지 충격파: 주변 바닥의 적을 띄움
   slamWave(game, player) {
-    const W = CONFIG.moves.SLAM_WAVE;
+    const W = player.moveData('SLAM_WAVE');
     Effects.shockwave(player.x, player.y, W.radius);
     Effects.addShake(W.shake);
     Effects.impactFrame(1);
@@ -180,11 +196,11 @@ const Combat = {
       const dx = e.x - player.x;
       if (Math.abs(dx) > W.radius || Math.abs(e.y - player.y) > W.height) continue;
       const dir = dx === 0 ? player.facing : Math.sign(dx);
-      const crit = Math.random() < CONFIG.player.critChance;
-      const dmg = W.damage * (crit ? CONFIG.player.critMult : 1);
+      const crit = Math.random() < player.critChance();
+      const dmg = W.damage * player.damageMult() * (crit ? CONFIG.player.critMult : 1);
       this.applyHit(game, e, dmg, crit, {
         dir, knockX: W.knock.x, knockY: W.knock.y, hitstun: W.hitstun, launch: true, attackerX: player.x,
-      }, { hitstop: W.hitstop, shake: 0, heavy: false, x: e.x, y: e.y - e.h * 0.4, styleId: 'SLAM_WAVE' });
+      }, { hitstop: W.hitstop, shake: 0, heavy: false, x: e.x, y: e.y - e.h * 0.4, styleId: player.styleId + '_WAVE' });
     }
   },
 
@@ -280,11 +296,11 @@ const Combat = {
 
   damagePlayer(game, player, dmg, dir, knock) {
     const F = CONFIG.feel;
-    player.takeHit(dmg, dir, knock);
+    const taken = player.takeHit(dmg, dir, knock);
     game.hitstop = Math.max(game.hitstop, F.hurtHitstop);
     Effects.addShake(F.hurtShake);
     Effects.sparks(player.x, player.y - player.h * 0.6, dir, 10, '#ff4040');
-    Effects.damageNumber(player.x, player.y - player.h - 8, dmg, false);
+    Effects.damageNumber(player.x, player.y - player.h - 8, taken, false);
     Sound.play('hurt');
     game.onPlayerHurt();
   },
@@ -335,5 +351,7 @@ const Combat = {
     }
     Sound.play(white ? 'perfectParryWhite' : tier === 2 ? 'perfectParry3' : tier === 1 ? 'perfectParry2' : 'perfectParry');
     game.onParry(enemy, tier);
+    // 전설 '폭염': 퍼펙트 패링 시 주변 폭발
+    if (player.stats.uniques.parryBlast) Skills.parryBlast(game, player, x, y);
   },
 };

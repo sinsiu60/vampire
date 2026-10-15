@@ -2,7 +2,7 @@
 // 게임 루프 (60fps 고정 타임스텝), 상태 관리, 카메라
 
 const Game = {
-  state: 'playing',     // playing | paused | gameover
+  state: 'playing',     // playing | paused | inventory | gameover | victory
   stateTime: 0,
   frame: 0,             // 전체 프레임 카운터 (애니메이션용)
   simTime: 0,           // 게임 시간 (ms). 히트스톱 중엔 멈추고 슬로모션 중엔 느리게 흐름 → 패링 판정 기준
@@ -49,6 +49,7 @@ const Game = {
     this.player = null;
     this.enemies = [];
     this.projectiles = [];
+    this.drops = [];        // 바닥에 떨어진 아이템
     this.combo = { count: 0, timer: 0, pop: 0 };
     this.wave = 0;
     this.kills = 0;
@@ -72,6 +73,8 @@ const Game = {
     this.room = null;
     Effects.reset();
     Style.reset();
+    Skills.reset();
+    Inventory.reset();
     if (this.mode === 'practice') {
       Render.setTheme(0);
       const level = Dungeon.buildArena();
@@ -89,6 +92,7 @@ const Game = {
   startFloor(fi) {
     this.floorIndex = fi;
     this.floor = Dungeon.generateFloor(fi);
+    this.prevRoom = null;
     Render.setTheme(fi % THEMES.length);
     this.enterRoom(0, 'left');
     this.floorBanner = { text: `${fi + 1}층`, sub: THEMES[fi % THEMES.length].name, life: 150, max: 150 };
@@ -112,6 +116,11 @@ const Game = {
     p.lastSafe = { x: en.x, y: en.y };
     this.enemies = [];
     this.projectiles = [];
+    // 주우지 않은 아이템은 방을 나가면 그 방에 남음
+    if (this.prevRoom) this.prevRoom.drops = this.drops;
+    this.drops = room.drops || [];
+    this.prevRoom = room;
+    Skills.reset();
     room.visited = true;
     if (!room.cleared) {
       // 들어오면 양쪽 문이 잠기고 적 등장
@@ -219,7 +228,7 @@ const Game = {
     Dungeon.setLocked(room.level, false);
     const best = Style.clearRoom();
     const cs = room.level.chestSpot;
-    room.chest = { x: cs.x, y: cs.y, w: 30, h: 24, rank: best, opened: false, shake: 0 };
+    room.chest = { x: cs.x, y: cs.y, w: 30, h: 24, rank: best, opened: false, shake: 0, boss: room.kind === 'boss' };
     Effects.dust(cs.x, cs.y, 12, 0);
     Effects.ring(cs.x, cs.y - 12, '#ffd860', 50);
     this.clearBanner = {
@@ -232,17 +241,19 @@ const Game = {
     Sound.play('clear');
   },
 
-  // 보상 상자 열기 (공격으로 치거나 위 키): 지금은 체력 회복, 8단계에서 아이템
+  // 보상 상자 열기 (공격으로 치거나 위 키): 장비 1개 (방 최고 랭크가 높을수록 좋은 등급) + 체력 조금
   openChest(chest) {
     if (chest.opened) return;
     chest.opened = true;
-    const S = CONFIG.style, p = this.player;
-    const heal = chest.rank >= 0 ? S.clearHeal[chest.rank] : 3;
-    p.hp = Math.min(CONFIG.player.maxHp, p.hp + heal);
-    p.stamina = CONFIG.player.maxStamina;
+    const S = CONFIG.style, L = CONFIG.loot, p = this.player;
+    const heal = Math.round((chest.rank >= 0 ? S.clearHeal[chest.rank] : 3) * L.chestHealMult);
+    p.heal(heal);
+    p.stamina = p.maxStamina;
+    const item = Loot.roll(this.floorIndex || 0, Math.max(0, chest.rank), chest.boss ? L.bossMinRarity : 0);
+    Loot.spawnDrop(this, item, chest.x, chest.y - 20, p.x < chest.x ? -1.5 : 1.5);
     Effects.radialSparks(chest.x, chest.y - 14, 20, '#ffd860', 1);
     Effects.ring(chest.x, chest.y - 14, '#ffe9a0', 60);
-    Effects.popText(chest.x, chest.y - 46, `+${heal} HP`, '#7f7', 18);
+    if (heal > 0) Effects.popText(chest.x, chest.y - 46, `+${heal} HP`, '#7f7', 16);
     Sound.play('chest');
   },
 
@@ -363,6 +374,16 @@ const Game = {
       Style.onKill();
     }
     if (how === 'pit') Style.pushFeed('RING OUT', '#ffb070');
+    // 전설 '피의 갈망': 처치 시 회복
+    const p = this.player;
+    if (p.stats.uniques.bloodthirst) {
+      const h = CONFIG.loot.uniques.bloodthirst.heal;
+      p.heal(h);
+      Effects.popText(p.x, p.y - p.h - 30, `+${h}`, '#f66', 12);
+    }
+    // 아이템 드랍
+    if (enemy.isBoss) Loot.bossDrop(this, enemy);
+    else Loot.enemyDrop(this, enemy);
   },
 
   onParry(enemy, tier) {
@@ -378,8 +399,8 @@ const Game = {
     const S = CONFIG.style, p = this.player;
     const best = Style.clearRoom();
     const heal = best >= 0 ? S.clearHeal[best] : 0;
-    p.hp = Math.min(CONFIG.player.maxHp, p.hp + heal);
-    p.stamina = CONFIG.player.maxStamina;
+    p.heal(heal);
+    p.stamina = p.maxStamina;
     this.clearBanner = { rank: best, heal, life: S.clearBannerFrames, max: S.clearBannerFrames };
     if (heal > 0) Effects.popText(p.x, p.y - p.h - 20, `+${heal} HP`, '#7f7', 16);
     Sound.play('clear');
@@ -544,6 +565,21 @@ const Game = {
       if (Input.isPressed('spawn7') && !this.boss) {
         this.spawnBoss(CONFIG.dungeon.bossByFloor[(this.floorIndex || 0) % 3], this.player.x + this.player.facing * 300);
       }
+      // 8: 아이템 떨어뜨리기 (높은 등급이 잘 나옴)
+      if (Input.isPressed('spawn8')) {
+        const p = this.player;
+        Loot.spawnDrop(this, Loot.roll(2, 4, 0), p.x + p.facing * 50, p.y - 10, p.facing * 1.5);
+      }
+    }
+
+    // 인벤토리 (Tab): 게임 정지
+    if (this.state === 'inventory') {
+      Inventory.update(this);
+      return;
+    }
+    if (this.state === 'playing' && Input.isPressed('inventory') && !this.exec && !this.transition && !this.player.dead) {
+      Inventory.open(this);
+      return;
     }
 
     if (this.state === 'paused') {
@@ -593,6 +629,8 @@ const Game = {
     this.enemies = this.enemies.filter((e) => !e.remove);
     for (const pr of this.projectiles) pr.update(this);
     this.projectiles = this.projectiles.filter((pr) => !pr.dead);
+    Skills.update(this);
+    Loot.updateDrops(this);
 
     // 히트 수
     if (this.combo.timer > 0 && --this.combo.timer === 0) this.combo.count = 0;
@@ -708,6 +746,8 @@ const Game = {
     Effects.drawBack(ctx);
     const ex = this.exec;
     if (this.room) Render.chest(ctx, this.room.chest);
+    Loot.drawDrops(ctx, this);
+    Skills.draw(ctx);
     for (const e of this.enemies) if (e.isBoss) Render.bossHazards(ctx, e);
     for (const e of this.enemies) if (!e.executed) Render.enemy(ctx, e);
     for (const pr of this.projectiles) pr.draw(ctx);
@@ -766,6 +806,7 @@ const Game = {
 
     UI.hud(ctx, this);
     UI.overlay(ctx, this);
+    if (this.state === 'inventory') Inventory.draw(ctx, this);
     // 방 이동 페이드
     if (this.transition) {
       const F = CONFIG.dungeon.fadeFrames, f = this.transition.f;
