@@ -581,7 +581,12 @@ const Game = {
     if (this.state === 'gate' || this.state === 'logo' || this.state === 'title') { Menu.update(this); return; }
     if (this.fadeIn > 0) this.fadeIn--;
 
-    if (Input.isPressed('help')) UI.showHelp = !UI.showHelp;
+    // F1: 연습장에선 0.25배속 슬로모션 (기술 포즈·사슬 속도 확인용), 던전에선 도움말
+    if (Input.isPressed('help')) {
+      if (this.mode === 'practice') this.debugSlow = this.debugSlow ? 0 : CONFIG.debug.slowmoScale;
+      else UI.showHelp = !UI.showHelp;
+    }
+    if (this.mode !== 'practice') this.debugSlow = 0;
     if (Input.isPressed('debug')) CONFIG.debug.showHitboxes = !CONFIG.debug.showHitboxes;
     if (Input.isPressed('debugMode')) CONFIG.debug.parry = !CONFIG.debug.parry;
     for (let i = this.parryLog.length - 1; i >= 0; i--) if (--this.parryLog[i].life <= 0) this.parryLog.splice(i, 1);
@@ -761,6 +766,7 @@ const Game = {
     } else {
       this.timeScale = 1;
     }
+    if (this.debugSlow) this.timeScale *= this.debugSlow;
     this._acc += dt * this.timeScale;
     while (this._acc >= STEP) {
       // 이 스텝이 해당하는 실제 시각 (뒤로 밀린 스텝일수록 과거)

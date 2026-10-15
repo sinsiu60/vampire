@@ -525,7 +525,7 @@ const Render = {
     }
 
     // 판정 중: 칼날을 따라 검기가 뻗어나감
-    if (p.isActiveFrame() && p.state === 'attack' && !p.move.swing.thrust && !B.fist) {
+    if (p.isActiveFrame() && p.state === 'attack' && !p.move.swing.thrust && !B.fist && !B.chain && !p.move.dual) {
       const far = p.bladePoint(b.pose, b.pose.r, {});
       ctx.save();
       ctx.shadowColor = pal.glow;

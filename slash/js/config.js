@@ -68,6 +68,7 @@ const CONFIG = {
   debug: {
     showHitboxes: false,       // H 키로 토글
     parry: false,              // ` 키로 토글: 패링 디버그
+    slowmoScale: 0.25,         // 콤보 연습장 F1: 슬로모션 배속
   },
 
   // ---------- 물리 ----------

@@ -518,8 +518,9 @@ class Player {
     const pose = { ang: REST, r: P.bladeLength, squash: 1, py: -32 };
     if (fr === undefined) fr = this.stateFrame;
 
+    if (this.state === 'attack' && this.move && this.move.dual) return this.handPose(fr, 'R');
     if (this.state === 'attack' && this.move) {
-      const m = this.move, sw = m.swing;
+      const m = this.move, sw = m.swing, hold = m.hold || 0;
       pose.r = sw.r;
       pose.squash = sw.squash || 1;
       if (sw.py !== undefined) pose.py = sw.py;
@@ -536,8 +537,10 @@ class Player {
       } else if (fr < m.startup + m.active) {
         const t = (fr - m.startup) / m.active;
         pose.ang = sw.from + (endA - sw.from) * ease.outQuad(t);
+      } else if (fr < m.startup + m.active + hold) {
+        pose.ang = endA;                           // 홀드: 휘두른 끝에서 정지
       } else {
-        const t = Math.min(1, (fr - m.startup - m.active) / m.recovery);
+        const t = Math.min(1, (fr - m.startup - m.active - hold) / m.recovery);
         // 복귀: 가까운 쪽으로 (대검은 위로 들어 올려 어깨에 다시 걸침 — 바닥을 긁지 않게)
         const rest = B.rest !== undefined && Math.abs(endA) <= 360 ? REST : nearestAngle(REST, endA);
         pose.ang = endA + (rest - endA) * ease.inOut(t);
@@ -564,6 +567,61 @@ class Player {
     return pose;
   }
 
+  // 쌍검: 손 하나의 자세 (move.dual.R / L). { from, to, r, squash, py, wind|windAng, linear, hold(홀드 각도), reach } 또는 { rest: 각도 }
+  //   예비동작 → 타격(from→to) → 홀드(끝 포즈 정지) → 후딜(제자리로). reach: 어깨~손 거리 (타격 중엔 팔을 쭉 뻗음)
+  handPose(fr, side) {
+    const m = this.move, B = this.weaponCfg().blade, P = CONFIG.player;
+    if (fr === undefined) fr = this.stateFrame;
+    const REST = side === 'R' ? (B.rest !== undefined ? B.rest : P.bladeRestAngle) : (B.restL !== undefined ? B.restL : 150);
+    const spec = (m && m.dual && m.dual[side]) || { rest: REST };
+    const pose = { ang: REST, r: spec.r || 56, squash: spec.squash || 1, py: spec.py !== undefined ? spec.py : -32, reach: 14 };
+    if (spec.rest !== undefined) { pose.ang = spec.rest; pose.reach = spec.reach || 12; return pose; }
+    const end = m.startup + m.active, hold = m.hold || 0, rec = Math.max(1, m.recovery);
+    const dir = Math.sign(spec.to - spec.from) || 1;
+    const wind = spec.windAng !== undefined ? spec.windAng : spec.from - dir * (spec.wind !== undefined ? spec.wind : 22);
+    const R0 = spec.reach || 18;
+    if (fr < m.startup) {
+      const k = ease.outCubic(fr / Math.max(1, m.startup));
+      const start = nearestAngle(REST, wind);
+      pose.ang = start + (wind - start) * k;
+      pose.reach = 14 - 3 * k;                  // 예비동작: 손을 당김
+    } else if (fr < end) {
+      const t = (fr - m.startup) / m.active;
+      pose.ang = spec.from + (spec.to - spec.from) * (spec.linear ? t : ease.outQuad(t));
+      pose.reach = R0;
+    } else if (fr < end + hold) {
+      const h = spec.hold !== undefined ? spec.hold : spec.to;
+      pose.ang = spec.to + (h - spec.to) * Math.min(1, (fr - end + 1) / 3);
+      pose.reach = R0;
+    } else {
+      const a0 = spec.hold !== undefined ? spec.hold : spec.to;
+      const t = Math.min(1, (fr - end - hold) / rec);
+      pose.ang = a0 + (nearestAngle(REST, a0) - a0) * ease.inOut(t);
+      pose.reach = R0 + (14 - R0) * t;
+    }
+    return pose;
+  }
+
+  // 쌍검 히트 이펙트 위치: 휘두르는 칼끝 (적 몸 안으로 맞춤)
+  hitPoint(e) {
+    const m = this.move;
+    if (!m || !m.dual) return null;
+    const B = this.weaponCfg().blade;
+    let best = null, bd = 1e9;
+    for (const side of ['R', 'L']) {
+      const sp = m.dual[side];
+      if (!sp || sp.rest !== undefined) continue;
+      const pose = this.handPose(this.stateFrame, side);
+      const q = this.bladePoint(pose, pose.reach + B.length * 0.85, {});
+      const d = Math.abs(q.x - e.x) + Math.abs(q.y - (e.y - e.h * 0.5));
+      if (d < bd) { bd = d; best = q; }
+    }
+    if (!best) return null;
+    best.x = Math.max(e.x - e.w / 2, Math.min(e.x + e.w / 2, best.x));
+    best.y = Math.max(e.y - e.h, Math.min(e.y, best.y));
+    return best;
+  }
+
   // 칼 어깨(피벗) / 칼끝 → 월드 좌표
   bladePoint(pose, radius, out) {
     const a = pose.ang * DEG;
@@ -576,6 +634,8 @@ class Player {
   // 판정 프레임 동안 직전 프레임~현재 프레임 사이를 잘게 나눠 검기 점 추가
   emitTrail() {
     const m = this.move;
+    if (this.state === 'attack' && m && m.dual) { this.emitDualTrail(); return; }
+    if (this.state === 'attack' && this.weaponCfg().blade.chain) return;   // 사슬검: 칼날이 물리로 움직임 (궤적은 transform.js)
     if (this.state !== 'attack' || !m || !m.swing || m.swing.thrust) return;
     const f = this.stateFrame;
     if (f <= m.startup || f > m.startup + m.active) return;
@@ -593,10 +653,31 @@ class Player {
     }
   }
 
+  // 쌍검 궤적: 휘두르는 손마다 따로 (오른손 청록 / 왼손 하늘색)
+  emitDualTrail() {
+    const m = this.move, f = this.stateFrame;
+    if (f <= m.startup || f > m.startup + m.active) return;
+    const P = CONFIG.player, B = this.weaponCfg().blade, T = this.weaponCfg().dualTrail || {};
+    const sub = P.trailSubsteps, life = m.trailLife || (m.heavy ? P.trailLifeHeavy : P.trailLife);
+    const a = {}, b = {};
+    for (const side of ['R', 'L']) {
+      const sp = m.dual[side];
+      if (!sp || sp.rest !== undefined) continue;
+      const pal = T[side] || this.trailPal();
+      for (let i = (f === m.startup + 1 ? 0 : 1); i <= sub; i++) {
+        const pose = this.handPose(f - 1 + i / sub, side);
+        this.bladePoint(pose, pose.reach + 3, a);
+        this.bladePoint(pose, Math.max(pose.reach + B.length, sp.r || 0), b);
+        Effects.trailPoint(this.swingId + (side === 'L' ? 0.5 : 0), a.x, a.y, b.x, b.y, life, m.heavy, pal);
+      }
+    }
+  }
+
   // ---------- 메인 갱신 ----------
   update(game, input) {
     const P = CONFIG.player, A = CONFIG.air;
     const ax = input.axisX();
+    this.ax = ax;
     this.game = game;
 
     // 버퍼 / 타이머 감소
@@ -853,6 +934,16 @@ class Player {
       this.startAttack(next, ax);
       return true;
     }
+    if (this.buf.heavy > 0 && this.weaponCfg().instantHeavy && this.rope && this.rope.embed) {
+      this.buf.heavy = 0;    // 사슬이 박혀 있으면 우클릭은 당기기 (새로 던지지 않음)
+      return false;
+    }
+    if (this.buf.heavy > 0 && this.weaponCfg().instantHeavy) {
+      // 차지 없이 바로 (사슬검: 누른 채로 있으면 박힌 사슬을 당김)
+      this.buf.heavy = 0;
+      this.startAttack('HEAVY0', ax, this.moveData('HEAVY')[0]);
+      return true;
+    }
     if (this.buf.heavy > 0) {
       this.buf.heavy = 0;
       this.move = null;
@@ -872,7 +963,11 @@ class Player {
     // 공격 속도 (각인 '무중력': 공중에서 더 빠르게)
     // 쌍검: 연속 적중 가속
     const sp = 1 + (this.stats.aspd + Transform.aspd(this) + (this.onGround ? 0 : Engrave.v(this, 'gt_zero_g', 'aspd'))) / 100;
-    if (sp > 1.001 && !move.skill) {
+    if (sp > 1.001 && !move.skill && move.hold !== undefined) {
+      // 홀드가 있는 기술(쌍검): 예비동작·타격·홀드는 그대로, 후딜만 짧아짐
+      move = Object.assign({}, move);
+      move.recovery = Math.max(2, Math.round(move.recovery / sp));
+    } else if (sp > 1.001 && !move.skill) {
       move = Object.assign({}, move);
       move.startup = Math.max(1, Math.round(move.startup / sp));
       move.recovery = Math.max(2, Math.round(move.recovery / sp));
@@ -973,6 +1068,8 @@ class Player {
     const end = m.startup + m.active;
     // 패링은 공격 도중 언제든 끊고 나갈 수 있음 (반응이 늦어지지 않게)
     if (this.buf.parry > 0 && this.tryParry()) return;
+    // dashCancel: 판정 도중에도 대시로 끊을 수 있는 기술 (쌍검 회전 전진)
+    if (m.dashCancel && f >= m.startup && this.tryDash(ax)) return;
 
     // 예비동작 → 판정 시작 순간에 전진
     if (f === m.startup) {
@@ -997,7 +1094,7 @@ class Player {
       Transform.onActive(game, this, m);
       Sound.play(m.sfx);
     }
-    if (Transform.onMoveFrame(game, this, m, f)) return;
+    if (Transform.onMoveFrame(game, this, m, f, ax)) return;
     // 선딜 동안 힘 모으기 (대지 분쇄)
     if (m.chargeFx && f < m.startup && f % 3 === 0) {
       const a = Math.random() * Math.PI * 2;
@@ -1043,15 +1140,19 @@ class Player {
         this.tryJump(input);
         return;
       }
-      // 다음 타 연결 (판정 끝 + chainDelay 이후)
-      const chainAt = end + (m.chainDelay !== undefined ? m.chainDelay : CONFIG.player.chainDelay);
+      // 다음 타 연결 (판정 끝 + 홀드 + chainDelay 이후)
+      const chainAt = end + (m.hold || 0) + (m.chainDelay !== undefined ? m.chainDelay : CONFIG.player.chainDelay);
       if (f >= chainAt && (this.buf.light > 0 || this.buf.heavy > 0)) {
         this.lastMoveId = this.moveId;
         if (this.tryAttack(ax, input)) return;
       }
     }
 
-    if (f >= m.startup + m.active + m.recovery) this.endMove();
+    if (f >= m.startup + m.active + (m.hold || 0) + m.recovery) {
+      // then: 끝나면 바로 이어지는 기술 (쌍검 회전 → 마무리 X자 베기)
+      if (m.then) { this.startAttack(m.then, 0); return; }
+      this.endMove();
+    }
   }
 
   // 내려찍기 (공중 S+우클릭) / 유성 낙하 (건틀릿 E, slamCfg 있음)

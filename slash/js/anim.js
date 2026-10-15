@@ -187,10 +187,11 @@ const Anim = (() => {
         const set = m.pose || MOVE_POSES[p.moveId] || MOVE_POSES.L1;
         const wind = POSES[set[0]], strike = POSES[set[1]];
         const base = p.onGround ? breathe(POSES.idle, t) : airBase();
-        const end = m.startup + m.active;
+        const end = m.startup + m.active, hold = m.hold || 0;
         if (f < m.startup) r.pose = lerpPose(base, wind, ease.outCubic(f / m.startup));
         else if (f < end) r.pose = lerpPose(wind, strike, ease.outCubic((f - m.startup + 1) / m.active));
-        else r.pose = lerpPose(strike, base, ease.inOut(clamp01((f - end) / m.recovery)));
+        else if (f < end + hold) r.pose = lerpPose(strike, strike, 1);           // 홀드: 끝 포즈에서 정지
+        else r.pose = lerpPose(strike, base, ease.inOut(clamp01((f - end - hold) / Math.max(1, m.recovery))));
         if (set[2] === 'rapid' && f >= m.startup && f < end) {
           // 연타: 두 포즈를 빠르게 번갈아
           r.pose = lerpPose(wind, strike, ((f >> 1) & 1) ? 1 : 0.2);
@@ -463,7 +464,8 @@ const Anim = (() => {
   }
 
   // 2관절 IK: 어깨에서 target 으로 팔을 뻗음 (팔꿈치는 아래쪽으로 굽힘)
-  function reach(fig, target) {
+  // back = true: 뒷팔 (쌍검 왼손)
+  function reach(fig, target, back) {
     const j = fig.j, d = fig.dim;
     const s = j.shoulder;
     let dx = target.x - s.x, dy = target.y - s.y;
@@ -476,8 +478,9 @@ const Anim = (() => {
     const e1 = { x: s.x + Math.cos(base + off) * a, y: s.y + Math.sin(base + off) * a };
     const e2 = { x: s.x + Math.cos(base - off) * a, y: s.y + Math.sin(base - off) * a };
     const el = e1.y > e2.y ? e1 : e2;
-    j.elbowF.x = el.x; j.elbowF.y = el.y;
-    j.handF.x = s.x + dx; j.handF.y = s.y + dy;
+    const E = back ? j.elbowB : j.elbowF, H = back ? j.handB : j.handF;
+    E.x = el.x; E.y = el.y;
+    H.x = s.x + dx; H.y = s.y + dy;
   }
   function clampCos(v) { return v < -1 ? -1 : v > 1 ? 1 : v; }
 
@@ -564,6 +567,27 @@ const Anim = (() => {
       guard: p.bladePoint(bp, B.hand + 2, {}),
       tip: p.bladePoint(bp, B.hand + B.length + (B.fist ? 3 : 0), {}),
     };
+    if (B.dual && p.state === 'attack' && p.move && p.move.dual) {
+      // 쌍검: 두 손이 각자 칼을 휘두름 (오른손 = 앞팔, 왼손 = 뒷팔). 쓰는 손은 쭉 뻗고 반대 손은 뒤로
+      const hr = p.bladePoint(bp, bp.reach, {});
+      fig.blade.hand = hr;
+      fig.blade.base = p.bladePoint(bp, bp.reach - 5, {});
+      fig.blade.guard = p.bladePoint(bp, bp.reach + 2, {});
+      fig.blade.tip = p.bladePoint(bp, bp.reach + B.length, {});
+      const lp = p.handPose(undefined, 'L');
+      const hl = p.bladePoint(lp, lp.reach, {});
+      fig.blade2 = { pose: lp, hand: hl, base: p.bladePoint(lp, lp.reach - 5, {}), tip: p.bladePoint(lp, lp.reach + B.length, {}) };
+      reach(fig, hr);
+      reach(fig, hl, true);
+      return fig;
+    }
+    if (B.chain && p.chainHand) {
+      // 사슬검: 손은 기술이 정한 궤적 (사슬·칼날은 물리로 따라옴)
+      fig.blade.hand = { x: p.chainHand.x, y: p.chainHand.y };
+      fig.blade.base = fig.blade.hand;
+      fig.blade.guard = fig.blade.hand;
+      fig.blade.tip = fig.blade.hand;
+    }
     reach(fig, fig.blade.hand);
     return fig;
   }

@@ -73,6 +73,13 @@ const UI = {
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
     if (game.mode === 'practice') Practice.draw(ctx, game);
     else ctx.fillText(`처치 ${game.kills}`, 720, 30);
+    if (game.debugSlow) {
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 13px "Segoe UI", sans-serif';
+      ctx.fillStyle = '#ffd23a';
+      ctx.fillText(`슬로모션 ×${game.debugSlow} (${Input.label('help')})`, 480, 78);
+      ctx.textAlign = 'right';
+    }
     if (game.floor) this.minimap(ctx, game);
     // 속성 세트 (지도 아래)
     Synergy.drawHud(ctx, game, 16, game.floor ? 114 : 58);

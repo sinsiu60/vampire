@@ -31,6 +31,8 @@ const Combat = {
   // ---------- 플레이어 → 적 ----------
   // 판정 프레임 동안 매 스텝 호출
   playerAttack(game, player) {
+    // 사슬검: 칼날 물리 판정 (chainrope.js)
+    if (player.state === 'attack' && player.rope && ChainRope.cfg(player)) { ChainRope.attack(game, player); return; }
     const move = player.move;
     if (!move || move.noHit || !player.isActiveFrame()) return;
     const hb = this.worldBox(player, move.hitbox, this._hb);
@@ -81,6 +83,8 @@ const Combat = {
     const wasDeflected = enemy.state === 'deflected' || enemy.state === 'stun';
     // 다단히트 마지막 타: 따로 지정된 넉백 (띄우기 등)
     const last = move.lastHit && move.multiHit && player.hitIndex >= move.multiHit.count - 1 ? move.lastHit : null;
+    const hp = player.hitFx || player.hitPoint(enemy);
+    player.hitFx = null;
     const knock = last ? last.knock : move.knock;
 
     const res = this.applyHit(game, enemy, dmg, crit, {
@@ -93,6 +97,7 @@ const Combat = {
       shieldBreak: move.shieldBreak || 0,
       attackerX: move.omni ? enemy.x - dir * 10 : player.x,
     }, {
+      x: hp ? hp.x : undefined, y: hp ? hp.y : undefined,   // 쌍검·사슬검: 칼끝에서 이펙트
       hitstop: move.hitstop, shake: move.shake, heavy: move.heavy, impact: move.impactFrame,
       launchSfx: move.launch, styleId: player.styleId || player.moveId, pts: move.pts,
     });

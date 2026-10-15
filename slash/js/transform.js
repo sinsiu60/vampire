@@ -75,7 +75,6 @@ const Transform = {
   // 공격 시작: 발도술은 칼집에서 뽑는 첫 타 보너스
   onAttackStart(p, id, move) {
     const d = this.of(p);
-    p.pullHit = false;
     p.bindHit = false;
     if (!d || d.mech !== 'iaido') return move;
     if (p.sheathed && !move.noHit) {
@@ -95,11 +94,21 @@ const Transform = {
   },
 
   // 매 프레임 (공격 중). true = 기술 끝냄
-  onMoveFrame(game, p, m, f) {
+  onMoveFrame(game, p, m, f, ax) {
     const end = m.startup + m.active;
+    // 쌍검 회전 전진: 천천히 앞으로 + A/D 로 방향 조절
+    if (m.special === 'dualSpin' && f >= m.startup && f < end) {
+      const D = this.of(p).dual;
+      p.vx = p.facing * D.spinSpeed + (ax || 0) * D.spinSteer;
+    }
     if (m.special === 'iaiChain') return this.stepIaiChain(game, p, m, f);
     if (m.special === 'flurry' && f >= m.startup && f < end) p.vx = p.facing * 2.6;
-    if (m.special === 'pull' && f === end - 1 && !p.pullHit) this.tryZip(game, p);
+    // 사슬검 3타 회전 중 우클릭: 회전을 앞으로 놓아주듯 던짐
+    if (m.spinRelease && f >= m.startup && p.buf.heavy > 0) {
+      p.buf.heavy = 0;
+      p.startAttack('HEAVY_SPIN', 0, p.moveData('HEAVY_SPIN'));
+      return true;
+    }
     return false;
   },
 
@@ -121,21 +130,6 @@ const Transform = {
     if (d && d.mech === 'dual') {
       p.dualRamp = Math.min(d.dual.rampMax, (p.dualRamp || 0) + 1);
       p.dualT = d.dual.rampWindow;
-    }
-    if (move.special === 'pull' && !p.pullHit) {
-      p.pullHit = true;
-      if (res === 'kill') return;
-      const dir = Math.sign(e.x - p.x) || p.facing;
-      if (e.isBoss || (e.cfg.weight || 1) >= 2) {
-        // 무거운 적: 내가 끌려감
-        const C = d.chain;
-        p.zip = { vx: dir * C.zipVx, t: Math.max(4, Math.round((Math.abs(e.x - p.x) - 50) / C.zipVx)) };
-        p.vy = -3;
-      } else {
-        e.pullTo = { x: p.x + dir * 44, t: 12 };
-        e.vx = 0;
-      }
-      Effects.streak(p.x, p.y - p.h * 0.6, e.x, e.y - e.h * 0.5, '#cfe');
     }
     if (move.special === 'bind' && !p.bindHit) {
       p.bindHit = true;
@@ -230,30 +224,6 @@ const Transform = {
     p.move = Object.assign({}, m, { active: Math.max(1, f - m.startup), chainDone: true });
   },
 
-  // ---------- 사슬검: 벽으로 날아가기 ----------
-  tryZip(game, p) {
-    const d = this.of(p);
-    if (!d || !d.chain) return;
-    const C = d.chain, L = game.level, y = p.y - 40, dir = p.facing;
-    let hitX = null;
-    for (let s = 20; s <= C.pullRange; s += 8) {
-      const x = p.x + dir * s;
-      if (x < 4 || x > L.width - 4) { hitX = x; break; }
-      for (const r of L.active) {
-        if (r.oneWay) continue;
-        if (x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h) { hitX = x; break; }
-      }
-      if (hitX !== null) break;
-    }
-    if (hitX === null || Math.abs(hitX - p.x) < 40) return;
-    p.zip = { vx: dir * C.zipVx, t: Math.round((Math.abs(hitX - p.x) - 20) / C.zipVx) };
-    p.vy = C.zipVy;
-    p.onGround = false;
-    Effects.streak(p.x, y, hitX, y, '#cfe');
-    Effects.sparks(hitX, y, -dir, 8, '#cfe');
-    Sound.play('chain');
-  },
-
   // ---------- 매 프레임 ----------
   update(game) {
     const p = game.player, d = this.of(p);
@@ -265,19 +235,9 @@ const Transform = {
     // 쌍검 가속: 한동안 못 맞히면 초기화
     if (p.dualT > 0 && --p.dualT === 0) p.dualRamp = 0;
     if (!d || d.mech !== 'dual') p.dualRamp = 0;
-    // 사슬 날아가기
-    if (p.zip) {
-      if (p.zip.t-- > 0 && p.state !== 'hurt' && !p.hitWall) p.vx = p.zip.vx;
-      else { p.vx *= 0.5; p.zip = null; }
-    }
     if (p.state !== 'attack') p.chainRun = null;
-    // 끌려오는 적
-    for (const e of game.enemies) {
-      if (!e.pullTo) continue;
-      if (e.dead || e.executed || --e.pullTo.t <= 0) { e.pullTo = null; continue; }
-      e.x += (e.pullTo.x - e.x) * 0.35;
-      e.vx = 0;
-    }
+    // 사슬검: 로프 물리 (다른 무기면 정리)
+    ChainRope.update(game, p);
     // 포박: 휘두르기 → 던지기
     for (let i = this.binds.length - 1; i >= 0; i--) {
       const b = this.binds[i], e = b.e, S = b.S;
@@ -345,7 +305,7 @@ const Transform = {
   draw(ctx, game) {
     const p = game.player;
     for (const b of this.binds) {
-      if (b.thrown) continue;
+      if (b.thrown || p.rope) continue;     // 사슬검 로프가 있으면 그게 묶은 적까지 이어짐
       const e = b.e;
       this.chainLine(ctx, p.x + p.facing * 8, p.y - p.h * 0.6, e.x, e.y - e.h * 0.5, '#cfe');
     }
@@ -396,6 +356,11 @@ const Transform = {
       ctx.restore();
       return false;
     }
+    if (B.dual && fig.blade2) {
+      // 쌍검 기술 중: 왼손 칼은 자기 궤적대로
+      Anim.drawBlade(ctx, fig.blade2.base, fig.blade2.tip, B.w0, B.w1, col);
+      return false;
+    }
     if (B.dual) {
       // 뒷손에도 칼 (앞칼보다 조금 뒤로 기울여)
       const a = (b.pose.ang + 32) * DEG, hb = fig.j.handB;
@@ -404,17 +369,10 @@ const Transform = {
       Anim.drawBlade(ctx, base, tip, B.w0, B.w1, col);
       return false;
     }
-    if (B.chain && p.state === 'attack' && p.move && p.move.swing && p.move.swing.r > 100) {
-      // 사슬: 판정 동안 칼날이 사슬 끝에 달려 뻗어 나감
-      const m = p.move, fr = p.stateFrame, end = m.startup + m.active;
-      const ext = fr < m.startup ? 0.15 : fr < end ? 1 : Math.max(0, 1 - (fr - end) / Math.max(1, m.recovery * 0.6));
-      const reach = B.hand + (b.pose.r - B.hand) * ext;
-      if (reach > B.hand + B.length + 6) {
-        const head = p.bladePoint(b.pose, reach - 26, {}), tip = p.bladePoint(b.pose, reach, {});
-        this.chainLine(ctx, b.hand.x, b.hand.y, head.x, head.y, col === '#ffffff' ? col : 'rgba(200,230,240,0.9)');
-        Anim.drawBlade(ctx, head, tip, B.w0, B.w1, col);
-        return true;
-      }
+    if (B.chain && p.rope) {
+      // 사슬검: 사슬·칼날은 물리 (chainrope.js)
+      ChainRope.draw(ctx, p, col, !!Game.debugSlow);
+      return true;
     }
     return false;
   },
@@ -503,7 +461,7 @@ const Transform = {
     let ft = (t * 0.7) % total, cur = moves[0];
     for (const a of moves) { if (ft < span(a[1])) { cur = a; break; } ft -= span(a[1]); }
     const [id, m] = cur;
-    const maxR = Math.max(...moves.map((a) => (a[1].swing && a[1].swing.r) || 60));
+    const maxR = d.chain ? d.chain.length + 40 : Math.max(...moves.map((a) => (a[1].swing && a[1].swing.r) || 60));
     const sc = Math.min(0.85, (w * 0.62) / maxR, (h - 8) / 70);
     // 가짜 플레이어
     const fake = Object.create(Player.prototype);
@@ -521,7 +479,7 @@ const Transform = {
     ctx.beginPath(); ctx.moveTo(-w, 0); ctx.lineTo(w * 2, 0); ctx.stroke();
     const W = CONFIG.weapons[d.weapon];
     // 검기: 판정 동안 칼끝 궤적
-    if (fake.state === 'attack' && m.swing && ft >= m.startup) {
+    if (fake.state === 'attack' && m.swing && ft >= m.startup && d.mech !== 'chain' && !m.dual) {
       const a = {}, pts = [];
       const f1 = Math.min(ft, m.startup + Math.min(m.active, 60));
       for (let fr = Math.max(m.startup, f1 - 8); fr <= f1; fr += 0.5) pts.push(fake.bladePoint(fake.bladePose(fr), m.swing.r, a) && { x: a.x, y: a.y });
@@ -540,6 +498,20 @@ const Transform = {
         ctx.stroke();
       }
       ctx.shadowBlur = 0;
+    }
+    // 사슬검: 미리보기용 로프를 따로 굴림
+    if (d.mech === 'chain') {
+      const C = d.chain, pv = d._pv || (d._pv = { rope: ChainRope.make(C, 9, -30), ft: ft, cur: id, swing: 0 });
+      if (pv.cur !== id) { pv.cur = id; pv.swing++; }
+      fake.swingId = pv.swing;
+      let n = Math.max(0, Math.min(4, Math.round(ft - pv.ft)));
+      if (ft < pv.ft) n = 1;
+      const fe = ft;
+      for (let k = n - 1; k >= 0; k--) { fake.stateFrame = Math.max(0, Math.round(fe - k)); ChainRope.previewStep(fake, pv.rope, C); }
+      fake.stateFrame = fe;
+      if (!fake.chainHand) fake.chainHand = ChainRope.handPoint(fake, C);
+      pv.ft = ft;
+      fake.rope = pv.rope;
     }
     const fig = Anim.playerFigure(fake);
     Anim.drawFigure(ctx, fig, { color: '#dfe9f2', back: '#7f8c98', glow: W.trail.glow, glowBlur: 6 }, null);

@@ -107,9 +107,22 @@ const Sound = {
     o.stop(t + dur + 0.02);
   },
 
-  play(name) {
+  play(name, vol) {
     if (!this.ctx) return;
     switch (name) {
+      case 'jingle': {          // 사슬 짤랑 (vol: 빠를수록 크게)
+        const v = vol === undefined ? 0.5 : vol;
+        for (let i = 0; i < 2; i++) this._tone(0.035, 'triangle', 3200 + Math.random() * 1600, 2800, 0.012 + 0.03 * v, i * 0.02, 0.15);
+        break;
+      }
+      case 'crack':             // 채찍 크랙 '착'
+        this._noise(0.05, 'highpass', 5000, 9000, 0.5, 1.5);
+        this._tone(0.03, 'square', 2600, 1200, 0.08);
+        break;
+      case 'tang':              // 사슬 팽팽 반동 '탕'
+        this._metal(900, 0.25, 0.12, 0.35, [1, 1.5, 2.3]);
+        this._noise(0.08, 'bandpass', 1800, 600, 0.4, 2);
+        break;
       case 'swing':
         this._noise(0.09, 'bandpass', 2400, 5200, 0.35, 1.2);
         break;
