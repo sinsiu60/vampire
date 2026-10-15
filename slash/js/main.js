@@ -362,7 +362,14 @@ const Game = {
   },
 
   // ---------- 이벤트 (전투에서 호출) ----------
-  registerHit() {
+  // weapon: 맞힌 무기 (플레이어 공격일 때). 한 콤보에 무기 3개를 모두 맞히면 TRINITY
+  registerHit(weapon) {
+    const c = this.combo;
+    if (c.count === 0) { c.weapons = new Set(); c.trinity = false; }
+    if (weapon && c.weapons) {
+      c.weapons.add(weapon);
+      if (!c.trinity && c.weapons.size >= WEAPON_ORDER.length) { c.trinity = true; Style.onTrinity(); }
+    }
     this.combo.count++;
     this.combo.timer = CONFIG.feel.comboResetFrames;
     this.combo.pop = 6;
@@ -750,6 +757,7 @@ const Game = {
     Skills.draw(ctx);
     for (const e of this.enemies) if (e.isBoss) Render.bossHazards(ctx, e);
     for (const e of this.enemies) if (!e.executed) Render.enemy(ctx, e);
+    if (!ex) for (const e of this.enemies) Render.weakIcon(ctx, e, this.player);
     for (const pr of this.projectiles) pr.draw(ctx);
     // 처형 암전: 배경과 다른 적은 검게, 플레이어와 대상만 밝은 실루엣으로
     if (this.execDark > 0) {

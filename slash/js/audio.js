@@ -351,6 +351,47 @@ const Sound = {
       case 'invClose':
         this._tone(0.08, 'sine', 600, 400, 0.08);
         break;
+      // ----- 무기 스왑 / 공명 / 무기별 스킬 -----
+      case 'ready':             // 스킬 쿨 완료: 짧은 맑은 소리
+        this._tone(0.09, 'triangle', 1500, 1500, 0.07, 0, 0.2);
+        break;
+      case 'resonance':         // 공명 단계 상승
+        this._tone(0.25, 'sine', 700, 1050, 0.12, 0, 0.5);
+        this._metal(1400, 0.3, 0.06, 0.5, [1, 2.01]);
+        break;
+      case 'resonanceMax':
+        this._tone(0.3, 'sine', 700, 1050, 0.12, 0, 0.6);
+        this._tone(0.4, 'sine', 1050, 1400, 0.1, 0.08, 0.6);
+        this._metal(2100, 0.6, 0.07, 0.8, [1, 2.01, 3.03]);
+        break;
+      case 'trinity':           // 무기 3개 한 콤보
+        this._tone(0.2, 'triangle', 880, 880, 0.12, 0, 0.5);
+        this._tone(0.2, 'triangle', 1108, 1108, 0.11, 0.07, 0.5);
+        this._tone(0.4, 'triangle', 1318, 1318, 0.11, 0.14, 0.6);
+        break;
+      case 'weakHit':           // 약점 타격: 날카로운 금속성 추가음
+        this._metal(2600, 0.1, 0.06, 0.2, [1, 1.5]);
+        break;
+      case 'stance':            // 간파 자세: 칼집 소리 + 긴장된 울림
+        this._metal(1800, 0.25, 0.08, 0.4, [1, 2.7]);
+        this._tone(0.5, 'sine', 220, 200, 0.08, 0, 0.5);
+        break;
+      case 'iai':               // 발도: 칼 뽑는 소리
+        this._noise(0.12, 'highpass', 3000, 7000, 0.3);
+        this._metal(2200, 0.12, 0.08, 0.3, [1, 1.9]);
+        break;
+      case 'iaiCut':            // 일섬 터짐
+        this._noise(0.25, 'bandpass', 5000, 1500, 0.6, 2, 0.4);
+        this._tone(0.25, 'sawtooth', 600, 80, 0.15);
+        break;
+      case 'ironWall':          // 철벽: 묵직한 금속 울림
+        this._metal(300, 0.6, 0.18, 0.6, [1, 1.48, 2.17]);
+        this._noise(0.2, 'lowpass', 900, 100, 0.6);
+        break;
+      case 'ironReflect':
+        this._metal(500, 0.25, 0.14, 0.4, [1, 1.48]);
+        this._noise(0.15, 'lowpass', 1600, 200, 0.5);
+        break;
     }
   },
 };

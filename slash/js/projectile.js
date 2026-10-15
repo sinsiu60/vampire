@@ -87,7 +87,7 @@ class Projectile {
         const dir = Math.sign(this.vx) || 1;
         Combat.applyHit(game, e, this.damage, false, {
           dir, knockX: 5, knockY: -3, hitstun: 34, attackerX: this.x - dir * 20,
-        }, { hitstop: 7, shake: 5, heavy: true, x: this.x, y: this.y, styleId: 'REFLECT' });
+        }, { hitstop: 7, shake: 5, heavy: true, x: this.x, y: this.y, styleId: 'REFLECT', noWeak: true });
         e.addPosture(this.damage * CONFIG.posture.hitMult, game);
         return;
       }

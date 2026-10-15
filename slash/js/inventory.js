@@ -1,6 +1,7 @@
 'use strict';
-// 인벤토리 (Tab): 장비 칸 4개(무기1·무기2·갑옷·반지) + 가방 + 능력치 + 비교 툴팁
-// 마우스: 좌클릭 = 장착/해제, 우클릭 = 무기를 보조 칸에 장착, X 두 번 = 버리기
+// 인벤토리 (Tab): 장비 칸 5개(검·대검·건틀릿·갑옷·반지) + 가방 + 능력치 + 비교 툴팁
+// 무기 칸은 항상 차 있고, 가방의 같은 종류 무기로만 바꿔 낀다
+// 마우스: 클릭 = 장착/해제, X 두 번 = 버리기
 // 키보드: A/D/W/S 이동, 스페이스/Enter 장착·해제, X 버리기, Tab/Esc 닫기
 
 const Inventory = {
@@ -11,12 +12,12 @@ const Inventory = {
   // 화면 배치 (960×540 기준)
   L: {
     x: 110, y: 46, w: 740, h: 450,
-    eqX: 140, eqY: 112, eqS: 56, eqGap: 74,
+    eqX: 140, eqY: 112, eqS: 50, eqGap: 66,
     bagX: 486, bagY: 112, cell: 56, gap: 10, cols: 4,
     statX: 222, statY: 120,
   },
   EQUIP: [
-    { key: 'w0', label: '무기 1' }, { key: 'w1', label: '무기 2' },
+    { key: 'w0', label: '검' }, { key: 'w1', label: '대검' }, { key: 'w2', label: '건틀릿' },
     { key: 'armor', label: '갑옷' }, { key: 'ring', label: '반지' },
   ],
 
@@ -40,25 +41,23 @@ const Inventory = {
 
   // ---------- 장비 칸 접근 ----------
   equipGet(p, key) {
-    if (key === 'w0') return p.gear.weapons[0];
-    if (key === 'w1') return p.gear.weapons[1];
+    if (key[0] === 'w') return p.gear.weapons[+key[1]];
     return p.gear[key];
   },
   equipSet(p, key, item) {
-    if (key === 'w0') p.gear.weapons[0] = item;
-    else if (key === 'w1') p.gear.weapons[1] = item;
+    if (key[0] === 'w') p.gear.weapons[+key[1]] = item;
     else p.gear[key] = item;
   },
-  // 가방 아이템을 장착하면 들어갈 칸 (무기: 사용 중인 칸, toOther 면 반대 칸)
-  targetKey(p, item, toOther) {
-    if (item.slot === 'weapon') return 'w' + (toOther ? 1 - p.activeWeapon : p.activeWeapon);
+  // 가방 아이템을 장착하면 들어갈 칸 (무기는 종류별 칸)
+  targetKey(p, item) {
+    if (item.slot === 'weapon') return 'w' + WEAPON_ORDER.indexOf(item.type);
     return item.slot;
   },
 
-  equipFromBag(p, i, toOther) {
+  equipFromBag(p, i) {
     const item = p.bag[i];
     if (!item) return;
-    const key = this.targetKey(p, item, toOther);
+    const key = this.targetKey(p, item);
     const old = this.equipGet(p, key);
     this.equipSet(p, key, item);
     if (old) p.bag[i] = old; else p.bag.splice(i, 1);
@@ -70,8 +69,8 @@ const Inventory = {
   unequip(p, key) {
     const item = this.equipGet(p, key);
     if (!item) return;
-    if (item.slot === 'weapon' && !(key === 'w0' ? p.gear.weapons[1] : p.gear.weapons[0])) {
-      this.say('무기는 최소 1개 장착해야 합니다', '#f99');
+    if (item.slot === 'weapon') {
+      this.say('무기 칸은 해제할 수 없습니다 — 가방의 같은 종류 무기로 바꿔 끼세요', '#f99');
       Sound.play('deny');
       return;
     }
@@ -113,10 +112,10 @@ const Inventory = {
       this.discardArm = 0;
       if (s.area === 'equip') {
         if (dx > 0) { s.area = 'bag'; s.i = Math.min(CONFIG.loot.bagSize - 1, Math.min(s.i, 2) * L.cols); }
-        else s.i = (s.i + dy + 4) % 4;
+        else s.i = (s.i + dy + this.EQUIP.length) % this.EQUIP.length;
       } else {
         const c = s.i % L.cols, r = Math.floor(s.i / L.cols), rows = Math.ceil(CONFIG.loot.bagSize / L.cols);
-        if (dx < 0 && c === 0) { s.area = 'equip'; s.i = Math.min(3, r); return; }
+        if (dx < 0 && c === 0) { s.area = 'equip'; s.i = Math.min(this.EQUIP.length - 1, r); return; }
         const nc = Math.max(0, Math.min(L.cols - 1, c + dx)), nr = (r + dy + rows) % rows;
         s.i = Math.min(CONFIG.loot.bagSize - 1, nr * L.cols + nc);
       }
@@ -136,7 +135,7 @@ const Inventory = {
     if (click || rclick || confirm) {
       if (this.sel.area === 'bag') {
         const it = p.bag[this.sel.i];
-        if (it) this.equipFromBag(p, this.sel.i, rclick && it.slot === 'weapon');
+        if (it) this.equipFromBag(p, this.sel.i);
       } else {
         this.unequip(p, this.EQUIP[this.sel.i].key);
       }
@@ -155,7 +154,7 @@ const Inventory = {
   },
 
   hitTest(m) {
-    for (let i = 0; i < 4; i++) { const r = this.rectOf('equip', i); if (this.inRect(m, r)) return { area: 'equip', i }; }
+    for (let i = 0; i < this.EQUIP.length; i++) { const r = this.rectOf('equip', i); if (this.inRect(m, r)) return { area: 'equip', i }; }
     for (let i = 0; i < CONFIG.loot.bagSize; i++) { const r = this.rectOf('bag', i); if (this.inRect(m, r)) return { area: 'bag', i }; }
     return null;
   },
@@ -184,16 +183,16 @@ const Inventory = {
     ctx.fillText(`가방 ${p.bag.length}/${CONFIG.loot.bagSize}`, L.bagX, L.bagY - 12);
 
     // 장비 칸
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < this.EQUIP.length; i++) {
       const E = this.EQUIP[i], r = this.rectOf('equip', i);
       const it = this.equipGet(p, E.key);
       this.slot(ctx, r, it, this.sel.area === 'equip' && this.sel.i === i);
       ctx.font = '10px "Segoe UI", sans-serif';
       ctx.fillStyle = 'rgba(255,255,255,0.5)';
       ctx.textAlign = 'center';
-      ctx.fillText(E.label, r.x + r.w / 2, r.y + r.h + 11);
+      ctx.fillText(E.label, r.x + r.w / 2, r.y + r.h + 10);
       // 사용 중인 무기 표시
-      if ((E.key === 'w0' && p.activeWeapon === 0) || (E.key === 'w1' && p.activeWeapon === 1)) {
+      if (E.key === 'w' + p.activeWeapon) {
         ctx.fillStyle = '#5ff';
         ctx.font = 'bold 9px "Segoe UI", sans-serif';
         ctx.fillText('사용 중', r.x + r.w / 2, r.y - 3);
@@ -216,7 +215,7 @@ const Inventory = {
     ctx.font = '11px "Segoe UI", sans-serif';
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
     const k = (a) => Input.label(a);
-    ctx.fillText(`${k('light')}/${k('jump')}: 장착·해제   ${k('heavy')}: 무기를 보조 칸에 장착   ${k('discard')} 두 번: 버리기   ${k('left')}${k('up')}${k('down')}${k('right')}: 이동   ${k('inventory')}/${k('pause')}: 닫기`, V.width / 2, L.y + L.h - 14);
+    ctx.fillText(`${k('light')}/${k('jump')}: 장착·해제 (무기는 같은 종류 칸에)   ${k('discard')} 두 번: 버리기   ${k('left')}${k('up')}${k('down')}${k('right')}: 이동   ${k('inventory')}/${k('pause')}: 닫기`, V.width / 2, L.y + L.h - 14);
     if (this.msg) {
       ctx.globalAlpha = Math.min(1, this.msg.life / 30);
       ctx.font = 'bold 13px "Segoe UI", sans-serif';
@@ -302,13 +301,13 @@ const Inventory = {
       ctx.fillText(`★ ${U.name}: ${U.desc}`, x, yy);
       yy += 15;
     }
-    // 스킬
+    // 무기별 스킬 (쿨타임: 아이템 쿨감 반영)
     yy += 4;
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    for (const key of ['skill1', 'skill2']) {
-      const S = CONFIG.skills[key];
-      const cd = (S.cooldown * (1 - s.cdr / 100) / 60).toFixed(1);
-      ctx.fillText(`${Input.label(key)} ${S.name} (${cd}초)`, x, yy);
+    for (const t of WEAPON_ORDER) {
+      const W = CONFIG.weapons[t];
+      const cd = (sl) => (W.skills[sl].cooldown * (1 - s.cdr / 100) / 60).toFixed(1);
+      ctx.fillStyle = t === p.weaponType() ? `rgb(${W.trail.inner})` : 'rgba(255,255,255,0.45)';
+      ctx.fillText(`${W.name}  ${Input.label('skill1')} ${W.skills.q.name} ${cd('q')}초 · ${Input.label('skill2')} ${W.skills.e.name} ${cd('e')}초`, x, yy);
       yy += 15;
     }
   },
@@ -323,20 +322,20 @@ const Inventory = {
     for (const l of Loot.describe(it)) lines.push({ text: l.text, color: l.color, font: '11px' });
 
     if (fromBag) {
-      const key = this.targetKey(p, it, false);
+      const key = this.targetKey(p, it);
       const cur = this.equipGet(p, key);
       lines.push({ gap: 6 });
-      lines.push({ text: cur ? `장착 중 (${key === 'w0' || key === 'w1' ? '사용 중인 무기' : CONFIG.loot.nouns[it.slot]}): ${cur.name}` : '빈 칸에 장착', color: cur ? Loot.color(cur) : '#aaa', font: '11px' });
+      lines.push({ text: cur ? `장착 중 (${CONFIG.loot.nouns[it.type]} 칸): ${cur.name}` : '빈 칸에 장착', color: cur ? Loot.color(cur) : '#aaa', font: '11px' });
       // 바꿨을 때 능력치 변화
       const g = { weapons: p.gear.weapons.slice(), armor: p.gear.armor, ring: p.gear.ring };
-      if (key === 'w0') g.weapons[0] = it; else if (key === 'w1') g.weapons[1] = it; else g[key] = it;
-      const before = p.stats, after = Loot.computeStats(g, p.activeWeapon);
+      if (key[0] === 'w') g.weapons[+key[1]] = it; else g[key] = it;
+      // 무기는 그 무기를 들었을 때 기준으로 비교 (무기 공격력 배율)
+      const act = it.slot === 'weapon' ? +key[1] : p.activeWeapon;
+      const before = Loot.computeStats(p.gear, act), after = Loot.computeStats(g, act);
       const diffs = this.diff(p, before, after);
       if (diffs.length === 0) lines.push({ text: '능력치 변화 없음', color: '#888', font: '11px' });
       for (const d of diffs) lines.push({ text: d.text, color: d.up ? '#7f7' : '#f77', font: 'bold 11px' });
-      if (it.slot === 'weapon' && it.type !== p.weaponType()) {
-        lines.push({ text: `무기 종류가 바뀜: ${p.weaponCfg().name} → ${CONFIG.weapons[it.type].name}`, color: '#fd8', font: '11px' });
-      }
+
     }
 
     // 크기 계산

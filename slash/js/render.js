@@ -363,6 +363,31 @@ const Render = {
       if (this.lit > 0.5) { col = '#eafcff'; back = '#a9c9cf'; }
     }
 
+    // 철벽(대검 Q): 주황 테두리 / 간파 자세(검 Q): 청록 테두리
+    if (!glow && p.ironWall > 0) { glow = '#ffa040'; blur = 8 + Math.sin(p.ironWall * 0.3) * 4; }
+    if (!glow && p.state === 'stance') { glow = '#7ff'; blur = 10; }
+    if (p.state === 'stance') {
+      const k = clamp01(p.stanceTimer / 20);
+      ctx.save();
+      ctx.globalAlpha = 0.5 * k;
+      ctx.strokeStyle = '#bff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, 34 + Math.sin(p.stateFrame * 0.2) * 3, 7, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (p.ironWall > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.25 + 0.1 * Math.sin(p.ironWall * 0.3);
+      ctx.strokeStyle = '#ffb050';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - p.h * 0.5, 34, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     Anim.drawFigure(ctx, fig, { color: col, back, glow, glowBlur: blur }, p.scarf);
 
     // 칼: 검은 칼날 (궤적만 청록). 패링 성공 후 크리티컬 확정 상태면 금빛
@@ -400,6 +425,32 @@ const Render = {
       ctx.stroke();
     }
     ctx.restore();
+
+    // 공명: 무기에 청록 글로우 (단계가 높을수록 밝게)
+    if (p.res.timer > 0 && !white) {
+      const g = CONFIG.swap.resonance.glow[p.res.level - 1];
+      const fade = Math.min(1, p.res.timer / 30);
+      ctx.save();
+      ctx.globalAlpha = (0.35 + 0.6 * g) * fade;
+      ctx.shadowColor = '#3ff';
+      ctx.shadowBlur = 6 + 18 * g;
+      ctx.strokeStyle = g >= 1 ? '#f0ffff' : '#8ff';
+      ctx.lineCap = 'round';
+      if (B.fist) {
+        ctx.lineWidth = 1 + 1.5 * g;
+        ctx.beginPath();
+        ctx.arc(b.hand.x, b.hand.y, 5.5 + 2 * g, 0, Math.PI * 2);
+        ctx.arc(fig.j.handB.x, fig.j.handB.y, 4.5 + 2 * g, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        ctx.lineWidth = 1 + 1.6 * g;
+        ctx.beginPath();
+        ctx.moveTo(b.base.x, b.base.y);
+        ctx.lineTo(b.tip.x, b.tip.y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
 
     // 판정 중: 칼날을 따라 검기가 뻗어나감
     if (p.isActiveFrame() && p.state === 'attack' && !p.move.swing.thrust && !B.fist) {
@@ -577,6 +628,27 @@ const Render = {
   },
 
   // 체간 바: 가운데에서 양옆으로. 찰수록 노랑 → 주황 → 빨강
+  // 적 머리 위 약점 무기 아이콘 (지금 든 무기가 약점이면 밝게 빛남)
+  weakIcon(ctx, e, p) {
+    const w = e.weakTo;
+    if (!w || e.dead || e.executed) return;
+    const on = p.weaponType() === w, W = CONFIG.weapons[w];
+    const x = e.x, y = e.y - e.h - (e.isBoss ? 30 : 34);
+    ctx.save();
+    ctx.globalAlpha = on ? 1 : 0.55;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.beginPath();
+    ctx.arc(x, y, 9.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = on ? `rgb(${W.trail.inner})` : 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1;
+    if (on) { ctx.shadowColor = W.trail.glow; ctx.shadowBlur = 8 + Math.sin((Game.frame || 0) * 0.2) * 3; }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    Loot.drawIcon(ctx, { type: w, rarity: 0, icon: true, tint: on ? `rgb(${W.trail.inner})` : '#ccc' }, x, y, 0.55);
+    ctx.restore();
+  },
+
   postureBar(ctx, x, y, w, t, broken, flash) {
     t = clamp01(t);
     ctx.fillStyle = 'rgba(0,0,0,0.65)';

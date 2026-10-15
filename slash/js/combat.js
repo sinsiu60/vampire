@@ -32,7 +32,7 @@ const Combat = {
   // 판정 프레임 동안 매 스텝 호출
   playerAttack(game, player) {
     const move = player.move;
-    if (!move || !player.isActiveFrame()) return;
+    if (!move || move.noHit || !player.isActiveFrame()) return;
     const hb = this.worldBox(player, move.hitbox, this._hb);
 
     // 투사체 베기 → 반사
@@ -85,6 +85,7 @@ const Combat = {
       hitstun: move.hitstun,
       launch: !!(move.launch || (last && last.launch)),
       slam: !!move.slam,
+      shieldBreak: move.shieldBreak || 0,
       attackerX: move.omni ? enemy.x - dir * 10 : player.x,
     }, {
       hitstop: move.hitstop, shake: move.shake, heavy: move.heavy, impact: move.impactFrame,
@@ -92,8 +93,8 @@ const Combat = {
     });
 
     if (res !== 'blocked') {
-      // 무기 교체 연계 공격 적중 보너스
-      if (player.swapLinkPending) { player.swapLinkPending = false; Style.onSwapLink(); }
+      // 스왑 어택(전환기) 적중 보너스
+      if (player.swapAttackPending) { player.swapAttackPending = false; Style.onSwapAttack(); }
       if (move.skill) Style.gain(CONFIG.style.skill);
       // 전설 '뇌신': 3번째 타격마다 번개
       const U = CONFIG.loot.uniques.thunder;
@@ -102,7 +103,8 @@ const Combat = {
 
     // 체간: 공격이 들어갈수록 차오름 (방패에 막혀도 조금)
     const PO = CONFIG.posture;
-    let pd = (move.posture !== undefined ? move.posture : move.damage * PO.hitMult) * player.postureMult();
+    let pd = (move.posture !== undefined ? move.posture : move.damage * PO.hitMult) * player.postureMult()
+      * this.weakMult(enemy, player.weaponType(), 'postureMult');
     if (wasDeflected) pd *= PO.deflectedHitMult;   // 휘청이는 빈틈을 공략하면 더 크게
     if (enemy.cfg.hitPostureMult !== undefined) pd *= enemy.cfg.hitPostureMult;   // 보스: 공격보다 패링으로
     if (res === 'blocked') enemy.addPosture(move.damage * PO.blockMult, game);
@@ -118,15 +120,33 @@ const Combat = {
     if (sure && res !== 'blocked') Effects.popText(enemy.x, enemy.y - enemy.h - 34, 'CRITICAL', '#ffd83a', 16);
   },
 
-  // 적에게 데미지 적용 + 결과별 연출. fx: { hitstop, shake, heavy, impact, x, y, launchSfx }
+  // 약점 상성 배율: 적의 약점 무기(enemy.weakTo)로 때리면 CONFIG.weakness[key], 아니면 1
+  weakMult(enemy, weapon, key) {
+    return weapon && enemy.weakTo === weapon ? CONFIG.weakness[key] : 1;
+  },
+
+  // 적에게 데미지 적용 + 결과별 연출. fx: { hitstop, shake, heavy, impact, x, y, launchSfx, styleId, pts, weapon, noWeak }
+  // styleId 가 있으면 플레이어의 공격 (스타일·흡혈·공명·약점 상성 적용)
   applyHit(game, enemy, dmg, crit, info, fx) {
-    const F = CONFIG.feel;
+    const F = CONFIG.feel, p = game.player;
     // 공중 콤보 판정: 내가 공중이거나 적이 떠 있을 때
-    const air = !game.player.onGround || enemy.state === 'launched';
+    const air = !p.onGround || enemy.state === 'launched';
+    const weapon = fx.styleId && !fx.noWeak ? (fx.weapon || p.weaponType()) : null;
+    const weak = !!weapon && enemy.weakTo === weapon;
+    if (weak) {
+      dmg *= CONFIG.weakness.damageMult;
+      if (CONFIG.weakness.pierceShield) info.pierceShield = true;
+    }
     const res = enemy.takeHit(dmg, info);
     if (res !== 'blocked' && fx.styleId) {
       Style.onHit(fx.styleId, air, res === 'armor', fx.pts);
-      game.player.onDealDamage(dmg);      // 흡혈
+      p.onDealDamage(dmg);      // 흡혈
+      p.res.hit = true;         // 공명 단계 상승 조건
+    }
+    // 방패 파괴
+    if (info.shieldBreak && enemy.cfg.shield && res !== 'kill') {
+      if (!(enemy.shieldBroken > 0)) Effects.popText(enemy.x, enemy.y - enemy.h - 30, '방패 파괴', '#ffb050', 15);
+      enemy.shieldBroken = info.shieldBreak;
     }
     const dir = info.dir;
     const hx = fx.x !== undefined ? fx.x : enemy.x - dir * enemy.w * 0.2;
@@ -143,7 +163,17 @@ const Combat = {
     }
 
     const killed = res === 'kill';
-    const stop = fx.hitstop + (crit ? 2 : 0) + (killed ? F.killHitstop : 0);
+    const stop = fx.hitstop + (crit ? 2 : 0) + (killed ? F.killHitstop : 0) + (weak ? CONFIG.weakness.hitstopAdd : 0);
+    if (weak) {
+      // 약점: 무기 색 불꽃 + 가끔 '약점!' 글자
+      const W = CONFIG.weapons[weapon];
+      Effects.radialSparks(hx, hy, 12, `rgb(${W.trail.inner})`, 1);
+      Effects.ring(hx, hy, W.trail.glow, 34);
+      if ((Game.frame || 0) - (enemy.weakPopAt || -999) > 45) {
+        enemy.weakPopAt = Game.frame || 0;
+        Effects.popText(enemy.x, enemy.y - enemy.h - 44, '약점!', `rgb(${W.trail.inner})`, 13);
+      }
+    }
     game.hitstop = Math.max(game.hitstop, res === 'armor' ? Math.ceil(stop * 0.6) : stop);
     Effects.addShake(fx.shake + (crit ? 2 : 0) + (killed ? 4 : 0));
     Effects.sparks(hx, hy, dir, fx.heavy ? 14 : 7, res === 'armor' ? '#aab4c0' : crit ? '#ffe680' : '#ffffff');
@@ -161,7 +191,8 @@ const Combat = {
       Sound.play(fx.launchSfx ? 'launchHit' : fx.heavy ? 'heavyHit' : 'hit');
     }
     if (crit) Sound.play('crit');
-    game.registerHit();
+    if (weak) Sound.play('weakHit');
+    game.registerHit(weapon);
     return res;
   },
 
@@ -184,8 +215,9 @@ const Combat = {
   },
 
   // 내려찍기 착지 충격파: 주변 바닥의 적을 띄움
-  slamWave(game, player) {
-    const W = player.moveData('SLAM_WAVE');
+  // W: 충격파 데이터 (없으면 무기의 SLAM_WAVE)
+  slamWave(game, player, W) {
+    W = W || player.moveData('SLAM_WAVE');
     Effects.shockwave(player.x, player.y, W.radius);
     Effects.addShake(W.shake);
     Effects.impactFrame(1);
@@ -201,6 +233,7 @@ const Combat = {
       this.applyHit(game, e, dmg, crit, {
         dir, knockX: W.knock.x, knockY: W.knock.y, hitstun: W.hitstun, launch: true, attackerX: player.x,
       }, { hitstop: W.hitstop, shake: 0, heavy: false, x: e.x, y: e.y - e.h * 0.4, styleId: player.styleId + '_WAVE' });
+      if (W.posture && !e.dead) e.addPosture(W.posture * player.postureMult() * this.weakMult(e, player.weaponType(), 'postureMult'), game);
     }
   },
 
@@ -220,7 +253,8 @@ const Combat = {
   resolveIncoming(game, player, dmg, dir, knock, attack, enemy, srcX) {
     const parryable = attack.parryable || attack.telegraph === 'white';
     // 퍼펙트 패링: 노랑/흰색 공격만. 방향 상관없이 (자동으로 돌아봄)
-    if (player.isParrying() && parryable) {
+    // 검 Q 간파 자세 중엔 빨강 근접 공격도 자동으로 받아냄
+    if (player.isParrying() && (parryable || player.stanceParries(attack, enemy))) {
       const x = enemy ? (player.x + enemy.x) / 2 : srcX;
       game.logParry(player.parryStart - game.simTime, true);
       this.perfectParry(game, player, enemy, x, player.y - player.h * 0.6, attack.telegraph === 'white');

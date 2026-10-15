@@ -101,6 +101,8 @@ const Anim = (() => {
     // 적: 퍼펙트 패링 당해 휘청 / 체간 붕괴로 무릎 꿇음
     gDeflect: P({ torso: -34, head: -30, thF: 30, shF: -18, thB: -24, shB: -36, arB1: -120, arB2: 20, wpn: -120 }),
     gKneel: P({ torso: 34, head: 34, thF: 85, shF: -150, thB: -40, shB: -100, arB1: 10, arB2: 10, arF1: 20, arF2: 10, wpn: 105 }),
+    // 간파 자세 (검 Q): 낮게 웅크려 칼을 허리에
+    stance: P({ torso: 22, head: -10, thF: 62, shF: -95, thB: -30, shB: -55, arB1: 30, arB2: 50 }),
     // 플레이어 패링 자세: 칼을 세워 막음
     parry: P({ torso: -8, head: -4, thF: 34, shF: -40, thB: -26, shB: -24, arB1: -40, arB2: 70 }),
     // 건틀릿: 뒷손은 턱 앞에 가드
@@ -213,6 +215,13 @@ const Anim = (() => {
         break;
       }
       case 'slam':
+        if (p.slamCfg && p.slamPhase === 'fall') {
+          // 유성 낙하: 주먹을 내지르며 비스듬히 급강하 (연타에 맞춰 포즈 교대)
+          r.pose = (f >> 1) & 1 ? POSES.jabStrike : POSES.crossStrike;
+          r.rot = 38;
+          r.sy = 1.08; r.sx = 0.92;
+          break;
+        }
         r.pose = p.slamPhase === 'hang' ? POSES.tuck : p.slamPhase === 'fall' ? POSES.slamFall : POSES.crouch;
         if (p.slamPhase === 'hang') r.rot = -20 + 40 * clamp01(f / 7);
         if (p.slamPhase === 'fall') { r.sy = 1.15; r.sx = 0.88; }
@@ -226,6 +235,10 @@ const Anim = (() => {
         break;
       case 'parry':
         r.pose = lerpPose(p.onGround ? breathe(POSES.idle, t) : airBase(), POSES.parry, ease.outCubic(clamp01(f / 3)));
+        break;
+      case 'stance':
+        // 간파 자세: 낮게 웅크리고 칼자루에 손
+        r.pose = lerpPose(p.onGround ? breathe(POSES.idle, t) : airBase(), POSES.stance, ease.outCubic(clamp01(f / 5)));
         break;
       case 'guard':
         r.pose = lerpPose(POSES.parry, POSES.guard, ease.outCubic(clamp01(f / 6)));

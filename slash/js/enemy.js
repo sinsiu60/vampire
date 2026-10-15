@@ -90,9 +90,18 @@ class Enemy {
     return !!this.cfg.superArmor && this.armorBroken <= 0;
   }
 
-  // 방패를 들고 있는 상태인가 (정면 공격 막음)
+  // 방패를 들고 있는 상태인가 (정면 공격 막음). 방패 파괴(대검 E) 중엔 못 막음
   get guarding() {
-    return !!this.cfg.shield && (this.state === 'idle' || this.state === 'chase' || this.state === 'windup');
+    return !!this.cfg.shield && !(this.shieldBroken > 0) && (this.state === 'idle' || this.state === 'chase' || this.state === 'windup');
+  }
+
+  // 약점 무기: weapons.*.strongVs 에 이 적 종류가 있는 무기 (없으면 null)
+  get weakTo() {
+    if (this._weak === undefined) {
+      this._weak = null;
+      for (const t in CONFIG.weapons) if ((CONFIG.weapons[t].strongVs || []).indexOf(this.type) >= 0) this._weak = t;
+    }
+    return this._weak;
   }
 
   // 공격 예고 색: white(간파, 보스) / yellow(패링 가능) / red(패링 불가)
@@ -130,6 +139,7 @@ class Enemy {
     if (this.hpShow > 0) this.hpShow--;
     if (this.cooldown > 0) this.cooldown--;
     if (this.armorBroken > 0) this.armorBroken--;
+    if (this.shieldBroken > 0) this.shieldBroken--;
     if (this.postureFlash > 0) this.postureFlash--;
     this.stateFrame++;
 
@@ -514,7 +524,7 @@ class Enemy {
     const T = this.cfg, A = CONFIG.air;
 
     // 방패: 정면 공격은 막는다 (런처·내려찍기는 방패를 무시)
-    if (this.guarding && !info.launch && !info.slam && this.hitFromFront(info.attackerX)) {
+    if (this.guarding && !info.launch && !info.slam && !info.shieldBreak && !info.pierceShield && this.hitFromFront(info.attackerX)) {
       this.flash = 3;
       this.vx = info.dir * 1.5 / T.weight;
       return 'blocked';

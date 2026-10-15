@@ -2,6 +2,9 @@
 // 장비 아이템: 생성(등급·랜덤 옵션·전설 고유 효과), 장비 → 능력치 계산, 바닥 드랍(빛기둥)·줍기
 // 아이템: { id, slot: 'weapon'|'armor'|'ring', type(무기 종류), rarity: 0~3, name, opts: [{k, v}], base, unique }
 
+// 무기 칸 순서 (R / 휠 교체 순서)
+const WEAPON_ORDER = CONFIG.loot.weaponTypes;
+
 const Loot = {
   nextId: 1,
 
@@ -70,7 +73,7 @@ const Loot = {
   computeStats(gear, active) {
     const L = CONFIG.loot;
     const s = { atk: 0, aspd: 0, crit: 0, lifesteal: 0, cdr: 0, stamina: 0, maxHp: 0, posture: 0, reduce: 0, power: 1, uniques: {} };
-    const items = [gear.weapons[0], gear.weapons[1], gear.armor, gear.ring];
+    const items = gear.weapons.concat([gear.armor, gear.ring]);
     for (const it of items) {
       if (!it) continue;
       for (const o of it.opts) s[o.k] = (s[o.k] || 0) + o.v;
@@ -212,7 +215,7 @@ const Loot = {
 
   // 아이템 아이콘 (s = 배율, 중심 x,y). 실루엣 + 등급 색 테두리
   drawIcon(ctx, item, x, y, s) {
-    const c = this.color(item);
+    const c = item.tint || this.color(item);
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(s, s);

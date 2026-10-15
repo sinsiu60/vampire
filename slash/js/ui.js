@@ -82,7 +82,7 @@ const UI = {
         `${k('left')}/${k('right')} 이동  ${k('jump')} 점프(2단)  ${k('dash')} 대시(무적)  ${k('light')} 약공 콤보  ${k('heavy')} 강공(길게=차지)  약공 2타 후 ${k('heavy')} 찌르기`,
         `${k('down')}+${k('heavy')} 런처(${k('heavy')} 유지=같이 점프)  공중 ${k('light')} 콤보  공중 ${k('heavy')} 강공  공중 ${k('down')}+${k('heavy')} 내려찍기`,
         `${k('parry')} 탭 = 패링 / 누르기 = 가드  패링 직후 ${k('light')} 일섬 / ${k('heavy')} 런처  체간 붕괴 시 ${k('light')} 처형`,
-        `${k('swap')} 무기 교체(직후 공격 = 연계기)  ${k('skill1')} ${CONFIG.skills.skill1.name}  ${k('skill2')} ${CONFIG.skills.skill2.name}  ${k('inventory')} 인벤토리`,
+        `${k('swap')}/휠 무기 교체(공격 중이면 전환기 + 공명)  ${k('skill1')}/${k('skill2')} 무기 스킬  머리 위 아이콘 = 약점 무기  ${k('inventory')} 인벤토리`,
         `${k('spawn1')}~${k('spawn7')} 적·보스  ${k('spawn8')} 아이템  ${k('debug')} 히트박스  ${k('debugMode')} 패링 디버그  ${k('mode')} 던전/연습장  ${k('help')} 도움말`,
       ];
       ctx.textAlign = 'center';
@@ -96,69 +96,98 @@ const UI = {
     }
   },
 
-  // ---------- 무기 / 스킬 (왼쪽 아래) ----------
+  // ---------- 무기 3개 / 스킬 쿨타임 / 공명 (왼쪽 아래) ----------
+  // 무기 칸 순서대로 (R = 오른쪽으로). 현재 무기는 크게. 각 무기 아래 Q·E 쿨타임 (안 든 무기도 2배속 회복)
   gearHud(ctx, game) {
-    const p = game.player, x0 = 18, y0 = 470;
-    const w = p.weaponItem(), w2 = p.gear.weapons[1 - p.activeWeapon];
-    const W = p.weaponCfg();
+    const p = game.player, R = CONFIG.swap.resonance;
+    const cur = p.activeWeapon, yb = 530;
+    const res = p.res, g = res.timer > 0 ? R.glow[res.level - 1] : 0;
+    let x = 14;
     ctx.save();
-    // 사용 중인 무기 (크게)
-    this.iconBox(ctx, x0, y0, 48, w, p.swapFlash > 0 ? W.trail.glow : null);
-    ctx.font = 'bold 10px "Segoe UI", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = `rgb(${W.trail.inner})`;
-    ctx.fillText(W.name, x0 + 24, y0 + 60);
-    // 보조 무기 (작게) + 교체 키
-    this.iconBox(ctx, x0 + 54, y0 + 16, 32, w2, null, 0.6);
-    ctx.fillStyle = p.swapCooldown > 0 ? '#777' : '#fff';
-    ctx.font = 'bold 10px "Segoe UI", sans-serif';
-    ctx.fillText(Input.label('swap'), x0 + 70, y0 + 12);
-    if (p.swapTimer > 0) {
-      // 연계 공격 가능 시간
-      ctx.fillStyle = '#e6c8ff';
-      ctx.fillRect(x0, y0 - 6, 48 * p.swapTimer / CONFIG.swap.linkFrames, 3);
-    }
-    // 스킬
-    ['skill1', 'skill2'].forEach((key, i) => {
-      const x = x0 + 96 + i * 44, y = y0 + 12;
-      const S = CONFIG.skills[key], cd = p.skillCd[key];
-      const shake = p.skillDeny[key] > 0 ? Math.sin(p.skillDeny[key] * 1.6) * 3 : 0;
-      const bx = x + shake, s = 36;
-      ctx.fillStyle = 'rgba(0,0,0,0.65)';
-      ctx.fillRect(bx - 2, y - 2, s + 4, s + 4);
-      ctx.fillStyle = cd > 0 ? '#1a1820' : '#2a2a3a';
-      ctx.fillRect(bx, y, s, s);
-      this.skillIcon(ctx, S.id, bx + s / 2, y + s / 2, cd > 0 ? '#666' : '#e8f6ff');
-      if (cd > 0) {
-        // 쿨타임: 시계 방향으로 걷히는 어둠 + 남은 초
-        const t = cd / p.skillCdMax[key];
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.beginPath();
-        ctx.moveTo(bx + s / 2, y + s / 2);
-        ctx.arc(bx + s / 2, y + s / 2, s * 0.72, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * t);
-        ctx.closePath();
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(bx, y, s, s);
-        ctx.clip();
-        ctx.beginPath();
-        ctx.moveTo(bx + s / 2, y + s / 2);
-        ctx.arc(bx + s / 2, y + s / 2, s * 0.72, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * t);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 12px "Segoe UI", sans-serif';
-        ctx.fillText((cd / 60).toFixed(cd < 60 ? 1 : 0), bx + s / 2, y + s / 2 + 4);
-      } else {
-        ctx.strokeStyle = 'rgba(160,230,255,0.7)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(bx + 0.5, y + 0.5, s - 1, s - 1);
+    WEAPON_ORDER.forEach((t, i) => {
+      const big = i === cur, s = big ? 44 : 30, qs = big ? 20 : 14;
+      const y = yb - qs - 4 - s;
+      const W = CONFIG.weapons[t];
+      this.iconBox(ctx, x, y, s, p.gear.weapons[i], null, big ? 1 : 0.7);
+      if (big) {
+        // 공명: 테두리 청록 빛 (단계가 높을수록 밝게)
+        if (g > 0) {
+          ctx.save();
+          ctx.strokeStyle = g >= 1 ? '#f0ffff' : '#7ff';
+          ctx.shadowColor = '#3ff';
+          ctx.shadowBlur = 6 + 16 * g;
+          ctx.globalAlpha = 0.4 + 0.6 * g * Math.min(1, res.timer / 30);
+          ctx.lineWidth = 1 + 2 * g;
+          ctx.strokeRect(x - 2.5, y - 2.5, s + 5, s + 5);
+          ctx.restore();
+          // 단계 + 남은 시간
+          ctx.fillStyle = '#7ff';
+          ctx.font = 'bold 10px "Segoe UI", sans-serif';
+          ctx.textAlign = 'left';
+          ctx.fillText(`공명 ${['Ⅰ', 'Ⅱ', 'Ⅲ'][res.level - 1]}${res.cdCut > 0 ? `  쿨-${res.cdCut}%` : ''}`, x, y - 14);
+          ctx.fillStyle = 'rgba(120,255,255,0.8)';
+          ctx.fillRect(x, y - 9, s * res.timer / R.duration, 2);
+        }
+        ctx.fillStyle = `rgb(${W.trail.inner})`;
+        ctx.font = 'bold 10px "Segoe UI", sans-serif';
+        ctx.textAlign = 'left';
+        if (g <= 0) ctx.fillText(W.name, x, y - 5);
       }
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 10px "Segoe UI", sans-serif';
-      ctx.fillText(Input.label(key), bx + s / 2, y - 4);
+      // Q / E 쿨타임
+      ['q', 'e'].forEach((sl, k) => {
+        const bx = x + k * (qs + (s - 2 * qs)), by = yb - qs;
+        const cd = p.skillCd[t][sl], max = p.skillCdMax[t][sl];
+        const flash = p.skillFlash[t][sl], deny = p.skillDeny[t][sl];
+        const dx = deny > 0 ? Math.sin(deny * 1.6) * 2 : 0;
+        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx.fillRect(bx + dx - 1, by - 1, qs + 2, qs + 2);
+        ctx.fillStyle = cd > 0 ? '#16141c' : big ? '#2a3440' : '#20262e';
+        ctx.fillRect(bx + dx, by, qs, qs);
+        if (cd > 0) {
+          // 시계 방향으로 걷히는 어둠
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(bx + dx, by, qs, qs);
+          ctx.clip();
+          ctx.fillStyle = 'rgba(90,120,140,0.35)';
+          ctx.beginPath();
+          ctx.moveTo(bx + dx + qs / 2, by + qs / 2);
+          ctx.arc(bx + dx + qs / 2, by + qs / 2, qs, -Math.PI / 2 + Math.PI * 2 * (cd / max), Math.PI * 1.5);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+        if (flash > 0) {
+          // 쿨 완료: 반짝
+          ctx.save();
+          ctx.globalAlpha = flash / 30;
+          ctx.fillStyle = '#fff';
+          ctx.shadowColor = `rgb(${W.trail.inner})`;
+          ctx.shadowBlur = 12;
+          ctx.fillRect(bx + dx, by, qs, qs);
+          ctx.restore();
+        }
+        ctx.strokeStyle = cd > 0 ? 'rgba(255,255,255,0.15)' : `rgba(${W.trail.inner},${big ? 0.9 : 0.55})`;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(bx + dx + 0.5, by + 0.5, qs - 1, qs - 1);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = cd > 0 ? '#ddd' : '#fff';
+        ctx.font = `bold ${big ? 10 : 8}px "Segoe UI", sans-serif`;
+        const label = cd > 0 ? (cd / 60 >= 1 ? Math.ceil(cd / 60) : (cd / 60).toFixed(1)) : sl.toUpperCase();
+        ctx.fillText(label, bx + dx + qs / 2, by + qs / 2 + (big ? 4 : 3));
+      });
+      x += s + 8;
     });
+    // 스왑 쿨 / 키 안내
+    ctx.textAlign = 'left';
+    ctx.font = '9px "Segoe UI", sans-serif';
+    ctx.fillStyle = p.swapCooldown > 0 ? '#666' : 'rgba(255,255,255,0.6)';
+    ctx.fillText(`${Input.label('swap')}/휠 교체`, x, yb - 2);
+    // 현재 무기 스킬 이름
+    const SK = p.weaponCfg().skills;
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.font = '10px "Segoe UI", sans-serif';
+    ctx.fillText(`${Input.label('skill1')} ${SK.q.name}   ${Input.label('skill2')} ${SK.e.name}`, 14, yb - 96);
     ctx.restore();
   },
 
@@ -176,38 +205,6 @@ const UI = {
       ctx.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1);
       ctx.shadowBlur = 0;
       Loot.drawIcon(ctx, item, x + s / 2, y + s / 2, s / 30);
-    }
-    ctx.restore();
-  },
-
-  // 스킬 아이콘: 회오리 / 지면 강타
-  skillIcon(ctx, id, x, y, color) {
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    if (id === 'whirl') {
-      for (let i = 0; i < 3; i++) {
-        ctx.beginPath();
-        ctx.ellipse(x, y + 4 - i * 6, 12 - i * 2.5, 3.2, 0, Math.PI * (0.1 + i * 0.3), Math.PI * (1.6 + i * 0.3));
-        ctx.stroke();
-      }
-    } else {
-      ctx.beginPath();
-      ctx.moveTo(x - 13, y + 9); ctx.lineTo(x + 13, y + 9);
-      ctx.stroke();
-      for (let i = 0; i < 3; i++) {
-        const bx = x - 7 + i * 8, h = 6 + i * 3;
-        ctx.beginPath();
-        ctx.moveTo(bx - 3, y + 9); ctx.lineTo(bx, y + 9 - h); ctx.lineTo(bx + 3, y + 9);
-        ctx.closePath();
-        ctx.fill();
-      }
-      ctx.beginPath();
-      ctx.moveTo(x - 9, y - 10); ctx.lineTo(x - 9, y - 2);
-      ctx.moveTo(x - 12, y - 5); ctx.lineTo(x - 9, y - 2); ctx.lineTo(x - 6, y - 5);
-      ctx.stroke();
     }
     ctx.restore();
   },
@@ -328,6 +325,16 @@ const UI = {
     ctx.fillStyle = '#f2e6d8';
     ctx.fillText(b.name, x, y - 6);
     if (b.phase === 2) { ctx.fillStyle = b.cfg.aura; ctx.font = 'bold 11px "Segoe UI", sans-serif'; ctx.fillText('분노', x + ctx.measureText(b.name).width + 60, y - 6); }
+    // 약점 무기 (페이즈마다 바뀜)
+    if (b.weakTo) {
+      const W = CONFIG.weapons[b.weakTo], on = game.player.weaponType() === b.weakTo;
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 11px "Segoe UI", sans-serif';
+      ctx.fillStyle = on ? `rgb(${W.trail.inner})` : 'rgba(255,255,255,0.6)';
+      ctx.fillText(`약점: ${W.name}`, x + w - 18, y - 6);
+      Loot.drawIcon(ctx, { type: b.weakTo, rarity: 0, tint: ctx.fillStyle }, x + w - 7, y - 10, 0.42);
+      ctx.textAlign = 'left';
+    }
     // 체력 (흰색 잔상 + 빨강)
     ctx.fillStyle = 'rgba(0,0,0,0.75)';
     ctx.fillRect(x - 3, y - 3, w + 6, 16);

@@ -36,6 +36,19 @@ const Input = {
     window.addEventListener('mouseup', (e) => this._release('Mouse' + e.button));
     // 마우스 위치 (화면 좌표, 인벤토리용)
     window.addEventListener('mousemove', (e) => { this.mx = e.clientX; this.my = e.clientY; this.mouseMoved = true; });
+    // 마우스 휠: 'WheelUp' / 'WheelDown' 을 한 번 누른 것으로 (떼는 동작 없음)
+    // 트랙패드처럼 잘게 오는 입력은 wheelStep 만큼 모였을 때 한 번
+    let acc = 0;
+    window.addEventListener('wheel', (e) => {
+      const up = this._isBound('WheelUp'), dn = this._isBound('WheelDown');
+      if (!up && !dn) return;
+      e.preventDefault();
+      acc += e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
+      if (Math.abs(acc) < 50) return;
+      const code = acc < 0 ? 'WheelUp' : 'WheelDown';
+      acc = 0;
+      if (this._pressQ[code] === undefined) this._pressQ[code] = this._stamp(e);
+    }, { passive: false });
     // 우클릭 시 브라우저 메뉴가 뜨지 않게
     window.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -112,7 +125,7 @@ const Input = {
 
   // ---------- 화면 표시용 키 이름 (도움말이 KEYBINDS 를 따라가도록) ----------
   _names: {
-    Mouse0: '좌클릭', Mouse1: '휠클릭', Mouse2: '우클릭',
+    Mouse0: '좌클릭', Mouse1: '휠클릭', Mouse2: '우클릭', WheelUp: '휠↑', WheelDown: '휠↓',
     Space: '스페이스', ShiftLeft: 'Shift', ShiftRight: 'Shift',
     ControlLeft: 'Ctrl', ControlRight: 'Ctrl', AltLeft: 'Alt', AltRight: 'Alt',
     Escape: 'Esc', Enter: 'Enter', NumpadEnter: 'Enter', Tab: 'Tab', Backspace: 'Backspace',

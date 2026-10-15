@@ -94,10 +94,23 @@ const Style = {
     this.gain(pts);
   },
 
-  // 무기 교체 연계 공격 적중
-  onSwapLink() {
-    this.gain(CONFIG.style.swapLink);
-    this.pushFeed('SWITCH', '#e6c8ff');
+  // 스왑 어택(전환기) 적중
+  onSwapAttack() {
+    this.gain(CONFIG.style.swapAttack);
+    this.pushFeed('SWAP ATTACK', '#7ff');
+  },
+
+  // 공명 3단계 도달
+  onResonanceMax() {
+    this.gain(CONFIG.style.resonanceMax);
+    this.pushFeed('RESONANCE Ⅲ', '#5ff');
+  },
+
+  // 한 콤보에 무기 3개 모두 사용
+  onTrinity() {
+    this.gain(CONFIG.style.trinity);
+    this.pushFeed('TRINITY', '#ffe14a');
+    Sound.play('trinity');
   },
 
   onParry(tier, chain) {

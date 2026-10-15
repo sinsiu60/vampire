@@ -33,6 +33,12 @@ class Boss extends Enemy {
   }
 
   // 2페이즈면 예고·동작이 빨라짐
+  // 약점 무기: 페이즈마다 다름 (bosses.*.weakness)
+  get weakTo() {
+    const w = this.cfg.weakness;
+    return w ? w[Math.min(this.phase, w.length) - 1] : null;
+  }
+
   get spd() { return this.phase === 2 ? CONFIG.boss.phase2Speed : 1; }
   frames(ms) { return Math.max(2, Math.round(ms / BOSS_STEP / this.spd)); }
   framesF(f) { return Math.max(2, Math.round(f / this.spd)); }
@@ -483,6 +489,7 @@ class Boss extends Enemy {
     this.armorBroken = 0;
     this.setState('roar');
     Effects.popText(this.x, this.y - this.h - 40, '분노', this.cfg.aura, 28);
+    if (this.weakTo) Effects.popText(this.x, this.y - this.h - 70, `약점 변화: ${CONFIG.weapons[this.weakTo].name}`, `rgb(${CONFIG.weapons[this.weakTo].trail.inner})`, 16);
     Game.slowmo(400);
     Game.bossPhaseBanner = { life: 120, max: 120 };
   }

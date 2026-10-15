@@ -18,9 +18,11 @@ const KEYBINDS = {
   heavy: ['Mouse2'],            // 강공격 (길게 누르면 차지)
   dash: ['ShiftLeft', 'ShiftRight'],
   parry: ['KeyF'],
-  skill1: ['KeyQ'],
-  skill2: ['KeyE'],
-  swap: ['KeyR'],               // 무기 교체
+  skill1: ['KeyQ'],             // 현재 무기의 Q 스킬
+  skill2: ['KeyE'],             // 현재 무기의 E 스킬
+  swap: ['KeyR'],               // 다음 무기로 교체 (검 → 대검 → 건틀릿 → 검)
+  swapNext: ['WheelDown'],      // 마우스 휠 아래: 다음 무기
+  swapPrev: ['WheelUp'],        // 마우스 휠 위: 이전 무기
   inventory: ['Tab'],
   pause: ['Escape'],
   restart: ['Enter', 'NumpadEnter'],   // 게임오버 / 일시정지에서 재시작
@@ -294,28 +296,104 @@ const CONFIG = {
   },
 
   // ---------- 무기 3종 (8단계) ----------
-  // 무기마다 기술표(moves)를 따로 가진다. 여기 없는 기술은 위의 moves(검)를 그대로 쓴다.
+  // 세 무기를 모두 들고 다니며 R / 마우스 휠로 바꿔 쓴다 (순서: 검 → 대검 → 건틀릿).
+  // 무기마다: 기술표(moves), 스킬 Q/E (쿨타임은 무기마다 따로), 전환기(swapIn: 공격·스킬·공중 콤보 도중 스왑하면 자동 발동),
+  //          약점 상성(strongVs: 이 적들에게 weakness 배율)
+  // 여기 없는 기술은 위의 moves(검)를 그대로 쓴다.
+  // 스킬 kind: 'move' = 기술 하나 / 'stance' = 간파 자세 / 'meteor' = 유성 낙하. cooldown 은 프레임 (60 = 1초)
   // pose: 애니메이션 [예비 포즈, 휘두름 포즈, 특수] (anim.js POSES 이름) / pts: 스타일 점수
   // multiHit: { interval, count } 판정 동안 interval 프레임마다 다시 맞힘
   // quake: 판정 시작 때 앞으로 지면 충격파 발사 { damage, range, speed, height, stun }
   // armor: 이 기술(차지 포함) 중엔 맞아도 경직 없음 (데미지 armorMult 배)
   weapons: {
     sword: {
-      name: '검', desc: '균형형 · 4타 콤보 · 찌르기 · 차지 2단',
+      name: '검', desc: '균형 · 패링 특화 · 4타 콤보 · 찌르기 · 차지 2단',
       blade: { length: 40, hand: 14, w0: 2.4, w1: 1.1, guard: true },
       trail: { glow: '#3ff', outer: '90,230,255', inner: '200,255,255' },
       charge: { framesPerLevel: 28, staminaPerLevel: 18, maxLevel: 2 },
       speedMult: 1,
+      strongVs: ['archer'],      // 약점: 원거리형
+      // 전환기: 칼을 뽑으며 원형 베기 (공중에서도 같은 기술)
+      swapIn: {
+        name: '전환 · 발검 원형베기', startup: 3, active: 6, recovery: 14,
+        damage: 18, posture: 22, hitbox: { x: -72, y: -68, w: 144, h: 72 }, omni: true,
+        knock: { x: 4, y: -2.5 }, hitstun: 32, hitstop: 7, shake: 5,
+        lunge: 2, sfx: 'swingHeavy', heavy: true, pts: 20, swapAttack: true,
+        swing: { from: 0, to: -360, r: 82, squash: 0.32, py: -30 }, pose: ['spinWind', 'spinStrike', 'spinX'],
+      },
+      skills: {
+        q: {
+          name: '간파 자세', kind: 'stance', cooldown: 360, desc: '2초간 자세 — 들어오는 공격을 자동 퍼펙트 패링',
+          duration: 120,         // 자세 유지 (2초). 공격·대시·점프·스왑으로 바로 풀 수 있음
+          parryRed: true,        // 빨강(패링 불가) 근접 공격도 받아냄 (바닥 폭발 같은 범위 공격은 제외)
+        },
+        e: {
+          name: '발도 일섬', kind: 'move', cooldown: 600, desc: '앞으로 순간이동하며 경로상의 적을 관통해 벰',
+          move: {
+            name: '발도 일섬', startup: 8, active: 1, recovery: 22, noHit: true,
+            damage: 0, hitbox: { x: 0, y: -40, w: 1, h: 1 }, knock: { x: 0, y: 0 }, hitstun: 0, hitstop: 0, shake: 0,
+            lunge: 0, sfx: 'iai', pts: 0, skill: true,
+            swing: { from: 160, to: 5, r: 92, squash: 0.4, py: -30 }, pose: ['thrustWind', 'thrustStrike'],
+          },
+          // 순간이동 거리(벽·낭떠러지 앞에서 멈춤) / 베기가 터지는 지연 / 경로 판정 높이
+          iai: { distance: 250, delay: 12, height: 70, damage: 42, posture: 34, knock: { x: 3, y: -3 }, hitstun: 44, hitstop: 10, shake: 9 },
+        },
+      },
       moves: {},
     },
     greatsword: {
-      name: '대검', desc: '느리지만 강함 · 3타 콤보 · 차지 3단 (차지 중엔 경직 없음)',
+      name: '대검', desc: '느림 · 체간 파괴 · 3타 콤보 · 차지 3단 (차지 중 경직 없음)',
       // rest / runAng / airAng: 평소 칼 각도 (대검은 어깨에 걸침, 바닥에 박히지 않게)
       blade: { length: 64, hand: 14, w0: 4.6, w1: 3.2, guard: true, rest: -150, runAng: -165, airAng: -140 },
       trail: { glow: '#f83', outer: '255,140,60', inner: '255,225,180' },
       charge: { framesPerLevel: 24, staminaPerLevel: 16, maxLevel: 3, armor: true },
       armorMult: 0.6,            // 경직 없이 버틸 때 받는 데미지 배율
       speedMult: 0.9,            // 이동 속도 배율
+      strongVs: ['shield', 'heavy'],   // 약점: 방패병, 중갑병
+      // 전환기: 내려찍기 + 충격파 / 공중이면 낙하 쪼개기
+      swapIn: {
+        name: '전환 · 내려찍기', startup: 6, active: 6, recovery: 20,
+        damage: 30, posture: 30, hitbox: { x: -10, y: -106, w: 122, h: 106 },
+        knock: { x: 8, y: -4 }, hitstun: 40, hitstop: 11, shake: 10,
+        lunge: 5, sfx: 'swingHeavy', heavy: true, impactFrame: true, pts: 22, swapAttack: true, armor: true,
+        swing: { from: -175, to: 85, r: 114, squash: 1 }, pose: ['cutWind', 'cutStrike'],
+        quake: { damage: 18, range: 220, speed: 9, height: 70, stun: 40, bossPosture: 15 },
+      },
+      swapInAir: {
+        name: '전환 · 낙하 쪼개기', startup: 5, active: 6, recovery: 18, air: true,
+        damage: 26, posture: 26, hitbox: { x: -6, y: -82, w: 98, h: 98 },
+        knock: { x: 3, y: 10 }, hitstun: 36, hitstop: 10, shake: 8,
+        lunge: 2, sfx: 'swingHeavy', heavy: true, pts: 22, swapAttack: true,
+        swing: { from: -170, to: 90, r: 104, squash: 1 }, pose: ['airWind', 'airStrike'],
+      },
+      skills: {
+        q: {
+          name: '철벽', kind: 'move', cooldown: 480, desc: '3초 슈퍼아머 — 받은 데미지 일부를 주변에 반격',
+          move: {
+            name: '철벽', startup: 8, active: 3, recovery: 10,
+            damage: 6, hitbox: { x: -44, y: -40, w: 88, h: 40 }, omni: true,
+            knock: { x: 4, y: -2 }, hitstun: 20, hitstop: 5, shake: 6,
+            lunge: 0, sfx: 'ironWall', heavy: true, pts: 10, skill: true,
+            swing: { from: -100, to: 90, r: 84, squash: 1 }, pose: ['charge', 'cutStrike'],
+            buff: 'ironWall',
+          },
+          // duration: 슈퍼아머 시간 / damageMult: 받는 데미지 배율 / reflectMult: 받은 데미지 → 주변 반격 배율
+          ironWall: { duration: 180, damageMult: 0.5, reflectMult: 0.8, reflectMin: 10, radius: 120, posture: 12 },
+        },
+        e: {
+          name: '대지 분쇄', kind: 'move', cooldown: 720, desc: '차지 내려찍기 — 체간 대폭 증가, 방패 파괴',
+          move: {
+            name: '대지 분쇄', startup: 34, active: 7, recovery: 28,
+            damage: 48, posture: 95, hitbox: { x: -14, y: -122, w: 152, h: 122 },
+            knock: { x: 9, y: -5 }, hitstun: 50, hitstop: 16, shake: 16,
+            lunge: 5, sfx: 'swingHeavy', heavy: true, impactFrame: true, armor: true, pts: 26, skill: true,
+            shieldBreak: 360,      // 방패를 이 시간 동안 못 씀 (방패도 무시하고 맞음)
+            chargeFx: true,        // 선딜 동안 힘 모으는 불꽃
+            swing: { from: -178, to: 88, r: 134, squash: 1 }, pose: ['charge', 'cutStrike'],
+            quake: { damage: 16, range: 180, speed: 10, height: 70, stun: 30, bossPosture: 10 },
+          },
+        },
+      },
       moves: {
         L1: {
           name: '대검 내려치기', startup: 11, active: 5, recovery: 18, chainDelay: 6,
@@ -411,13 +489,56 @@ const CONFIG = {
       },
     },
     gauntlet: {
-      name: '건틀릿', desc: '빠른 6타 연타 · 공중 5타 · 공중 체공이 길다',
+      name: '건틀릿', desc: '빠름 · 공중 특화 · 6타 연타 · 공중 5타 (체공 길게)',
       blade: { length: 0, hand: 18, fist: true, rest: -20, runAng: 30 },   // 주먹을 들어 가드
       trail: { glow: '#b6f', outer: '180,120,255', inner: '235,215,255' },
       charge: { framesPerLevel: 22, staminaPerLevel: 16, maxLevel: 1 },
       speedMult: 1.08,
       airGravityMult: 0.22,      // 공중 공격 중 중력 (검은 air.attackGravityMult)
       airHangMult: 1.3,          // 공중 적중 시 머무는 힘 배율
+      strongVs: ['flyer'],       // 약점: 비행형
+      // 전환기: 돌진 펀치 / 공중이면 공중 연타
+      swapIn: {
+        name: '전환 · 돌진 펀치', startup: 3, active: 7, recovery: 14,
+        damage: 16, posture: 18, hitbox: { x: 0, y: -52, w: 64, h: 34 },
+        knock: { x: 9, y: -2 }, hitstun: 30, hitstop: 7, shake: 5,
+        lunge: 13, sfx: 'punchHeavy', heavy: true, pts: 20, swapAttack: true,
+        swing: { thrust: true, r: 66, from: 0, to: 0 }, pose: ['thrustWind', 'thrustStrike'],
+      },
+      swapInAir: {
+        name: '전환 · 공중 연타', startup: 2, active: 15, recovery: 10, air: true,
+        damage: 5, posture: 6, hitbox: { x: -4, y: -62, w: 62, h: 58 }, multiHit: { interval: 3, count: 5 },
+        knock: { x: 0.6, y: -4.4 }, hitstun: 30, hitstop: 2, shake: 1,
+        lunge: 1, sfx: 'punch', pts: 20, swapAttack: true,
+        swing: { thrust: true, r: 56, from: 0, to: 0 }, pose: ['jabStrike', 'crossStrike', 'rapid'],
+      },
+      skills: {
+        q: {
+          name: '승룡권', kind: 'move', cooldown: 300, desc: '수직 어퍼컷 — 주변 적을 전부 띄움 (같이 떠오름)',
+          move: {
+            name: '승룡권', startup: 4, active: 7, recovery: 16,
+            damage: 16, posture: 16, hitbox: { x: -92, y: -124, w: 184, h: 130 }, omni: true,
+            knock: { x: 0.4, y: -13.6 }, hitstun: 36, hitstop: 8, shake: 7,
+            lunge: 1, sfx: 'launcher', launch: true, autoFollow: true, pts: 20, skill: true,
+            swing: { from: 80, to: -110, r: 60, squash: 1 }, pose: ['launchWind', 'launchStrike'],
+          },
+        },
+        e: {
+          name: '유성 낙하', kind: 'meteor', cooldown: 540, desc: '공중에서 급강하 연타 후 착지 폭발 (지상이면 뛰어올라서)',
+          hopVy: -10,            // 지상에서 쓰면 먼저 뛰어오름
+          hangFrames: 10,        // 급강하 직전 멈춤
+          fallVx: 5.5, fallSpeed: 13,
+          hitInterval: 4,        // 급강하 중 연타 간격
+          move: {
+            name: '유성 낙하', startup: 0, active: 999, recovery: 18,
+            damage: 6, posture: 6, hitbox: { x: -26, y: -58, w: 78, h: 76 },
+            knock: { x: 0, y: 0 }, hitstun: 40, hitstop: 2, shake: 2,
+            lunge: 0, sfx: 'punch', slam: true, pts: 8, skill: true,
+            swing: { thrust: true, r: 56, from: 0, to: 0 },
+          },
+          wave: { name: '유성 폭발', damage: 30, radius: 140, height: 70, knock: { x: 6, y: -7 }, hitstun: 40, hitstop: 12, shake: 14, posture: 20 },
+        },
+      },
       moves: {
         L1: {
           name: '잽', startup: 3, active: 2, recovery: 9, chainDelay: 2,
@@ -537,62 +658,28 @@ const CONFIG = {
     },
   },
 
-  // ---------- 무기 교체 ----------
-  // R 로 즉시 교체 (공격 후딜 중에도 가능). 교체 직후 linkFrames 안에 공격하면 새 무기의 연계 공격
+  // ---------- 무기 교체 / 공명 ----------
   swap: {
-    cooldown: 24,
-    linkFrames: 40,
-    moves: {
-      sword: {
-        name: '전환 · 질풍 베기', startup: 3, active: 5, recovery: 16,
-        damage: 22, posture: 24, hitbox: { x: -10, y: -60, w: 104, h: 58 },
-        knock: { x: 6, y: -2 }, hitstun: 34, hitstop: 8, shake: 5,
-        lunge: 12, sfx: 'swingHeavy', heavy: true, pts: 22,
-        swing: { from: 170, to: -40, r: 86, squash: 0.45, py: -30 }, pose: ['spinWind', 'thrustStrike'],
-      },
-      greatsword: {
-        name: '전환 · 대지 가르기', startup: 8, active: 6, recovery: 22,
-        damage: 44, posture: 34, hitbox: { x: -12, y: -112, w: 132, h: 112 },
-        knock: { x: 10, y: -6 }, hitstun: 44, hitstop: 13, shake: 11,
-        lunge: 6, sfx: 'swingHeavy', heavy: true, impactFrame: true, pts: 24, armor: true,
-        swing: { from: -175, to: 85, r: 120, squash: 1 }, pose: ['cutWind', 'cutStrike'],
-        quake: { damage: 20, range: 240, speed: 9, height: 70, stun: 50, bossPosture: 20 },
-      },
-      gauntlet: {
-        name: '전환 · 승룡권', startup: 3, active: 6, recovery: 14,
-        damage: 18, posture: 20, hitbox: { x: -6, y: -112, w: 62, h: 112 },
-        knock: { x: 0.8, y: -13.6 }, hitstun: 34, hitstop: 8, shake: 6,
-        lunge: 3, sfx: 'launcher', launch: true, autoFollow: true, pts: 22,
-        swing: { from: 80, to: -110, r: 56, squash: 1 }, pose: ['launchWind', 'launchStrike'],
-      },
+    cooldown: 24,              // 스왑 자체 쿨타임 (0.4초)
+    sheatheMult: 2,            // 칼집 회복: 장착하지 않은 무기의 스킬 쿨타임은 이 배속으로 감소
+    // 공명: 스왑 직후 duration 동안. 공명 중 다시 스왑하면 단계 상승 (최대 maxLevel)
+    resonance: {
+      duration: 180,           // 3초
+      maxLevel: 3,
+      atk: [25, 40, 60],       // 단계별 공격력 +%
+      cdCut: [30, 40, 50],     // 단계별 '다음 스킬' 쿨타임 감소 % (스킬 한 번 쓰면 소모)
+      glow: [0.45, 0.75, 1],   // 단계별 무기 청록 글로우 밝기
+      requireHit: true,        // true: 지난 스왑 이후 적을 한 번 이상 맞혀야 단계 상승 (R 연타만으로는 안 오름)
     },
   },
 
-  // ---------- 스킬 ----------
-  // cooldown: 프레임 (아이템 '스킬 쿨타임 감소' 로 줄어듦). move: 기술 데이터 (위와 같은 형식)
-  skills: {
-    skill1: {
-      id: 'whirl', name: '회오리 베기', desc: '주변 360° 를 3번 베고 마지막에 살짝 띄움', cooldown: 360,
-      move: {
-        name: '회오리 베기', startup: 6, active: 30, recovery: 16,
-        damage: 9, hitbox: { x: -76, y: -78, w: 152, h: 86 }, multiHit: { interval: 10, count: 3 }, omni: true,
-        knock: { x: 2, y: -2.5 }, lastHit: { knock: { x: 2.5, y: -7.5 }, launch: true },
-        hitstun: 30, hitstop: 4, shake: 3, lunge: 0, sfx: 'whirl', pts: 18, skill: true, spins: 3,
-        swing: { from: 0, to: -1080, r: 86, squash: 0.32, py: -28 }, pose: ['spinWind', 'spinStrike', 'spinX'],
-      },
-    },
-    skill2: {
-      id: 'quake', name: '지면 강타', desc: '앞으로 충격파를 보내 적을 기절시킴 (지상)', cooldown: 480, groundOnly: true,
-      move: {
-        name: '지면 강타', startup: 16, active: 4, recovery: 22,
-        damage: 14, hitbox: { x: -10, y: -60, w: 74, h: 62 },
-        knock: { x: 3, y: -2 }, hitstun: 30, hitstop: 8, shake: 10, lunge: 1,
-        sfx: 'swingHeavy', heavy: true, pts: 18, skill: true,
-        swing: { from: -175, to: 95, r: 78, squash: 1 }, pose: ['smashWind', 'cutStrike'],
-        // 충격파: 바닥을 따라 range 까지. 맞은 적 stun 프레임 기절 (보스는 대신 그로기 bossPosture)
-        quake: { damage: 18, range: 400, speed: 8, height: 70, stun: 110, bossPosture: 40 },
-      },
-    },
+  // ---------- 적 상성 ----------
+  // 약점 무기(weapons.*.strongVs, 보스는 bosses.*.weakness)로 공격하면
+  weakness: {
+    damageMult: 1.5,           // 데미지 +50%
+    postureMult: 1.5,          // 체간 +50%
+    hitstopAdd: 3,             // 타격 멈춤 추가 (타격감 강화)
+    pierceShield: true,        // 약점 무기는 방패로 막을 수 없음 (방패병 → 대검)
   },
 
   // ---------- 장비 / 루팅 ----------
@@ -770,7 +857,9 @@ const CONFIG = {
     dodgeCounterFrames: 60,    // 회피 후 이 시간 안에 맞히면 반격 보너스
     kill: 18,
     postureBreak: 30,
-    swapLink: 12,              // 무기 교체 연계 공격 보너스
+    swapAttack: 20,            // 스왑 어택(전환기) 적중 보너스
+    resonanceMax: 70,          // 공명 3단계 도달
+    trinity: 100,              // 한 콤보(히트 수가 끊기기 전)에 무기 3개를 모두 맞힘
     skill: 6,                  // 스킬 적중 추가
     execution: 160,            // 처형: 대폭 상승
     executionMinRanks: 1,      // 처형 시 최소 이만큼 랭크 상승 보장
@@ -985,6 +1074,7 @@ const CONFIG = {
       weight: 4, friction: 0.8, walkSpeed: 1.6, spacing: [110, 250],
       idleMin: 36, idleMax: 70,              // 패턴 사이 대기
       look: { body: 'boss', weapon: 'greatsword' }, aura: '#ff7a3a',
+      weakness: ['gauntlet', 'sword'],       // 페이즈별 약점 무기 [1페이즈, 2페이즈]
       patterns: { dashSlash: {}, jumpSlam: {}, swordWaves: {}, areaBlast: {}, flurry: {} },
     },
     moon: {
@@ -993,6 +1083,7 @@ const CONFIG = {
       weight: 4, friction: 0.8, walkSpeed: 1.9, spacing: [130, 280],
       idleMin: 30, idleMax: 60,
       look: { body: 'boss', weapon: 'lance' }, aura: '#8fb4ff',
+      weakness: ['greatsword', 'gauntlet'],
       patterns: { dashSlash: { telegraphMs: 600, maxDist: 460, hitbox: { x: -10, y: -70, w: 140, h: 40 } },
         jumpSlam: { weight: 3 }, swordWaves: { speed: 9 }, areaBlast: {}, triSlam: {} },
     },
@@ -1002,6 +1093,7 @@ const CONFIG = {
       weight: 5, friction: 0.8, walkSpeed: 1.5, spacing: [110, 240],
       idleMin: 28, idleMax: 56,
       look: { body: 'boss', weapon: 'flameblade' }, aura: '#ff5020',
+      weakness: ['sword', 'greatsword'],
       patterns: { dashSlash: { damage: 24 }, jumpSlam: { radius: 140 }, swordWaves: { count: 4, heights: [-16, -66, -36, -16] },
         areaBlast: { weight: 3, zones: 5, radius: 84 }, pillars: {} },
     },
