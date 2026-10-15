@@ -28,7 +28,7 @@ const KEYBINDS = {
   restart: ['Enter', 'NumpadEnter'],   // 게임오버 / 일시정지에서 재시작
   debug: ['KeyH'],              // 히트박스 표시 (개발용)
   debugMode: ['Backquote'],     // ` 키: 패링 디버그 (패링 창 원, 적 공격 판정, 입력 타이밍 표시)
-  mode: ['F2'],                 // 던전 ↔ 콤보 연습장 전환 (개발용, 9단계 타이틀 메뉴 전까지)
+  mode: ['F2'],                 // 던전 ↔ 콤보 연습장 바로 전환 (개발용)
   theme: ['KeyT'],              // 배경 테마 미리보기 (개발용: 노을 → 달밤 → 불타는 성)
   // 적 소환 (개발용): 1 잡몹 / 2 방패병 / 3 비행형 / 4 중갑병 / 5 원거리형 / 6 돌진형
   spawn1: ['Digit1'], spawn2: ['Digit2'], spawn3: ['Digit3'],
@@ -36,7 +36,17 @@ const KEYBINDS = {
   spawn7: ['Digit7'],           // 보스 소환 (개발용)
   spawn8: ['Digit8'],           // 아이템 떨어뜨리기 (개발용)
   discard: ['KeyX'],            // 인벤토리: 아이템 버리기
-  help: ['F1'],                 // 조작 도움말 표시/숨기기
+  help: ['F1'],                 // 게임 중 조작 도움말 표시/숨기기
+  // ----- 메뉴 (로고 / 타이틀 / 일시정지 / 설정) -----
+  menuUp: ['KeyW', 'ArrowUp'],
+  menuDown: ['KeyS', 'ArrowDown'],
+  menuLeft: ['KeyA', 'ArrowLeft'],      // 설정 값 줄이기
+  menuRight: ['KeyD', 'ArrowRight'],    // 설정 값 늘리기
+  confirm: ['Enter', 'NumpadEnter', 'Space'],   // 선택 (마우스 좌클릭도 됨)
+  back: ['Escape', 'Backspace'],        // 뒤로
+  // ----- 콤보 연습장 -----
+  dummyAttack: ['KeyP'],        // 허수아비 공격 켜기/끄기 (패링 연습)
+  dummyReset: ['KeyO'],         // 허수아비 되살리기 + 기록 초기화
 };
 
 const CONFIG = {
@@ -965,6 +975,21 @@ const CONFIG = {
           damage: 11, projectile: { speed: 6.5, radius: 6, life: 150, reflectMult: 1.6, reflectDamage: 30 } },
       ],
     },
+    // 허수아비 (콤보 연습장 전용): 움직이지 않음. 띄우기·저글링·체간 붕괴·처형 다 됨.
+    // 연습장에서 P 를 누르면 가까이 온 플레이어를 노랑 베기로 공격 (패링 연습)
+    dummy: {
+      name: '허수아비', practiceOnly: true,
+      width: 26, height: 50, hp: 400, posture: 120,
+      speed: 0, accel: 0, aggroRange: 0, weight: 1.1, friction: 0.8,
+      dummy: true,
+      look: { body: 'dummy', weapon: 'none' },
+      attackAggro: 260,        // 공격 모드일 때 인식 거리
+      attacks: [
+        { id: 'slash', kind: 'melee', parryable: true, range: 70,
+          telegraphMs: 520, active: 6, recovery: 30, cooldown: 70, lunge: 0,
+          damage: 6, hitbox: { x: 0, y: -44, w: 66, h: 36 }, knock: { x: 4, y: -2 } },
+      ],
+    },
     // 돌진형: 직선 돌진, 벽에 박으면 기절
     charger: {
       name: '돌진형',
@@ -979,6 +1004,15 @@ const CONFIG = {
           damage: 18, hitbox: { x: -6, y: -44, w: 36, h: 42 }, knock: { x: 10, y: -5 } },
       ],
     },
+  },
+
+  // ---------- 콤보 연습장 ----------
+  practice: {
+    dummies: [720, 1000, 1280],  // 허수아비 위치 (x)
+    respawnFrames: 90,           // 쓰러진 허수아비가 다시 서기까지
+    regenDelay: 180,             // 이만큼 안 맞으면 체력·체간 회복 (3초)
+    dpsWindow: 180,              // DPS 계산 구간 (3초)
+    hintFrames: 600,             // 시작 안내 표시 시간
   },
 
   // ---------- 타격감 ----------
@@ -1113,20 +1147,62 @@ const CONFIG = {
     deathFrames: 110,
   },
 
-  // ---------- 연습/테스트 아레나 (1단계) ----------
+  // ---------- 로고 인트로 / 타이틀 (9단계) ----------
+  intro: {
+    studio: '시우 공방',
+    studioEn: 'SIWOO  WORKSHOP',
+    // 로고 진행 (프레임): 암전 → 일섬이 화면을 가름 → 로고 → 유지 → 페이드
+    black: 24, slash: 22, reveal: 26, hold: 100, fade: 36,
+    gateText: '클릭하거나 아무 키나 누르세요',   // 브라우저 소리 허용을 위한 첫 입력 화면
+  },
+  title: {
+    name: 'SHADOW EDGE',
+    sub: '그림자의 칼날',
+    version: 'v0.9',
+    theme: 0,                  // 타이틀 배경 테마 (0 노을 / 1 달밤 / 2 불타는 성)
+    scroll: 0.35,              // 배경이 흘러가는 속도
+  },
+  ui: {
+    startHintFrames: 420,      // 게임 시작 후 아래쪽 안내 문구 표시 시간
+  },
+
+  // ---------- 사운드 ----------
+  // 효과음·음악 모두 Web Audio API 로 직접 합성. 볼륨은 설정 메뉴에서 바꾸고 브라우저에 저장됨
+  audio: {
+    sfxVolume: 0.8,            // 기본 효과음 볼륨 (0~1)
+    musicVolume: 0.6,          // 기본 음악 볼륨 (0~1)
+    sfxGain: 0.5,              // 효과음 전체 배율
+    musicGain: 0.22,           // 음악 전체 배율 (효과음보다 작게)
+    // 음악: 16분음표 단위 스텝 시퀀서. root = MIDI 음 번호, chords = 마디별 화음 (root 기준 반음)
+    //   bass/arp: 스텝별 (null = 쉼) — bass 는 화음 근음 기준 반음, arp 는 화음 구성음 번호
+    //   kick/snare/hat: 'x' = 침
+    music: {
+      title: {
+        bpm: 66, root: 57, chords: [[0, 3, 7], [-4, 0, 3], [3, 7, 10], [-2, 2, 5]],
+        pad: 0.5, bass: null,
+        arp: [0, null, null, 1, null, null, 2, null, null, 1, null, null, 3, null, 2, null], arpOct: 12, arpGain: 0.32,
+        kick: null, snare: null, hat: null,
+      },
+      dungeon: {
+        bpm: 104, root: 50, chords: [[0, 3, 7], [-4, 0, 3], [3, 7, 10], [-2, 2, 5]],
+        pad: 0.32,
+        bass: [0, null, 0, null, 12, null, 0, null, 0, null, 0, null, 10, null, 7, null], bassGain: 0.55,
+        arp: null,
+        kick: 'x.......x.......', snare: '....x.......x...', hat: '..x...x...x...x.', drumGain: 0.5,
+      },
+      boss: {
+        bpm: 138, root: 45, chords: [[0, 3, 7], [-4, 0, 3], [-2, 2, 5], [-5, -1, 2]],
+        pad: 0.3,
+        bass: [0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 12, 0, 10, 0, 7, 0], bassGain: 0.6,
+        arp: [2, null, 1, null, 0, null, 1, null, 2, null, 1, null, 3, null, 2, null], arpOct: 12, arpGain: 0.18,
+        kick: 'x..x..x.x..x..x.', snare: '....x.......x..x', hat: 'xxxxxxxxxxxxxxxx', drumGain: 0.6,
+      },
+    },
+  },
+
+  // ---------- 콤보 연습장 아레나 ----------
   arena: {
     width: 1920,
     groundY: 460,
-    waveDelay: 90,             // 적 전멸 후 다음 웨이브까지
-    // 웨이브별 등장 적 (마지막 웨이브 이후는 전체에서 무작위)
-    waves: [
-      ['grunt', 'grunt'],
-      ['grunt', 'shield', 'archer'],
-      ['flyer', 'flyer', 'grunt'],
-      ['charger', 'grunt', 'archer'],
-      ['heavy', 'grunt'],
-      ['shield', 'heavy', 'flyer', 'archer'],
-    ],
-    randomWaveSize: 5,
   },
 };

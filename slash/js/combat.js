@@ -142,6 +142,7 @@ const Combat = {
       Style.onHit(fx.styleId, air, res === 'armor', fx.pts);
       p.onDealDamage(dmg);      // 흡혈
       p.res.hit = true;         // 공명 단계 상승 조건
+      if (game.mode === 'practice') Practice.onDamage(dmg);
     }
     // 방패 파괴
     if (info.shieldBreak && enemy.cfg.shield && res !== 'kill') {

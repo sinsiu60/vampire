@@ -2,7 +2,7 @@
 // 게임 루프 (60fps 고정 타임스텝), 상태 관리, 카메라
 
 const Game = {
-  state: 'playing',     // playing | paused | inventory | gameover | victory
+  state: 'gate',        // gate(첫 입력) | logo | title | playing | paused | inventory | gameover | victory
   stateTime: 0,
   frame: 0,             // 전체 프레임 카운터 (애니메이션용)
   simTime: 0,           // 게임 시간 (ms). 히트스톱 중엔 멈추고 슬로모션 중엔 느리게 흐름 → 패링 판정 기준
@@ -13,9 +13,7 @@ const Game = {
   cam: { x: 0, y: 0 },
   enemies: [],
   combo: { count: 0, timer: 0, pop: 0 },
-  wave: 0,
   kills: 0,
-  waveTimer: 0,
 
   init() {
     this.canvas = document.getElementById('game');
@@ -23,9 +21,10 @@ const Game = {
     this.resize();
     window.addEventListener('resize', () => this.resize());
     Input.init();
-    Input.onFirstInput = () => Sound.unlock();
+    Input.onFirstInput = () => { Sound.unlock(); Music.resume(); };
 
-    this.newGame();
+    // 첫 입력(소리 허용) → "시우 공방" 로고 → 타이틀
+    Menu.enter(this, 'gate');
     this._last = performance.now();
     this._acc = 0;
     requestAnimationFrame((t) => this.loop(t));
@@ -51,9 +50,7 @@ const Game = {
     this.projectiles = [];
     this.drops = [];        // 바닥에 떨어진 아이템
     this.combo = { count: 0, timer: 0, pop: 0 };
-    this.wave = 0;
     this.kills = 0;
-    this.waveTimer = 30;
     this.hitstop = 0;
     this.timeScale = 1;
     this.slowmoMs = 0;
@@ -71,6 +68,8 @@ const Game = {
     this.transition = null;    // 방 이동 페이드
     this.floor = null;
     this.room = null;
+    this.run = { frames: 0, bestRank: -1, maxCombo: 0 };   // 게임오버/클리어 화면 기록
+    this.hint = CONFIG.ui.startHintFrames;
     Effects.reset();
     Style.reset();
     Skills.reset();
@@ -81,11 +80,28 @@ const Game = {
       this.level = level;
       this.player = new Player(200, level.groundY);
       this.player.lastSafe = { x: 200, y: level.groundY };
+      Practice.reset(this);
     } else {
       this.startFloor(0);
     }
     this.setState('playing');
     this.updateCamera(true);
+  },
+
+  // 메뉴에서 시작 (던전 / 콤보 연습장)
+  startRun(mode) {
+    this.newGame(mode);
+    this.fadeIn = 30;
+    Sound.play('gameStart');
+    Music.play('dungeon');
+  },
+
+  toTitle() {
+    this.enemies = [];
+    this.projectiles = [];
+    Effects.reset();
+    Skills.reset();
+    Menu.enter(this, 'title');
   },
 
   // ---------- 던전: 층 / 방 ----------
@@ -145,8 +161,9 @@ const Game = {
   goNextFloor() {
     if (this.transition) return;
     if (this.floorIndex + 1 >= CONFIG.dungeon.floors) {
-      this.setState('victory');
-      Sound.play('clear');
+      Menu.enter(this, 'victory');
+      Sound.play('victory');
+      Music.play('title');
       return;
     }
     this.transition = { f: 0, nextFloor: true };
@@ -291,23 +308,6 @@ const Game = {
     this.stateTime = 0;
   },
 
-  spawnWave() {
-    const A = CONFIG.arena;
-    let types = A.waves[this.wave];
-    if (!types) {
-      const all = Object.keys(CONFIG.enemies);
-      types = [];
-      for (let i = 0; i < A.randomWaveSize; i++) types.push(all[(Math.random() * all.length) | 0]);
-    }
-    this.wave++;
-    this.waveCleared = false;
-    types.forEach((t, i) => {
-      // 플레이어와 떨어진 곳에 스폰
-      const side = (i % 2 === 0) ? 1 : -1;
-      this.spawnEnemy(t, this.player.x + side * (380 + i * 60 + Math.random() * 120));
-    });
-  },
-
   spawnEnemy(type, x, y) {
     x = Math.max(80, Math.min(this.level.width - 80, x));
     if (y === undefined) {
@@ -399,18 +399,6 @@ const Game = {
 
   onPostureBreak(enemy) {
     Style.onPostureBreak();
-  },
-
-  // 방(웨이브) 클리어: 최고 랭크에 따라 보상 (지금은 체력 회복, 8단계에서 아이템)
-  onRoomClear() {
-    const S = CONFIG.style, p = this.player;
-    const best = Style.clearRoom();
-    const heal = best >= 0 ? S.clearHeal[best] : 0;
-    p.heal(heal);
-    p.stamina = p.maxStamina;
-    this.clearBanner = { rank: best, heal, life: S.clearBannerFrames, max: S.clearBannerFrames };
-    if (heal > 0) Effects.popText(p.x, p.y - p.h - 20, `+${heal} HP`, '#7f7', 16);
-    Sound.play('clear');
   },
 
   // ---------- 처형 ----------
@@ -556,6 +544,9 @@ const Game = {
     this.stateTime++;
     this.frame++;
     Render.updateAmbient();
+    // 로고 / 타이틀
+    if (this.state === 'gate' || this.state === 'logo' || this.state === 'title') { Menu.update(this); return; }
+    if (this.fadeIn > 0) this.fadeIn--;
 
     if (Input.isPressed('help')) UI.showHelp = !UI.showHelp;
     if (Input.isPressed('debug')) CONFIG.debug.showHitboxes = !CONFIG.debug.showHitboxes;
@@ -589,21 +580,20 @@ const Game = {
       return;
     }
 
-    if (this.state === 'paused') {
-      if (Input.isPressed('pause')) this.setState('playing');
-      if (Input.isPressed('restart')) this.newGame();
-      return;
-    }
+    // 일시정지 / 게임오버 / 클리어 메뉴
+    if (this.state === 'paused') { Menu.update(this); return; }
     if (this.state === 'playing' && Input.isPressed('pause')) {
-      this.setState('paused');
+      Menu.enter(this, 'paused');
+      Sound.play('menuSelect');
       return;
     }
-    if ((this.state === 'gameover' || this.state === 'victory') && Input.isPressed('restart')) {
-      this.newGame();
-      return;
+    if (this.state === 'victory') { Menu.update(this); Effects.update(false); return; }
+    if (this.state === 'gameover') {
+      Menu.update(this);
+      if (this.state !== 'gameover') return;
     }
-    if (Input.isPressed('mode')) { this.newGame(this.mode === 'practice' ? 'dungeon' : 'practice'); return; }
-    if (this.state === 'victory') { Effects.update(false); return; }
+    if (Input.isPressed('mode')) { this.startRun(this.mode === 'practice' ? 'dungeon' : 'practice'); return; }
+    if (this.hint > 0) this.hint--;
     // 방 이동 페이드 중엔 정지
     if (this.transition) { this.updateTransition(); Effects.update(false); return; }
 
@@ -629,6 +619,12 @@ const Game = {
 
     Style.update();
     if (this.clearBanner && --this.clearBanner.life <= 0) this.clearBanner = null;
+    // 기록
+    if (this.state === 'playing') {
+      this.run.frames++;
+      this.run.bestRank = Math.max(this.run.bestRank, Style.rank);
+      this.run.maxCombo = Math.max(this.run.maxCombo, this.combo.count);
+    }
 
     p.update(this, Input);
     Combat.playerAttack(this, p);
@@ -651,24 +647,18 @@ const Game = {
     if (this.mode === 'dungeon') {
       this.updateRoom();
       this.updateChest();
-      if (p.dead && this.state === 'playing' && p.stateFrame > 40) this.setState('gameover');
-      this.updateCamera();
-      return;
+      // 음악: 보스가 있으면 보스 곡
+      const b = this.boss;
+      if (this.state === 'playing') Music.play(b && b.state !== 'bossDeath' ? 'boss' : 'dungeon');
+    } else {
+      // 콤보 연습장: 허수아비
+      Practice.update(this);
     }
-    // 연습장: 웨이브 전멸하면 클리어 보상 → 잠시 후 다음 웨이브
-    if (this.enemies.length === 0 && !this.waveCleared && !this.exec) {
-      this.waveCleared = true;
-      this.onRoomClear();
+    if (p.dead && this.state === 'playing' && p.stateFrame > 40) {
+      Menu.enter(this, 'gameover');
+      Sound.play('gameOver');
+      Music.stop();
     }
-    if (this.enemies.length === 0) {
-      if (--this.waveTimer <= 0) {
-        this.spawnWave();
-        this.waveTimer = CONFIG.arena.waveDelay;
-      }
-    }
-
-    if (p.dead && this.state === 'playing' && p.stateFrame > 40) this.setState('gameover');
-
     this.updateCamera();
   },
 
@@ -727,6 +717,13 @@ const Game = {
     ctx.beginPath();
     ctx.rect(0, 0, CONFIG.view.width, CONFIG.view.height);
     ctx.clip();
+
+    // 로고 / 타이틀은 메뉴만
+    if (this.state === 'gate' || this.state === 'logo' || this.state === 'title' || !this.player) {
+      Menu.draw(ctx, this);
+      ctx.restore();
+      return;
+    }
 
     const cam = { x: this.cam.x + Effects.shakeX, y: this.cam.y + Effects.shakeY };
     // 배경 패럴랙스는 기본 카메라 높이 기준의 상대값으로
@@ -813,8 +810,13 @@ const Game = {
     }
 
     UI.hud(ctx, this);
-    UI.overlay(ctx, this);
     if (this.state === 'inventory') Inventory.draw(ctx, this);
+    if (this.state === 'paused' || this.state === 'gameover' || this.state === 'victory') Menu.draw(ctx, this);
+    // 시작 페이드 인
+    if (this.fadeIn > 0) {
+      ctx.fillStyle = `rgba(0,0,0,${(this.fadeIn / 30).toFixed(3)})`;
+      ctx.fillRect(0, 0, V.width, V.height);
+    }
     // 방 이동 페이드
     if (this.transition) {
       const F = CONFIG.dungeon.fadeFrames, f = this.transition.f;

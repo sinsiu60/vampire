@@ -2,7 +2,7 @@
 // HUD 와 오버레이 (화면 좌표)
 
 const UI = {
-  showHelp: true,
+  showHelp: false,     // F1: 게임 중 조작 도움말
 
   bar(ctx, x, y, w, h, t, color, back) {
     ctx.fillStyle = 'rgba(0,0,0,0.65)';
@@ -50,8 +50,8 @@ const UI = {
     this.styleHud(ctx, game);
     if (CONFIG.debug.parry) this.parryDebugPanel(ctx, game);
 
-    // 현재 기술 이름 (테스트용)
-    if (p.state === 'attack' && p.move) {
+    // 현재 기술 이름 (히트박스 디버그 중에만)
+    if (!CONFIG.debug.showHitboxes) { /* 숨김 */ } else if (p.state === 'attack' && p.move) {
       ctx.textAlign = 'left';
       ctx.font = 'bold 14px "Segoe UI", sans-serif';
       ctx.fillStyle = '#5ff';
@@ -66,7 +66,7 @@ const UI = {
     ctx.textAlign = 'right';
     ctx.font = '12px "Segoe UI", sans-serif';
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    if (game.mode === 'practice') ctx.fillText(`콤보 연습장  WAVE ${game.wave}   처치 ${game.kills}`, 720, 30);
+    if (game.mode === 'practice') Practice.draw(ctx, game);
     else ctx.fillText(`처치 ${game.kills}`, 720, 30);
     if (game.floor) this.minimap(ctx, game);
     if (game.floorBanner) this.floorBanner(ctx, game.floorBanner);
@@ -74,6 +74,17 @@ const UI = {
     if (boss) this.bossBar(ctx, game, boss);
 
     this.gearHud(ctx, game);
+
+    // 시작 안내 (잠깐)
+    if (game.hint > 0 && game.state === 'playing' && !this.showHelp && !boss) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, game.hint / 60) * 0.85;
+      ctx.textAlign = 'center';
+      ctx.font = '12px "Segoe UI", sans-serif';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(`${Input.label('pause')} 일시정지·조작법   ${Input.label('inventory')} 인벤토리   ${Input.label('help')} 도움말`, 580, 520);
+      ctx.restore();
+    }
 
     if (this.showHelp && !boss) {
       // 키 이름은 KEYBINDS 에서 가져온다 (config.js 에서 바꾸면 도움말도 같이 바뀜)
@@ -545,47 +556,6 @@ const UI = {
       ctx.fillStyle = 'rgba(150,255,255,0.8)';
       ctx.fillRect(V.width / 2 - 60 * k, 122, 120 * k, 2);
       ctx.restore();
-    }
-  },
-
-  overlay(ctx, game) {
-    const V = CONFIG.view;
-    if (game.state === 'paused') {
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillRect(0, 0, V.width, V.height);
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 40px "Segoe UI", sans-serif';
-      ctx.fillText('일시정지', V.width / 2, V.height / 2 - 10);
-      ctx.font = '16px "Segoe UI", sans-serif';
-      ctx.fillText(`${Input.label('pause')}: 계속   ${Input.label('restart')}: 재시작`, V.width / 2, V.height / 2 + 26);
-    } else if (game.state === 'victory') {
-      const t = Math.min(1, game.stateTime / 60);
-      ctx.fillStyle = `rgba(0,0,0,${0.65 * t})`;
-      ctx.fillRect(0, 0, V.width, V.height);
-      ctx.globalAlpha = t;
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#ffe9a0';
-      ctx.font = 'bold 50px "Segoe UI", sans-serif';
-      ctx.fillText('던전 클리어!', V.width / 2, V.height / 2 - 20);
-      ctx.fillStyle = '#fff';
-      ctx.font = '18px "Segoe UI", sans-serif';
-      ctx.fillText(`처치 ${game.kills}`, V.width / 2, V.height / 2 + 16);
-      ctx.fillText(`${Input.label('restart')} 키로 다시 시작`, V.width / 2, V.height / 2 + 46);
-      ctx.globalAlpha = 1;
-    } else if (game.state === 'gameover') {
-      const t = Math.min(1, game.stateTime / 60);
-      ctx.fillStyle = `rgba(20,0,0,${0.7 * t})`;
-      ctx.fillRect(0, 0, V.width, V.height);
-      ctx.globalAlpha = t;
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#e23b3b';
-      ctx.font = 'bold 56px "Segoe UI", sans-serif';
-      ctx.fillText('YOU DIED', V.width / 2, V.height / 2 - 10);
-      ctx.fillStyle = '#fff';
-      ctx.font = '18px "Segoe UI", sans-serif';
-      ctx.fillText(`${Input.label('restart')} 키로 재시작`, V.width / 2, V.height / 2 + 30);
-      ctx.globalAlpha = 1;
     }
   },
 };

@@ -34,6 +34,7 @@ const Anim = (() => {
     heavy: { thigh: 14, shin: 13, torso: 19, neck: 2, headR: 7.5, upper: 12, fore: 12, limbW: 8, torsoW: 19, foot: 6 },
     slim: { thigh: 12, shin: 12, torso: 15, neck: 4, headR: 5.5, upper: 10, fore: 10, limbW: 3.8, torsoW: 7, foot: 4 },
     flyer: { thigh: 8, shin: 8, torso: 13, neck: 3, headR: 6, upper: 9, fore: 9, limbW: 4, torsoW: 9, foot: 3 },
+    dummy: { thigh: 13, shin: 13, torso: 16, neck: 3, headR: 7, upper: 11, fore: 10, limbW: 4.6, torsoW: 10, foot: 2 },
     boss: { thigh: 17, shin: 16, torso: 23, neck: 3, headR: 8, upper: 14, fore: 13, limbW: 7.5, torsoW: 15, foot: 7 },
   };
 
@@ -101,6 +102,8 @@ const Anim = (() => {
     // 적: 퍼펙트 패링 당해 휘청 / 체간 붕괴로 무릎 꿇음
     gDeflect: P({ torso: -34, head: -30, thF: 30, shF: -18, thB: -24, shB: -36, arB1: -120, arB2: 20, wpn: -120 }),
     gKneel: P({ torso: 34, head: 34, thF: 85, shF: -150, thB: -40, shB: -100, arB1: 10, arB2: 10, arF1: 20, arF2: 10, wpn: 105 }),
+    // 허수아비: 팔을 옆으로 벌리고 다리는 말뚝처럼 모음
+    dIdle: P({ torso: 0, head: 6, thF: 2, shF: 0, thB: -2, shB: 0, arB1: -86, arB2: 6, arF1: 86, arF2: -6, wpn: 80 }),
     // 간파 자세 (검 Q): 낮게 웅크려 칼을 허리에
     stance: P({ torso: 22, head: -10, thF: 62, shF: -95, thB: -30, shB: -55, arB1: 30, arB2: 50 }),
     // 플레이어 패링 자세: 칼을 세워 막음
@@ -308,14 +311,15 @@ const Anim = (() => {
     const f = e.stateFrame, A = e.atk;
     const t = (Game.frame || 0) + e.seed;
     const flying = e.hovering;
-    const idle = flying ? POSES.flyIdle : POSES.gIdle;
+    const dummy = e.cfg.look.body === 'dummy';
+    const idle = flying ? POSES.flyIdle : dummy ? POSES.dIdle : POSES.gIdle;
     const base = breathe(idle, t);
     const set = ATTACK_POSES[A.id] || ATTACK_POSES.slash;
     const wind = POSES[set[0]], strike = POSES[set[1]];
     switch (e.state) {
       case 'chase':
       case 'bossIdle':
-        r.pose = !flying && Math.abs(e.vx) > 0.3 ? walkPose(e.walkPhase, POSES.gIdle) : base;
+        r.pose = !flying && !dummy && Math.abs(e.vx) > 0.3 ? walkPose(e.walkPhase, POSES.gIdle) : base;
         break;
       case 'groggy':
         // 보스 그로기: 무릎 꿇고 크게 휘청

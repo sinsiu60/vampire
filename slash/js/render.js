@@ -539,7 +539,25 @@ const Render = {
     if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = blur; }
     this.enemyGear(ctx, fig, e, col);
     ctx.restore();
-    if (!white) Anim.drawEye(ctx, fig, '#ff5050', '#f00', look.body === 'heavy' ? 2.6 : 2.2);
+    if (look.body === 'dummy') {
+      // 허수아비: 말뚝 + 밀짚모자 + 짚 색 눈
+      const j = fig.j;
+      ctx.save();
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(j.hip.x, j.hip.y);
+      ctx.lineTo(e.x, e.y + 2);
+      ctx.stroke();
+      const hx = j.head.x, hy = j.head.y - fig.dim.headR * 0.6;
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.moveTo(hx - 13, hy + 2); ctx.lineTo(hx + 13, hy + 2); ctx.lineTo(hx + 4, hy - 4); ctx.lineTo(hx, hy - 10); ctx.lineTo(hx - 4, hy - 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      if (!white) Anim.drawEye(ctx, fig, '#e8c070', '#c80', 2);
+    } else if (!white) Anim.drawEye(ctx, fig, '#ff5050', '#f00', look.body === 'heavy' ? 2.6 : 2.2);
     ctx.restore();
 
     if (e.executed) return;   // 처형 대상은 처형 연출이 마저 그림

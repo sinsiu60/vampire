@@ -36,6 +36,7 @@ const Effects = {
 
   // ---------- 생성 ----------
   addShake(amount) {
+    if (!Settings.shake) return;   // 설정: 화면 흔들림 끄기
     this.shake = Math.min(CONFIG.feel.maxShake, Math.max(this.shake, amount));
   },
 

@@ -1,11 +1,30 @@
 'use strict';
-// Web Audio API 로 직접 합성하는 효과음 (외부 파일 없음)
+// Web Audio API 로 직접 합성하는 효과음 + 배경 음악 (외부 파일 없음)
+
+// ---------- 설정 (볼륨 등, 브라우저에 저장) ----------
+const Settings = {
+  sfx: CONFIG.audio.sfxVolume,
+  music: CONFIG.audio.musicVolume,
+  shake: true,          // 화면 흔들림
+  key: 'shadowEdge.settings',
+  load() {
+    try {
+      const d = JSON.parse(localStorage.getItem(this.key) || 'null');
+      if (d) for (const k of ['sfx', 'music', 'shake']) if (d[k] !== undefined) this[k] = d[k];
+    } catch (e) { /* 저장소를 못 쓰면 기본값 */ }
+  },
+  save() {
+    try { localStorage.setItem(this.key, JSON.stringify({ sfx: this.sfx, music: this.music, shake: this.shake })); } catch (e) { /* 무시 */ }
+    Sound.applyVolume();
+  },
+};
+Settings.load();
 
 const Sound = {
   ctx: null,
-  master: null,
+  master: null,         // 효과음 버스
+  musicBus: null,       // 음악 버스
   noiseBuf: null,
-  volume: 0.5,
 
   // 브라우저 정책상 첫 키 입력 이후에 생성
   unlock() {
@@ -14,8 +33,10 @@ const Sound = {
     if (!AC) return;
     this.ctx = new AC();
     this.master = this.ctx.createGain();
-    this.master.gain.value = this.volume;
     this.master.connect(this.ctx.destination);
+    this.musicBus = this.ctx.createGain();
+    this.musicBus.connect(this.ctx.destination);
+    this.applyVolume();
     const len = this.ctx.sampleRate;
     this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
     const d = this.noiseBuf.getChannelData(0);
@@ -34,6 +55,13 @@ const Sound = {
     this.reverbOut.gain.value = 0.55;
     this.reverb.connect(this.reverbOut);
     this.reverbOut.connect(this.master);
+  },
+
+  applyVolume() {
+    if (!this.ctx) return;
+    const A = CONFIG.audio;
+    this.master.gain.value = A.sfxGain * Settings.sfx;
+    this.musicBus.gain.value = A.musicGain * Settings.music;
   },
 
   // 금속성 울림: 비정수배 배음 여러 개 + 잔향 (wet: 잔향으로 보내는 양)
@@ -351,6 +379,39 @@ const Sound = {
       case 'invClose':
         this._tone(0.08, 'sine', 600, 400, 0.08);
         break;
+      // ----- 로고 / 메뉴 (9단계) -----
+      case 'logoSlash':         // 로고: 화면을 가르는 일섬
+        this._noise(0.35, 'bandpass', 7000, 1800, 0.5, 2, 0.6);
+        this._metal(2400, 0.9, 0.08, 0.9, [1, 2.76, 5.4]);
+        break;
+      case 'logoBoom':          // 로고: 낮은 울림
+        this._tone(1.6, 'sine', 70, 38, 0.8, 0, 0.6);
+        this._noise(0.8, 'lowpass', 600, 60, 0.5, 0, 0.5);
+        this._metal(440, 1.8, 0.05, 1, [1, 1.5, 2.01]);
+        break;
+      case 'menuMove':
+        this._tone(0.05, 'triangle', 900, 900, 0.07);
+        break;
+      case 'menuSelect':
+        this._metal(1600, 0.25, 0.08, 0.5, [1, 2.4]);
+        this._noise(0.1, 'highpass', 4000, 7000, 0.15);
+        break;
+      case 'menuBack':
+        this._tone(0.08, 'triangle', 700, 450, 0.08);
+        break;
+      case 'gameStart':         // 시작: 칼 뽑는 소리 + 울림
+        this._noise(0.3, 'highpass', 2500, 8000, 0.4, 0, 0.4);
+        this._metal(1300, 0.8, 0.1, 0.8, [1, 2.4, 3.9]);
+        this._tone(0.9, 'sine', 110, 55, 0.4, 0.05, 0.5);
+        break;
+      case 'gameOver':
+        this._tone(1.4, 'sawtooth', 220, 55, 0.18, 0, 0.6);
+        this._tone(1.6, 'sine', 110, 40, 0.5, 0.1, 0.6);
+        break;
+      case 'victory':           // 던전 클리어: 상승 화음
+        [0, 4, 7, 12].forEach((n, i) => this._tone(1.2, 'triangle', 523 * Math.pow(2, n / 12), 523 * Math.pow(2, n / 12), 0.12, i * 0.12, 0.6));
+        this._metal(2093, 1.4, 0.05, 0.9, [1, 2.01]);
+        break;
       // ----- 무기 스왑 / 공명 / 무기별 스킬 -----
       case 'ready':             // 스킬 쿨 완료: 짧은 맑은 소리
         this._tone(0.09, 'triangle', 1500, 1500, 0.07, 0, 0.2);
@@ -393,5 +454,133 @@ const Sound = {
         this._noise(0.15, 'lowpass', 1600, 200, 0.5);
         break;
     }
+  },
+};
+
+// ---------- 배경 음악: 16분음표 스텝 시퀀서 ----------
+// 곡 데이터는 CONFIG.audio.music. 앞으로 0.15초 분량씩 미리 예약 (setInterval 로 끊김 없이)
+const Music = {
+  track: null,       // 지금 곡 이름
+  cfg: null,
+  step: 0,
+  nextTime: 0,
+  timer: null,
+  voices: null,      // 지금 곡의 출력 (곡을 바꿀 때 페이드 아웃)
+
+  play(name) {
+    if (this.track === name) return;
+    this.stop();
+    this.track = name;
+    this.cfg = name ? CONFIG.audio.music[name] : null;
+    if (!this.cfg || !Sound.ctx) return;
+    const c = Sound.ctx;
+    this.voices = c.createGain();
+    this.voices.gain.setValueAtTime(0.0001, c.currentTime);
+    this.voices.gain.exponentialRampToValueAtTime(1, c.currentTime + 1.2);
+    this.voices.connect(Sound.musicBus);
+    this.step = 0;
+    this.nextTime = c.currentTime + 0.1;
+    this.timer = setInterval(() => this.tick(), 25);
+  },
+
+  stop() {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    if (this.voices && Sound.ctx) {
+      const v = this.voices, t = Sound.ctx.currentTime;
+      v.gain.cancelScheduledValues(t);
+      v.gain.setValueAtTime(Math.max(0.0001, v.gain.value), t);
+      v.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
+      setTimeout(() => v.disconnect(), 1000);
+    }
+    this.voices = null;
+    this.track = null;
+  },
+
+  // 소리가 막 허용된 경우 (첫 입력 전에 play 가 불렸으면) 다시 시작
+  resume() {
+    if (this.track && !this.timer) { const n = this.track; this.track = null; this.play(n); }
+  },
+
+  tick() {
+    const c = Sound.ctx;
+    if (!c || !this.cfg) return;
+    const dt = 60 / this.cfg.bpm / 4;
+    while (this.nextTime < c.currentTime + 0.15) {
+      this.playStep(this.step, this.nextTime, dt);
+      this.step = (this.step + 1) % (16 * this.cfg.chords.length);
+      this.nextTime += dt;
+    }
+  },
+
+  freq(midi) { return 440 * Math.pow(2, (midi - 69) / 12); },
+
+  playStep(step, t, dt) {
+    const M = this.cfg, i = step % 16, bar = Math.floor(step / 16);
+    const chord = M.chords[bar], root = M.root;
+    // 패드: 마디 첫 박에 화음 (느린 어택)
+    if (i === 0 && M.pad) {
+      for (const n of chord) {
+        this.note(t, this.freq(root + n), dt * 16, 'triangle', 0.05 * M.pad, 0.5, 1200, 3);
+        this.note(t, this.freq(root + n + 12), dt * 16, 'sawtooth', 0.012 * M.pad, 0.8, 900, -4);
+      }
+    }
+    if (M.bass && M.bass[i] !== null && M.bass[i] !== undefined) {
+      this.note(t, this.freq(root - 12 + chord[0] + M.bass[i]), dt * 1.6, 'sawtooth', 0.09 * (M.bassGain || 0.5), 0.005, 420, 0);
+    }
+    if (M.arp && M.arp[i] !== null && M.arp[i] !== undefined) {
+      const k = M.arp[i], n = chord[k % chord.length] + 12 * Math.floor(k / chord.length);
+      this.note(t, this.freq(root + n + (M.arpOct || 0)), dt * 3, 'triangle', 0.06 * (M.arpGain || 0.3), 0.004, 3000, 0, 0.35);
+    }
+    const g = M.drumGain || 0.5;
+    if (M.kick && M.kick[i] === 'x') this.drum(t, 'kick', g);
+    if (M.snare && M.snare[i] === 'x') this.drum(t, 'snare', g);
+    if (M.hat && M.hat[i] === 'x') this.drum(t, 'hat', g * (i % 4 === 2 ? 1 : 0.6));
+  },
+
+  // 음 하나: attack 초 동안 올라갔다가 dur 동안 사라짐. lp = 저역 필터, detune = 센트, wet = 잔향
+  note(t, f, dur, type, gain, attack, lp, detune, wet) {
+    const c = Sound.ctx;
+    const o = c.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(f, t);
+    if (detune) o.detune.setValueAtTime(detune, t);
+    const fl = c.createBiquadFilter();
+    fl.type = 'lowpass';
+    fl.frequency.setValueAtTime(lp, t);
+    const v = c.createGain();
+    v.gain.setValueAtTime(0.0001, t);
+    v.gain.exponentialRampToValueAtTime(gain, t + attack);
+    v.gain.exponentialRampToValueAtTime(0.0001, t + Math.max(attack + 0.05, dur));
+    o.connect(fl); fl.connect(v); v.connect(this.voices);
+    if (wet && Sound.reverb) { const w = c.createGain(); w.gain.value = wet; v.connect(w); w.connect(Sound.reverb); }
+    o.start(t);
+    o.stop(t + dur + 0.1);
+  },
+
+  drum(t, kind, g) {
+    const c = Sound.ctx;
+    const v = c.createGain();
+    v.connect(this.voices);
+    if (kind === 'kick') {
+      const o = c.createOscillator();
+      o.frequency.setValueAtTime(130, t);
+      o.frequency.exponentialRampToValueAtTime(40, t + 0.12);
+      v.gain.setValueAtTime(0.5 * g, t);
+      v.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+      o.connect(v); o.start(t); o.stop(t + 0.22);
+      return;
+    }
+    const src = c.createBufferSource();
+    src.buffer = Sound.noiseBuf;
+    const f = c.createBiquadFilter();
+    f.type = kind === 'hat' ? 'highpass' : 'bandpass';
+    f.frequency.setValueAtTime(kind === 'hat' ? 7000 : 1800, t);
+    const dur = kind === 'hat' ? 0.04 : 0.14;
+    v.gain.setValueAtTime((kind === 'hat' ? 0.08 : 0.22) * g, t);
+    v.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(v);
+    src.start(t, Math.random() * 0.5);
+    src.stop(t + dur + 0.02);
   },
 };

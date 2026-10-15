@@ -140,6 +140,13 @@ class Enemy {
     if (this.cooldown > 0) this.cooldown--;
     if (this.armorBroken > 0) this.armorBroken--;
     if (this.shieldBroken > 0) this.shieldBroken--;
+    // 허수아비: 한동안 안 맞으면 체력·체간 회복
+    if (T.dummy && !this.dead && this.state !== 'broken' && (this.hp < this.maxHp || this.posture > 0) &&
+        (Game.frame || 0) - (this.lastHitAt || 0) > CONFIG.practice.regenDelay) {
+      this.hp = this.maxHp;
+      this.posture = 0;
+      Effects.ring(this.x, this.y - this.h / 2, '#d8b060', 26);
+    }
     if (this.postureFlash > 0) this.postureFlash--;
     this.stateFrame++;
 
@@ -531,6 +538,7 @@ class Enemy {
     }
 
     this.hp -= dmg;
+    this.lastHitAt = Game.frame || 0;
     this.flash = CONFIG.feel.flashFrames;
     this.hpShow = 180;
     if (this.hp <= 0) {
