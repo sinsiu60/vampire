@@ -113,6 +113,12 @@ class Player {
     this.engr = Engrave.emptySlots();   // 각인: { sword: [3칸], greatsword: [...], gauntlet: [...] }
     this.windCrit = 0;            // 각인 '바람의 춤': 공중 대시 후 첫 공격 치명타
     this.gtHits = 0;              // 각인 '연타 흡혈' 카운트
+    this.zapCount = 0;            // 번개 세트: 적중 수
+    this.tenuiCount = 0;          // 전설 '천의무봉': 연속 퍼펙트 패링
+    this.autoExec = false;        //   다음 공격이 즉시 처형
+    this.trinityTimer = 0;        // 전설 '삼위일체': 쿨타임 없음 남은 시간
+    this.bonusMaxHp = 0;          // 피 6세트: 처형으로 늘어난 최대 체력 (런 동안)
+    this.elem = null;             // 속성 개수 (recalcStats)
     this.res = { level: 0, timer: 0, cdCut: 0, hit: false };   // 공명 (단계 / 남은 시간 / 다음 스킬 쿨감% / 스왑 후 적중 여부)
     this.stanceTimer = 0;         // 검 Q: 간파 자세
     this.stanceCfg = null;
@@ -142,8 +148,15 @@ class Player {
   recalcStats() {
     const P = CONFIG.player;
     this.stats = Loot.computeStats(this.gear, this.activeWeapon);
-    if (this.engr) Engrave.applyStats(this, this.stats);
-    this.maxHp = P.maxHp + this.stats.maxHp;
+    if (this.engr) {
+      this.elem = Synergy.count(this);
+      Engrave.applyStats(this, this.stats);
+      Synergy.applyStats(this, this.stats);
+    }
+    this.maxHp = P.maxHp + this.stats.maxHp + (this.bonusMaxHp || 0);
+    // 저주 '유리 칼날': 최대 체력 감소
+    const gl = this.engr && Engrave.get(this, 'curse_glass');
+    if (gl) this.maxHp = Math.max(1, Math.round(this.maxHp * (1 - Engrave.val(gl, 'hp') / 100)));
     this.maxStamina = P.maxStamina + this.stats.stamina;
     if (this.hp > this.maxHp) this.hp = this.maxHp;
     if (this.stamina > this.maxStamina) this.stamina = this.maxStamina;
@@ -156,9 +169,15 @@ class Player {
     const F = CONFIG.loot.uniques.frenzy;
     if (s.uniques.frenzy && Style.rank >= F.minRank) atk += F.atk;
     if (this.res.timer > 0) atk += CONFIG.swap.resonance.atk[this.res.level - 1];
+    if (this.engr) atk += Synergy.atkBonus(this);    // 광전사 / 광혈
     return s.power * (1 + atk / 100);
   }
-  critChance() { return CONFIG.player.critChance + this.stats.crit / 100; }
+  critChance() { return Engrave.get(this, 'curse_glass') ? 1 : CONFIG.player.critChance + this.stats.crit / 100; }
+  // 공명 최대 단계 (각인 '공명 증폭'이면 5) / 지속 시간
+  resMax() { return Engrave.get(this, 'common_resonance') ? CONFIG.swap.resonance.boostedMax : CONFIG.swap.resonance.maxLevel; }
+  resDuration() { return CONFIG.swap.resonance.duration + Math.round(Engrave.v(this, 'common_resonance', 'sec') * 60); }
+  // 가드 가능 (저주 '광전사'면 불가 — 퍼펙트 패링만)
+  canGuard() { return !Engrave.get(this, 'curse_berserker'); }
   postureMult() { return 1 + this.stats.posture / 100; }
 
   // 흡혈: 준 피해의 일부 회복
@@ -218,15 +237,17 @@ class Player {
 
     // 공명: 공명 중 다시 스왑하면 단계 상승 (requireHit 이면 그 사이 적을 맞혔어야 함)
     const r = this.res, prev = r.timer > 0 ? r.level : 0;
-    if (r.timer > 0) { if (!R.requireHit || r.hit) r.level = Math.min(R.maxLevel, r.level + 1); }
+    const rMax = this.resMax();
+    if (r.timer > 0) { if (!R.requireHit || r.hit) r.level = Math.min(rMax, r.level + 1); }
     else r.level = 1;
-    r.timer = R.duration;
+    r.timer = this.resDuration();
+    r.dur = r.timer;
     r.hit = false;
     r.cdCut = R.cdCut[r.level - 1];
     if (r.level > prev && r.level > 1) {
-      Effects.popText(this.x, this.y - this.h - 40, `공명 ${['Ⅰ', 'Ⅱ', 'Ⅲ'][r.level - 1]}`, '#7ff', 14 + r.level * 2);
+      Effects.popText(this.x, this.y - this.h - 40, `공명 ${R.numerals[r.level - 1]}`, '#7ff', 14 + r.level * 2);
       Sound.play(r.level >= R.maxLevel ? 'resonanceMax' : 'resonance');
-      if (r.level >= R.maxLevel) Style.onResonanceMax();
+      if (r.level === R.maxLevel) Style.onResonanceMax();
     }
 
     const W = this.weaponCfg();
@@ -916,7 +937,7 @@ class Player {
     const P = CONFIG.player;
     if (this.tryParry()) return;
     // 패링 불가 시간에 F 를 누르고 있으면 가드
-    if (this.parryLocked() && input.isDown('parry')) { this.setState('guard'); return; }
+    if (this.parryLocked() && input.isDown('parry') && this.canGuard()) { this.setState('guard'); return; }
     if (this.tryDash(ax)) return;
     if (this.trySkill(ax)) return;
     if (this.tryJump(input)) { /* 점프 후에도 이동은 계속 */ }
@@ -952,6 +973,7 @@ class Player {
         Skills.quake(game, this, qs ? Object.assign({}, m.quake, {
           range: m.quake.range * (1 + Engrave.val(qs, 'range') / 100), damage: m.quake.damage * (1 + Engrave.val(qs, 'pct') / 100),
         }) : m.quake);
+        if (this.moveId === 'SKILL_GREATSWORD_E') Synergy.mezzan(game, this);   // 전설 '멸산'
       }
       if (m.ironWall) {
         // 각인 '불굴': 철벽 지속·반격 강화
@@ -1151,7 +1173,7 @@ class Player {
     const t = game.simTime - this.parryStart;
     if (!this.onGround && t <= PR.windowMs) this.vy = Math.min(this.vy, 1.5);  // 공중에선 잠깐 멈칫
     if (t > PR.windowMs) {
-      if (input.isDown('parry')) { this.setState('guard'); return; }
+      if (input.isDown('parry') && this.canGuard()) { this.setState('guard'); return; }
       this.parryLockedUntil = game.simTime + PR.lockoutMs;
       this.setState('free');
     }

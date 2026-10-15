@@ -74,6 +74,8 @@ const UI = {
     if (game.mode === 'practice') Practice.draw(ctx, game);
     else ctx.fillText(`처치 ${game.kills}`, 720, 30);
     if (game.floor) this.minimap(ctx, game);
+    // 속성 세트 (지도 아래)
+    Synergy.drawHud(ctx, game, 16, game.floor ? 114 : 58);
     if (game.floorBanner) this.floorBanner(ctx, game.floorBanner);
     const boss = game.boss;
     if (boss) this.bossBar(ctx, game, boss);
@@ -146,9 +148,9 @@ const UI = {
           ctx.fillStyle = '#7ff';
           ctx.font = 'bold 10px "Segoe UI", sans-serif';
           ctx.textAlign = 'left';
-          ctx.fillText(`공명 ${['Ⅰ', 'Ⅱ', 'Ⅲ'][res.level - 1]}${res.cdCut > 0 ? `  쿨-${res.cdCut}%` : ''}`, x, y - 14);
+          ctx.fillText(`공명 ${R.numerals[res.level - 1]}${res.cdCut > 0 ? `  쿨-${res.cdCut}%` : ''}`, x, y - 14);
           ctx.fillStyle = 'rgba(120,255,255,0.8)';
-          ctx.fillRect(x, y - 9, s * res.timer / R.duration, 2);
+          ctx.fillRect(x, y - 9, s * Math.min(1, res.timer / (res.dur || R.duration)), 2);
         }
         ctx.fillStyle = `rgb(${W.trail.inner})`;
         ctx.font = 'bold 10px "Segoe UI", sans-serif';

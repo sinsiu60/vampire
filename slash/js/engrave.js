@@ -1,6 +1,8 @@
 'use strict';
 // 각인: 무기에 붙이는 추가 효과 (데이터: data/engravings.js, 수치: config.js engrave)
-//  · 무기마다 슬롯 3칸. 무기 전용 각인은 그 무기에만, 공용 각인(3단계)은 아무 무기에
+//  · 무기마다 슬롯 3칸. 무기 전용 각인은 그 무기에만, 공용 각인은 아무 무기에
+//  · 전설 각인: 보스·엘리트 보상에 낮은 확률로 / 저주 각인: 저주 제단에서만 (큰 이득 + 큰 대가)
+//  · 속성 세트 효과·공용/전설/저주 각인 동작은 synergy.js
 //  · 각인 하나 = { id, rarity(등급), level(강화 0~3) }. 수치 = (기본 + 강화×perLevel) × 등급 배율
 //  · scope "held": 그 무기를 들고 있을 때만 효과 / "always": 항상
 // 효과는 각 시스템에서 Engrave.get(player, id) 로 확인한다 (combat.js, player.js, skills.js 등)
@@ -27,7 +29,8 @@ const Engrave = {
   val(inst, key) {
     const d = this.def(inst);
     const base = d.values[key] + ((d.perLevel && d.perLevel[key]) || 0) * inst.level;
-    return d.fixed && d.fixed.indexOf(key) >= 0 ? base : base * CONFIG.engrave.rarityMult[inst.rarity];
+    const v = d.fixed && d.fixed.indexOf(key) >= 0 ? base : base * CONFIG.engrave.rarityMult[inst.rarity];
+    return d.round && d.round.indexOf(key) >= 0 ? Math.round(v) : v;
   },
 
   fmt(v) { return Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1); },
@@ -58,12 +61,17 @@ const Engrave = {
     return out;
   },
 
-  // 둔화: 적 행동이 느려짐 (sec 초). 보스는 덜 느려짐
-  slow(e, sec) {
+  // 둔화: 적 행동이 느려짐 (sec 초). 보스는 덜 느려짐. mult 를 주면 그 배율 (빙결 = freezeMult)
+  slow(e, sec, mult) {
     if (!sec || e.dead) return;
     const E = CONFIG.engrave;
+    const freeze = mult !== undefined && mult <= E.freezeMult;
+    const m = freeze ? (e.isBoss ? E.bossFreezeMult : mult) : mult !== undefined ? mult : e.isBoss ? E.bossSlowMult : E.slowMult;
+    // 이미 더 강하게 느려져 있으면 시간만 늘림
+    if (e.slowTimer > 0 && e.slowMult < m) { e.slowTimer = Math.max(e.slowTimer, Math.round(sec * 60)); return; }
     e.slowTimer = Math.max(e.slowTimer || 0, Math.round(sec * 60));
-    e.slowMult = e.isBoss ? E.bossSlowMult : E.slowMult;
+    e.slowMult = m;
+    e.frozen = freeze;
   },
 
   // 능력치에 더하는 각인 (player.recalcStats 에서)
@@ -83,18 +91,30 @@ const Engrave = {
     return 0;
   },
 
-  // 서로 다른 각인 n개 (이미 장착한 것은 제외)
-  offer(game, n, luck) {
+  // 서로 다른 각인 n개 (이미 장착한 것은 제외). legend: 전설 각인이 나올 확률 (한 장만)
+  // kind: 'normal' (일반·무기·공용) / 'curse' (저주 제단)
+  offer(game, n, luck, legend, kind) {
     const p = game.player, owned = new Set(this.all(p).map((a) => a.inst.id));
-    const pool = DATA.engravings.filter((d) => !owned.has(d.id) && !d.curse && !d.legend);
+    const ok = (d) => !owned.has(d.id) && (kind === 'curse' ? d.curse : !d.curse && !d.legend);
+    const pool = DATA.engravings.filter(ok);
+    const legends = DATA.engravings.filter((d) => d.legend && !owned.has(d.id));
     const out = [];
-    while (out.length < n && pool.length) {
+    const pick = (list) => {
       let sum = 0;
-      for (const d of pool) sum += d.weight || 1;
+      for (const d of list) sum += d.weight || 1;
       let r = Math.random() * sum, idx = 0;
-      for (let i = 0; i < pool.length; i++) { r -= pool[i].weight || 1; if (r <= 0) { idx = i; break; } }
-      const d = pool.splice(idx, 1)[0];
-      out.push(this.make(d.id, Math.max(d.minRarity || 0, this.rollRarity(game.floorIndex || 0, luck))));
+      for (let i = 0; i < list.length; i++) { r -= list[i].weight || 1; if (r <= 0) { idx = i; break; } }
+      return list.splice(idx, 1)[0];
+    };
+    if (legend && legends.length && Math.random() < legend) out.push(this.make(pick(legends).id, 3));
+    while (out.length < n && pool.length) {
+      const d = pick(pool);
+      out.push(this.make(d.id, d.curse ? 0 : Math.max(d.minRarity || 0, this.rollRarity(game.floorIndex || 0, luck))));
+    }
+    // 전설 카드는 무작위 위치에
+    if (out.length > 1 && this.def(out[0]).legend) {
+      const j = Math.floor(Math.random() * out.length);
+      [out[0], out[j]] = [out[j], out[0]];
     }
     return out;
   },
@@ -110,7 +130,7 @@ const Engrave = {
 
   // 엘리트: 각인 1개 (받기 / 거절)
   rewardElite(game) {
-    const [inst] = this.offer(game, 1, 0);
+    const [inst] = this.offer(game, 1, 0, CONFIG.engrave.legendChance.elite);
     if (!inst) return;
     const gold = Math.round(CONFIG.engrave.declineGold * game.floorCfg.gold);
     Choice.open(game, {
@@ -125,7 +145,8 @@ const Engrave = {
   // 보스: 각인 카드 3장 중 하나
   rewardBoss(game) {
     const E = CONFIG.engrave;
-    const cards = this.offer(game, E.bossCards, E.bossLuck);
+    const L = E.legendChance.boss;
+    const cards = this.offer(game, E.bossCards, E.bossLuck, L[Math.min(game.floorIndex || 0, L.length - 1)]);
     if (!cards.length) return;
     Choice.open(game, {
       title: '보스 보상', sub: '각인 하나를 고른다', color: '#ff3b3b', closable: false,
@@ -165,7 +186,8 @@ const Engrave = {
     ctx.restore();
   },
 
-  rarityColor(inst) { return CONFIG.loot.rarities[inst.rarity].color; },
+  rarityColor(inst) { return this.def(inst).curse ? CONFIG.engrave.curseColor : CONFIG.loot.rarities[inst.rarity].color; },
+  rarityName(inst) { return this.def(inst).curse ? '저주' : CONFIG.loot.rarities[inst.rarity].name; },
 
   // 큰 카드 (보상 선택 / 장착 화면)
   drawCard(ctx, inst, x, y, w, h, on) {
@@ -191,9 +213,12 @@ const Engrave = {
     this.elemIcon(ctx, d.element, x + w / 2, y + 42, 13);
     // 이름 / 등급 / 무기
     Menu.text(ctx, d.name + (inst.level ? ` +${inst.level}` : ''), x + w / 2, y + 92, 'bold 17px "Segoe UI", sans-serif', '#fff');
-    const R = CONFIG.loot.rarities[inst.rarity];
     const wname = d.weapon ? CONFIG.weapons[d.weapon].name + ' 전용' : '공용';
-    Menu.text(ctx, `${R.name} · ${E.name} · ${wname}`, x + w / 2, y + 111, '11px "Segoe UI", sans-serif', col);
+    Menu.text(ctx, `${this.rarityName(inst)} · ${E.name} · ${wname}`, x + w / 2, y + 111, '11px "Segoe UI", sans-serif', col);
+    // 전설·저주 표시
+    if (d.legend || d.curse) {
+      Menu.text(ctx, d.legend ? '★ 전설 각인' : '✦ 저주 각인', x + w / 2, y + 16, 'bold 10px "Segoe UI", sans-serif', col);
+    }
     // 설명
     ctx.font = '12px "Segoe UI", sans-serif';
     const lines = Choice.wrap(ctx, this.desc(inst), w - 24);
@@ -234,7 +259,7 @@ const Engrave = {
       const d = this.def(inst);
       this.elemIcon(ctx, d.element, x + 18, y + h / 2, 9);
       Menu.text(ctx, d.name + (inst.level ? ` +${inst.level}` : ''), x + 34, y + h / 2 - 2, 'bold 12px "Segoe UI", sans-serif', '#fff', 'left');
-      Menu.text(ctx, CONFIG.loot.rarities[inst.rarity].name, x + 34, y + h / 2 + 13, '10px "Segoe UI", sans-serif', this.rarityColor(inst), 'left');
+      Menu.text(ctx, this.rarityName(inst) + (d.weapon ? '' : ' · 공용'), x + 34, y + h / 2 + 13, '10px "Segoe UI", sans-serif', this.rarityColor(inst), 'left');
     } else {
       Menu.text(ctx, '빈 칸', x + w / 2, y + h / 2 + 4, '11px "Segoe UI", sans-serif', 'rgba(255,255,255,0.3)');
     }
@@ -391,26 +416,18 @@ const EngraveUI = {
     });
     // 선택한 칸 설명
     const st = WEAPON_ORDER[this.sel.w], inst = p.engr[st][this.sel.s];
-    const by = 340;
+    const by = 330;
     if (inst) {
       const d = Engrave.def(inst);
       ctx.fillStyle = 'rgba(255,255,255,0.05)';
-      ctx.fillRect(gx + 8, by, V.width - gx - 46, 70);
-      Engrave.elemIcon(ctx, d.element, gx + 26, by + 22, 10);
-      Menu.text(ctx, `${d.name}${inst.level ? ' +' + inst.level : ''}  ·  ${CONFIG.loot.rarities[inst.rarity].name}  ·  ${DATA.elements[d.element].name}`, gx + 44, by + 26, 'bold 13px "Segoe UI", sans-serif', Engrave.rarityColor(inst), 'left');
-      Menu.text(ctx, Engrave.desc(inst).replace(/\n/g, '  '), gx + 44, by + 48, '12px "Segoe UI", sans-serif', 'rgba(232,240,250,0.9)', 'left');
-      Engrave.pips(ctx, inst, V.width - 70, by + 22);
+      ctx.fillRect(gx + 8, by, V.width - gx - 46, 56);
+      Engrave.elemIcon(ctx, d.element, gx + 26, by + 18, 10);
+      Menu.text(ctx, `${d.name}${inst.level ? ' +' + inst.level : ''}  ·  ${Engrave.rarityName(inst)}  ·  ${DATA.elements[d.element].name}`, gx + 44, by + 22, 'bold 13px "Segoe UI", sans-serif', Engrave.rarityColor(inst), 'left');
+      Menu.text(ctx, Engrave.desc(inst).replace(/\n/g, '  '), gx + 44, by + 42, '12px "Segoe UI", sans-serif', 'rgba(232,240,250,0.9)', 'left');
+      Engrave.pips(ctx, inst, V.width - 70, by + 18);
     }
-    // 속성 개수 (3단계: 세트 효과)
-    const cnt = {};
-    for (const a of Engrave.all(p)) { const el = Engrave.def(a.inst).element; cnt[el] = (cnt[el] || 0) + 1; }
-    let ex = gx + 8;
-    for (const el in DATA.elements) {
-      Engrave.elemIcon(ctx, el, ex + 8, by + 96, 8);
-      Menu.text(ctx, `${DATA.elements[el].name} ${cnt[el] || 0}`, ex + 20, by + 100, '12px "Segoe UI", sans-serif', DATA.elements[el].color, 'left');
-      ex += 86;
-    }
-    Menu.text(ctx, '(속성 세트 효과는 3단계)', ex + 4, by + 100, '11px "Segoe UI", sans-serif', 'rgba(255,255,255,0.35)', 'left');
+    // 속성 세트 효과
+    Synergy.drawPanel(ctx, p, gx + 8, by + 72, V.width - gx - 46);
     // 안내
     const kk = (a) => Input.label(a);
     const help = c.mode === 'equip'

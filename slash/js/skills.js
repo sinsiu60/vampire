@@ -25,8 +25,9 @@ const Skills = {
     Sound.play('swingHeavy');
   },
 
-  // 폭발: 반경 안의 적에게 데미지 + 체간
+  // 폭발: 반경 안의 적에게 데미지 + 체간. 맞은 적 목록을 돌려줌 (효과 피해: 다른 각인·세트 효과를 부르지 않음)
   blast(game, x, y, r, dmg, posture, weapon, color, styleId) {
+    const hit = [];
     Effects.ring(x, y, color || '#ff8a2a', r);
     Effects.radialSparks(x, y, 22, color || '#ffb050', 2);
     Effects.addShake(6);
@@ -37,9 +38,11 @@ const Skills = {
       if (dx * dx + dy * dy > r * r) continue;
       const dir = Math.sign(dx) || 1;
       const res = Combat.applyHit(game, e, dmg, false, { dir, knockX: 5, knockY: -3, hitstun: 26, launch: false, attackerX: x },
-        { hitstop: 4, shake: 3, heavy: true, x: e.x, y: e.y - e.h * 0.5, styleId: styleId || 'BLAST', weapon });
+        { hitstop: 4, shake: 3, heavy: true, x: e.x, y: e.y - e.h * 0.5, styleId: styleId || 'BLAST', weapon, proc: true });
       if (res !== 'kill' && posture) e.addPosture(posture, game);
+      hit.push(e);
     }
+    return hit;
   },
 
   // 작은 유성: 착지 지점 주변에 차례로 떨어져 터짐
@@ -217,16 +220,17 @@ const Skills = {
 
   // ---------- 전설 고유 효과 ----------
   // 뇌신: 대상에게 번개
-  thunder(game, p, e) {
+  // 번개 (전설 '뇌신', 번개 세트, 천둥신). dmg 를 주면 그 데미지, small 이면 작은 연출
+  thunder(game, p, e, dmg, small) {
     const U = CONFIG.loot.uniques.thunder;
     const top = e.y - e.h - 260;
     this.bolts.push({ x: e.x, y0: top, y1: e.y - e.h * 0.3, life: 12, max: 12, seed: Math.random() * 1000 });
-    const dmg = U.damage * p.damageMult();
+    if (dmg === undefined) dmg = U.damage * p.damageMult();
     Combat.applyHit(game, e, dmg, false, {
-      dir: p.facing, knockX: 0.5, knockY: 0, hitstun: U.stun, launch: false, attackerX: p.x,
-    }, { hitstop: 3, shake: 4, heavy: false, x: e.x, y: e.y - e.h * 0.5, styleId: 'THUNDER' });
+      dir: p.facing, knockX: 0.5, knockY: 0, hitstun: small ? 8 : U.stun, launch: false, attackerX: p.x,
+    }, { hitstop: small ? 1 : 3, shake: small ? 2 : 4, heavy: false, x: e.x, y: e.y - e.h * 0.5, styleId: 'THUNDER', proc: true });
     Effects.radialSparks(e.x, e.y - e.h * 0.5, 12, '#bfe6ff', 1);
-    Effects.screenFlash('rgba(190,220,255,', 5);
+    if (!small) Effects.screenFlash('rgba(190,220,255,', 5);
     Sound.play('thunder');
   },
 

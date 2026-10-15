@@ -72,6 +72,10 @@ const Combat = {
     // 각인 '역습': 반격 일섬·반격 런처 강화
     const counter = /^COUNTER/.test(player.moveId);
     if (counter) dmg *= 1 + Engrave.v(player, 'sword_riposte', 'pct') / 100;
+    // 공용 각인: 연환(전환기 데미지) / 공중 곡예(공중 데미지)
+    const swapIn = /^SWAPIN_/.test(player.moveId);
+    if (swapIn) dmg *= 1 + Engrave.v(player, 'common_chain', 'pct') / 100;
+    if (move.air || !player.onGround) dmg *= 1 + Engrave.v(player, 'common_air_tempo', 'pct') / 100;
     // 회오리 베기 등 360° 기술은 적이 있는 쪽으로 밀어냄
     const dir = move.omni ? (Math.sign(enemy.x - player.x) || player.facing) : player.facing;
     const wasDeflected = enemy.state === 'deflected' || enemy.state === 'stun';
@@ -108,7 +112,7 @@ const Combat = {
     let pd = (move.posture !== undefined ? move.posture : move.damage * PO.hitMult) * player.postureMult()
       * this.weakMult(enemy, player.weaponType(), 'postureMult');
     // 각인: 체간 피해
-    pd *= 1 + Engrave.v(player, 'gs_breaker', 'pct') / 100;
+    pd *= 1 + (Engrave.v(player, 'gs_breaker', 'pct') + Engrave.v(player, 'common_pressure', 'pct')) / 100;
     if (move.air || !player.onGround) pd *= 1 + Engrave.v(player, 'gt_air_breaker', 'pct') / 100;
     if (crit) pd *= 1 + Engrave.v(player, 'sword_keen', 'cpost') / 100;
     if (counter) pd *= 1 + Engrave.v(player, 'sword_riposte', 'post') / 100;
@@ -117,6 +121,12 @@ const Combat = {
     if (res === 'blocked') enemy.addPosture(move.damage * PO.blockMult, game);
     else if (res !== 'kill') enemy.addPosture(pd, game);
     if (res !== 'blocked') this.engraveOnHit(game, player, enemy, move, res);
+    if (res !== 'blocked' && res !== 'kill') {
+      // 점화 전환: 전환기 적중 시 화상
+      const ig = swapIn && Engrave.get(player, 'common_ignite_swap');
+      if (ig) Synergy.burn(enemy, Engrave.val(ig, 'sec'), Engrave.val(ig, 'dps'));
+      Synergy.markThunder(player, enemy);     // 천둥신
+    }
 
     if (res === 'blocked') {
       // 방패에 막힘: 플레이어가 튕겨남
@@ -126,6 +136,7 @@ const Combat = {
       player.airHang(enemy.juggleMult());
     }
     if (sure && res !== 'blocked') Effects.popText(enemy.x, enemy.y - enemy.h - 34, 'CRITICAL', '#ffd83a', 16);
+    if (res !== 'blocked' && res !== 'kill') Synergy.tryAutoExec(game, player, enemy);   // 천의무봉
   },
 
   // 무기 각인 적중 효과 (회복, 둔화 등)
@@ -194,6 +205,16 @@ const Combat = {
     }
 
     const killed = res === 'kill';
+    if (fx.quiet) {
+      // 효과 피해(화상 등)로 마무리: 연출 최소화
+      Effects.damageNumber(enemy.x, enemy.y - enemy.h - 8, dmg, false);
+      if (killed) {
+        Effects.shards(enemy.x, enemy.y - enemy.h / 2, info.dir, 14, '#0c0a0b');
+        Sound.play('kill');
+        game.onEnemyKilled(enemy);
+      }
+      return res;
+    }
     const stop = fx.hitstop + (crit ? 2 : 0) + (killed ? F.killHitstop : 0) + (weak ? CONFIG.weakness.hitstopAdd : 0);
     if (weak) {
       // 약점: 무기 색 불꽃 + 가끔 '약점!' 글자
@@ -224,6 +245,8 @@ const Combat = {
     if (crit) Sound.play('crit');
     if (weak) Sound.play('weakHit');
     game.registerHit(weapon);
+    // 속성 세트 효과 (화상·둔화·번개 등) — 효과 피해(proc)는 다시 부르지 않음
+    if (fx.styleId && !fx.proc) Synergy.onHit(game, p, enemy, res, air);
     return res;
   },
 
@@ -367,6 +390,7 @@ const Combat = {
     Effects.sparks(player.x, player.y - player.h * 0.6, dir, 10, '#ff4040');
     Effects.damageNumber(player.x, player.y - player.h - 8, taken, false);
     Sound.play('hurt');
+    Synergy.onPlayerHurt(game, player);
     game.onPlayerHurt();
   },
 
@@ -421,5 +445,6 @@ const Combat = {
     // 각인 '반격의 검기': 전방 검기
     const pw = Engrave.get(player, 'sword_parry_wave');
     if (pw) Skills.shot(game, player, { dmg: Engrave.val(pw, 'dmg') * player.damageMult(), posture: Engrave.val(pw, 'posture'), weapon: 'sword', styleId: 'PARRY_WAVE' });
+    Synergy.onParry(game, player, enemy);
   },
 };

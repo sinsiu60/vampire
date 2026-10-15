@@ -75,6 +75,7 @@ const Game = {
     Effects.reset();
     Style.reset();
     Skills.reset();
+    Synergy.reset();
     if (this.mode === 'practice') {
       Render.setTheme(0);
       const level = Dungeon.buildArena();
@@ -102,6 +103,7 @@ const Game = {
     this.projectiles = [];
     Effects.reset();
     Skills.reset();
+    Synergy.reset();
     Menu.enter(this, 'title');
   },
 
@@ -139,6 +141,7 @@ const Game = {
     this.drops = [];
     Run.coins.length = 0;
     Skills.reset();
+    Synergy.reset();
     room.visited = true;
     Run.makePortals(this, room);   // 갈림길 문 (클리어 전엔 닫혀 있음)
     if (!room.cleared) {
@@ -387,7 +390,7 @@ const Game = {
     if (c.count === 0) { c.weapons = new Set(); c.trinity = false; }
     if (weapon && c.weapons) {
       c.weapons.add(weapon);
-      if (!c.trinity && c.weapons.size >= WEAPON_ORDER.length) { c.trinity = true; Style.onTrinity(); }
+      if (!c.trinity && c.weapons.size >= WEAPON_ORDER.length) { c.trinity = true; Style.onTrinity(); Synergy.onTrinity(this); }
     }
     this.combo.count++;
     this.combo.timer = CONFIG.feel.comboResetFrames;
@@ -407,6 +410,7 @@ const Game = {
       p.heal(h);
       Effects.popText(p.x, p.y - p.h - 30, `+${h}`, '#f66', 12);
     }
+    Synergy.onKill(this, enemy);   // 화염 세트: 불탄 적 폭발
     // 골드
     Run.dropGold(this, enemy);
     if (enemy.elite) {
@@ -555,6 +559,7 @@ const Game = {
   // 처형 성공 (5단계 스타일 랭크에서 대폭 상승 처리)
   onExecution(enemy) {
     Style.onExecution();
+    Synergy.onExecution(this, enemy);
   },
 
   onPlayerHurt() {
@@ -588,10 +593,15 @@ const Game = {
       if (Input.isPressed('spawn7') && !this.boss) {
         this.spawnBoss(this.mode === 'dungeon' ? this.floorCfg.boss : 'dusk', this.player.x + this.player.facing * 300);
       }
-      // 8: 무작위 각인 받기 (개발용)
+      // 8: 무작위 각인 받기 (개발용 — 전설·저주 포함 전체에서)
       if (Input.isPressed('spawn8')) {
-        const [inst] = Engrave.offer(this, 1, 2);
-        if (inst) { Engrave.beginEquip(this, inst); return; }
+        const owned = new Set(Engrave.all(this.player).map((a) => a.inst.id));
+        const pool = DATA.engravings.filter((d) => !owned.has(d.id));
+        if (pool.length) {
+          const d = pool[(Math.random() * pool.length) | 0];
+          Engrave.beginEquip(this, Engrave.make(d.id, d.legend ? 3 : d.curse ? 0 : Engrave.rollRarity(this.floorIndex || 0, 2)));
+          return;
+        }
       }
     }
 
@@ -664,9 +674,9 @@ const Game = {
     p.update(this, Input);
     Combat.playerAttack(this, p);
     for (const e of this.enemies) {
-      // 둔화: 일부 프레임만 행동 (각인 효과)
-      if (e.slowTimer > 0) {
-        e.slowTimer--;
+      // 둔화·빙결: 일부 프레임만 행동 (각인·속성 효과). 죽은 적은 그대로 진행
+      if (e.slowTimer > 0 && !e.dead) {
+        if (--e.slowTimer === 0) e.frozen = false;
         e.slowAcc = (e.slowAcc || 0) + e.slowMult;
         if (e.slowAcc < 1) continue;
         e.slowAcc -= 1;
@@ -677,6 +687,7 @@ const Game = {
     for (const pr of this.projectiles) pr.update(this);
     this.projectiles = this.projectiles.filter((pr) => !pr.dead);
     Skills.update(this);
+    Synergy.update(this);
     Loot.updateDrops(this);
 
     // 히트 수

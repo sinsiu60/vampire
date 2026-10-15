@@ -164,10 +164,17 @@ const Run = {
         ],
       });
     } else if (st.kind === 'altar') {
+      if (st.used) { Effects.popText(p.x, p.y - 70, '제단의 힘이 다했다', '#aaa', 13); return; }
+      // 저주 각인 한 장 (제단마다 한 번 굴림)
+      if (st.curse === undefined) st.curse = Engrave.offer(game, 1, 0, 0, 'curse')[0] || null;
+      const owned = st.curse && Engrave.all(p).some((a) => a.inst.id === st.curse.id);
+      const cur = st.curse && !owned
+        ? Engrave.cardOption(game, st.curse, (g, r) => { if (r !== 'cancel') st.used = true; })
+        : { label: '저주 각인', icon: 'curse', color: CONFIG.engrave.curseColor, desc: '강력하지만 대가가 있는 각인', disabled: true, note: '남은 저주가 없음' };
       Choice.open(game, {
-        title: '저주 제단', sub: '힘에는 대가가 따른다', color: RD.curse.color,
+        title: '저주 제단', sub: '힘에는 대가가 따른다 — 하나만 고를 수 있다', color: RD.curse.color,
         options: [
-          { label: '저주 각인', icon: 'curse', color: '#b45cff', desc: '강력하지만 대가가 있는 각인', disabled: true, note: '3단계에서 열림' },
+          cur,
           { label: '공용 변형', icon: 'elite', color: '#b45cff', desc: '플레이어 자체를 바꾸는 변형', disabled: true, note: '8단계에서 열림' },
         ],
       });

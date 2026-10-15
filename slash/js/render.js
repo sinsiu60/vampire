@@ -591,6 +591,11 @@ const Render = {
       // 체간 붕괴 / 보스 그로기: 붉게 맥동
       glow = '#ff2a1a';
       blur = 8 + Math.sin((Game.frame || 0) * 0.3) * 5;
+    } else if (e.frozen && e.slowTimer > 0) {
+      // 빙결 (서리 6세트)
+      glow = '#e0f8ff';
+      blur = 16;
+      col = '#9fc8e0';
     } else if (e.isBoss) {
       // 보스 2페이즈: 분노의 기운
       if (e.phase === 2) { glow = e.cfg.aura; blur = 10 + Math.sin((Game.frame || 0) * 0.2) * 4; }
@@ -602,6 +607,10 @@ const Render = {
       // 둔화: 서리빛
       glow = '#8fd8ff';
       blur = 8;
+    } else if (e.burnTimer > 0) {
+      // 화상
+      glow = '#ff7a3a';
+      blur = 6 + Math.sin((Game.frame || 0) * 0.5) * 3;
     } else if (e.elite) {
       // 정예: 층 색 기운
       glow = e.eliteColor;

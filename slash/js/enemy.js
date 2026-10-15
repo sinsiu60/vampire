@@ -221,7 +221,7 @@ class Enemy {
       case 'broken':
         // 체간 붕괴: 무릎 꿇고 비틀거림. 시간이 지나면 체간 일부를 남기고 회복
         this.vx *= 0.8;
-        if (this.stateFrame >= PO.breakFrames) {
+        if (this.stateFrame >= PO.breakFrames + (this.breakBonus || 0)) {
           this.posture = this.maxPosture * PO.resetRatio;
           this.cooldown = Math.max(this.cooldown, 30);
           this.setState('chase');
@@ -508,6 +508,7 @@ class Enemy {
     this.hitPlayer = true;
     this.vx = 0;
     if (this.cfg.superArmor) this.armorBroken = Math.max(this.armorBroken, CONFIG.posture.breakFrames + 30);
+    this.breakBonus = game ? Synergy.breakBonus(game.player) : 0;   // 서리 4세트: 붕괴 연장
     this.setState('broken');
     Effects.popText(this.x, this.y - this.h - 30, '체간 붕괴', '#ff5040', 20);
     Effects.sparks(this.x, this.y - this.h * 0.7, 1, 12, '#ff6040');

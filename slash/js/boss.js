@@ -450,8 +450,8 @@ class Boss extends Enemy {
   breakPosture(game) {
     const B = CONFIG.boss;
     this.posture = this.maxPosture;
-    this.groggyTimer = B.groggyFrames;
-    this.armorBroken = B.groggyFrames + 20;   // 그로기 동안은 런처로 띄울 수 있음
+    this.groggyTimer = B.groggyFrames + (game ? Synergy.breakBonus(game.player) : 0);   // 서리 4세트: 그로기 연장
+    this.armorBroken = this.groggyTimer + 20;   // 그로기 동안은 런처로 띄울 수 있음
     this.pat = null;
     this.marker = null;
     this.gravOverride = null;
