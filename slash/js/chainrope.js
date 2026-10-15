@@ -1,13 +1,16 @@
 'use strict';
-// 사슬검: Verlet 로프 물리 (수치: data/transforms.js 사슬검 chain)
-//  · 마디 nodes 개, 마디 사이 최대 길이 고정 (거리 제약을 iterations 번 반복). 첫 마디는 손에 고정, 마지막 마디는 칼날 (질량 bladeMass 배)
-//  · 평소엔 짧게(idleLength) 손 아래로 늘어져 있다가, 기술이 시작되면 휘두르면서 사슬을 풀어 length 까지 늘림 (payout)
-//  · 기술은 손의 궤적(move.hand)만 정한다. 사슬·칼날은 관성으로 늦게 따라오며 휘감긴다 (손이 급정거하면 끝이 가속·오버슈트)
-//  · 판정: 칼날 머리 + 칼날 쪽 사슬 마디 2개. 칼날 속도가 speedMin 이상일 때만, 속도에 비례한 데미지
-//  · 강공(throw): 사슬을 늘려 칼날을 던짐 → 끝에서 팽팽해지며 반동 / 적·벽에 박히면 우클릭 유지로 끌어오기·날아가기
+// 사슬검 (수치: data/transforms.js 사슬검 chain / 기술마다 hand · blade)
+//  · 공격 중: 칼날 위치는 키프레임 애니메이션(move.blade)으로 정확히 정함 — 물리 영향 없음.
+//    판정은 정해진 활성 프레임(startup ~ startup+active)에 칼날 위치 기준 (지난 프레임 → 지금 프레임 선분으로 쓸고 지나간 것까지)
+//  · 사슬은 "보이게"만: 손~칼날을 2차 베지어로 그리고, 제어점을 칼날 이동 반대쪽으로 속도만큼 밀어 휘게 함 (멈추면 직선)
+//  · 대기·이동 중에만 Verlet 로프 물리 (덜렁거림). 공격 시작 시 물리 → 애니메이션 blendFrames 동안 보간, 끝나면 다시 물리로
+//  · 강공(throw): 칼날을 직선으로 던짐 → 적·벽에 박히면 우클릭 유지로 끌어오기 / 그쪽으로 날아가기
+//
+// 칼날 키: { f: 프레임, a: 각도(0 앞, 90 아래, -90 위), r: 피벗에서 거리, sq: 세로 납작함 } 또는 { f, x, y } (피벗 기준 직교 좌표)
+//   e: 이 키까지 가는 구간의 이징 — slow(천천히 출발·정지) / whip(시간 20% 에 경로 80% 급가속 → 감속, o 만큼 지나쳤다 돌아옴) / lin / hold(멈춤)
+//   fx: 이 키에 도착할 때 'impact'(바닥 충격파) / 'tang'(사슬 팽팽 반동)
 
 const ChainRope = {
-  // 지금 든 무기가 사슬검이면 그 수치
   cfg(p) {
     const d = Transform.of(p);
     return d && d.mech === 'chain' ? d.chain : null;
@@ -16,21 +19,20 @@ const ChainRope = {
   make(C, x, y) {
     const n = C.nodes, seg = C.idleLength / (n - 1), nodes = [];
     for (let i = 0; i < n; i++) nodes.push({ x, y: y + i * seg, px: x, py: y + i * seg });
-    return { nodes, len: C.idleLength, speed: 0, hist: [], embed: null, throwing: false, snapped: false, throwId: -1,
-      crackT: -99, jingleT: -99, hitGround: false, impactId: -1, hand: { x, y }, heldT: 0 };
+    return { nodes, len: C.idleLength, mode: 'phys', blade: { x, y: y + C.idleLength }, prev: { x, y: y + C.idleLength }, vel: { x: 0, y: 0 },
+      speed: 0, hist: [], embed: null, swing: -1, blendFrom: null, crackSwing: -1, fxDone: {}, jingleT: -99, taut: false };
   },
 
-  // ---------- 손 궤적 ----------
-  // move.hand: { keys: [[프레임, 앞쪽 x, 발 기준 y], ...] } 또는 { circle: { start, end, cx, cy, r, turns, a0 } }
-  // 좌표는 플레이어 발밑 기준, x 는 바라보는 쪽이 +
-  localHand(p, C) {
-    const m = p.move, f = p.stateFrame;
+  // ---------- 손 궤적 (손이 먼저 움직임) ----------
+  // move.hand: { keys: [[프레임, 앞 x, 발 기준 y], ...] } 또는 { circle: { start, end, cx, cy, r, turns, a0, squash, after } }
+  localHand(p, C, f) {
+    const m = p.move;
     const rest = C.handRest;
     if (p.state !== 'attack' || !m) return rest;
+    if (f === undefined) f = p.stateFrame;
     const H = m.hand;
     if (!H) {
-      // 손 궤적이 없는 기술(런처·반격 등): 칼 각도를 따라 손을 휘두름
-      const pose = p.bladePose();
+      const pose = p.bladePose(f);
       const a = pose.ang * DEG;
       return [2 + Math.cos(a) * C.handR, pose.py + Math.sin(a) * C.handR * (pose.squash || 1)];
     }
@@ -39,7 +41,7 @@ const ChainRope = {
       if (f <= K[0][0]) return [K[0][1], K[0][2]];
       for (let i = 1; i < K.length; i++) {
         if (f <= K[i][0]) {
-          const a = K[i - 1], b = K[i], t = (f - a[0]) / Math.max(1, b[0] - a[0]);
+          const a = K[i - 1], b = K[i], t = ease.inOut((f - a[0]) / Math.max(1, b[0] - a[0]));
           return [a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
         }
       }
@@ -61,28 +63,74 @@ const ChainRope = {
     return [e[0] + (rest[0] - e[0]) * t, e[1] + (rest[1] - e[1]) * t];
   },
 
-  handPoint(p, C) {
-    const l = this.localHand(p, C);
+  handPoint(p, C, f) {
+    const l = this.localHand(p, C, f);
     return { x: p.x + p.facing * l[0], y: p.y + l[1] };
   },
 
-  // ---------- 물리 한 스텝 ----------
-  // ground(x, y): 그 점이 바닥·벽 속이면 밀어낼 위쪽 y, 아니면 null
-  simulate(rope, hand, C, ground, drag) {
-    const N = rope.nodes, n = N.length, seg = rope.len / (n - 1);
-    const b = N[n - 1], bx = b.x, by = b.y;
-    // 손 속도 → 급정거하면 그 운동량을 칼날 쪽으로 전달 (끝에서 가속·오버슈트)
-    const hvx = hand.x - N[0].x, hvy = hand.y - N[0].y, hs = Math.hypot(hvx, hvy);
-    const pv = rope.hv || { x: 0, y: 0, s: 0 };
-    if (pv.s >= C.whipMinHand && hs < pv.s * 0.45 && !rope.embed) {
-      const k = (pv.s - hs) * C.whipGain / pv.s;
-      for (let i = Math.floor(n * 0.5); i < n; i++) {
-        const w = (i - n * 0.5) / (n * 0.5);          // 칼날 쪽일수록 많이
-        N[i].px -= pv.x * k * w;
-        N[i].py -= pv.y * k * w;
+  // ---------- 칼날 키프레임 ----------
+  // 이징: whip = 시간 20% 에 경로 80% (급가속) → 감속하며 o 만큼 지나쳤다 돌아옴
+  ease(e, t, o) {
+    if (e === 'hold') return 0;
+    if (e === 'lin') return t;
+    if (e === 'whip') {
+      if (t < 0.2) { const u = t / 0.2; return 0.8 * u * u; }
+      const u = (t - 0.2) / 0.8;
+      return 0.8 + 0.2 * (1 - Math.pow(1 - u, 3)) + (o || 0) * Math.sin(Math.PI * u) * (1 - u * 0.3);
+    }
+    return ease.inOut(t);       // slow
+  },
+
+  keyPolar(k) {
+    if (k.x !== undefined) return { a: Math.atan2(k.y, k.x) / DEG, r: Math.hypot(k.x, k.y), sq: 1 };
+    return { a: k.a, r: k.r, sq: k.sq !== undefined ? k.sq : 1 };
+  },
+  keyXY(k) {
+    if (k.x !== undefined) return { x: k.x, y: k.y };
+    const sq = k.sq !== undefined ? k.sq : 1;
+    return { x: Math.cos(k.a * DEG) * k.r, y: Math.sin(k.a * DEG) * k.r * sq };
+  },
+
+  // 기술의 f 프레임 칼날 위치 (발 기준, 앞쪽 +)
+  localBlade(p, C, m, f) {
+    const B = m.blade;
+    if (!B) {
+      // 키가 없는 기술(런처·반격 등): 칼 각도를 따라 일정 거리
+      const pose = p.bladePose(f), end = m.startup + m.active;
+      const r = f < m.startup ? 40 + (C.genericReach - 40) * (f / m.startup) * 0.4
+        : f < end ? C.genericReach : C.genericReach + (40 - C.genericReach) * Math.min(1, (f - end) / Math.max(1, m.recovery));
+      const a = pose.ang * DEG;
+      return [2 + Math.cos(a) * r, pose.py + Math.sin(a) * r * (pose.squash || 1)];
+    }
+    const K = B.keys, pv = B.pivot || C.pivot;
+    let i = 1;
+    while (i < K.length && f > K[i].f) i++;
+    let q;
+    if (f <= K[0].f) q = this.keyXY(K[0]);
+    else if (i >= K.length) q = this.keyXY(K[K.length - 1]);
+    else {
+      const a = K[i - 1], b = K[i];
+      const t = this.ease(b.e, Math.min(1, (f - a.f) / Math.max(1, b.f - a.f)), b.o);
+      if (b.x !== undefined) {
+        const A = this.keyXY(a), Bq = this.keyXY(b);
+        q = { x: A.x + (Bq.x - A.x) * t, y: A.y + (Bq.y - A.y) * t };
+      } else {
+        const A = this.keyPolar(a), Bp = this.keyPolar(b);
+        const ang = (A.a + (Bp.a - A.a) * t) * DEG, r = A.r + (Bp.r - A.r) * t, sq = A.sq + (Bp.sq - A.sq) * t;
+        q = { x: Math.cos(ang) * r, y: Math.sin(ang) * r * sq };
       }
     }
-    rope.hv = { x: hvx, y: hvy, s: hs };
+    return [pv[0] + q.x, pv[1] + q.y];
+  },
+
+  bladePoint(p, C, m, f) {
+    const l = this.localBlade(p, C, m, f);
+    return { x: p.x + p.facing * l[0], y: p.y + l[1] };
+  },
+
+  // ---------- 대기 물리 ----------
+  simulate(rope, hand, C, ground, drag) {
+    const N = rope.nodes, n = N.length, seg = rope.len / (n - 1);
     N[0].px = N[0].x; N[0].py = N[0].y;
     N[0].x = hand.x; N[0].y = hand.y;
     for (let i = 1; i < n; i++) {
@@ -91,57 +139,33 @@ const ChainRope = {
       q.px = q.x; q.py = q.y;
       q.x += vx; q.y += vy + C.gravity;
     }
-    const pin = rope.embed ? rope.embed.at : null;
-    let hit = false;
     const touched = rope._touched || (rope._touched = new Array(n).fill(false));
     touched.fill(false);
     for (let k = 0; k < C.iterations; k++) {
-      if (pin) { b.x = pin.x; b.y = pin.y; }
       for (let i = 0; i < n - 1; i++) {
         const a = N[i], c = N[i + 1];
         const dx = c.x - a.x, dy = c.y - a.y, d = Math.hypot(dx, dy);
-        if (d <= seg || d < 1e-6) continue;            // 사슬: 늘어나지 않고 접히기만 함
-        const wa = i === 0 ? 0 : 1, wc = i + 1 === n - 1 ? (pin ? 0 : 1 / C.bladeMass) : 1;
-        const sum = wa + wc;
-        if (sum <= 0) continue;
-        const diff = (d - seg) / d;
+        if (d <= seg || d < 1e-6) continue;          // 사슬: 늘어나지 않고 접히기만 함
+        const wa = i === 0 ? 0 : 1, wc = i + 1 === n - 1 ? 1 / C.bladeMass : 1;
+        const sum = wa + wc, diff = (d - seg) / d;
         a.x += dx * diff * (wa / sum); a.y += dy * diff * (wa / sum);
         c.x -= dx * diff * (wc / sum); c.y -= dy * diff * (wc / sum);
       }
       if (ground) {
         for (let i = 1; i < n; i++) {
           const q = N[i], g = ground(q.x, q.y);
-          if (g !== null) {
-            q.y = g;
-            touched[i] = true;
-            if (i === n - 1) hit = true;
-          }
+          if (g !== null) { q.y = g; touched[i] = true; }
         }
       }
     }
-    if (pin) { b.x = pin.x; b.y = pin.y; }
-    // 바닥 마찰 (프레임당 한 번): 닿은 마디의 가로 속도를 줄이고 세로로 튀지 않게
     for (let i = 1; i < n; i++) {
       if (!touched[i]) continue;
       const q = N[i];
       q.px = q.x - (q.x - q.px) * C.groundFriction;
       if (q.py < q.y) q.py = q.y;
     }
-    rope.speed = Math.hypot(b.x - bx, b.y - by);
-    rope.hitGround = hit;
-    // 칼날 잔상용 기록
-    const dir = this.bladeDir(rope);
-    rope.hist.push({ tip: { x: b.x + dir.x * C.bladeTip, y: b.y + dir.y * C.bladeTip }, base: { x: b.x - dir.x * C.bladeBack, y: b.y - dir.y * C.bladeBack }, v: rope.speed });
-    if (rope.hist.length > 7) rope.hist.shift();
   },
 
-  bladeDir(rope) {
-    const N = rope.nodes, a = N[N.length - 2], b = N[N.length - 1];
-    const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
-    return { x: dx / d, y: dy / d };
-  },
-
-  // 레벨 지형 충돌
   groundFn(game) {
     const L = game.level;
     return (x, y) => {
@@ -152,164 +176,215 @@ const ChainRope = {
     };
   },
 
-  // ---------- 매 프레임 (Transform.update 에서) ----------
-  update(game, p) {
-    const C = this.cfg(p);
+  // 애니메이션·박힘 → 물리로: 지금 사슬 모양(직선)에 칼날 속도를 실어 이어받음
+  toPhysics(rope, hand, C) {
+    const N = rope.nodes, n = N.length, b = rope.blade, v = rope.vel;
+    const d = Math.hypot(b.x - hand.x, b.y - hand.y);
+    rope.len = Math.max(C.idleLength, Math.min(C.length, d));
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      N[i].x = hand.x + (b.x - hand.x) * t;
+      N[i].y = hand.y + (b.y - hand.y) * t;
+      N[i].px = N[i].x - v.x * t * 0.6;
+      N[i].py = N[i].y - v.y * t * 0.6;
+    }
+    rope.mode = 'phys';
+  },
+
+  // ---------- 매 프레임 ----------
+  // game 이 없으면 카드 미리보기 (판정·효과 없이 모양만, 바닥 y = 0)
+  update(game, p, C) {
+    C = C || this.cfg(p);
     if (!C) { p.rope = null; p.chainHand = null; return; }
     const hand = this.handPoint(p, C);
     p.chainHand = hand;
     if (!p.rope) p.rope = this.make(C, hand.x, hand.y);
     const rope = p.rope, m = p.state === 'attack' ? p.move : null;
-    // 회전 기술: 손목으로 계속 돌려줌 (칼날 쪽 마디에 회전 방향 힘, 목표 속도까지)
-    const cc = m && m.hand && m.hand.circle;
-    if (cc && cc.drive && p.stateFrame >= cc.start && p.stateFrame <= cc.end && !rope.embed && !rope.throwing) this.drive(p, rope, hand, cc);
-    // 던지기: 사슬을 늘려 칼날을 앞으로
-    if (m && m.throw && p.stateFrame === m.throw.at && rope.throwId !== p.swingId) this.startThrow(p, rope, m.throw);
-    if (!m || !m.throw) rope.throwing = false;
-    // 박힘: 우클릭 유지로 당기기 (다른 공격을 시작하면 풀림)
-    if (rope.embed && m && rope.embed.type !== 'bind' && p.swingId !== rope.throwId) rope.embed = null;
-    if (rope.embed) this.updateEmbed(game, p, rope, C);
-    this.lengthStep(rope, m, p.stateFrame, C);
-    // 공기저항: 평소엔 강하게 (달리면 뒤로 끌리고 멈추면 흔들리다 정지), 공격·던지기 중엔 약하게
-    this.simulate(rope, hand, C, this.groundFn(game), m || rope.throwing ? C.drag : C.idleDrag);
-    const N = rope.nodes, b = N[N.length - 1];
-    // 던진 칼날: 팽팽해지면 반동, 적·벽에 박힘
-    if (rope.throwing && !rope.embed) {
-      const d = Math.hypot(b.x - hand.x, b.y - hand.y);
-      if (!rope.snapped && d >= rope.len * 0.96) {
-        rope.snapped = true;
-        b.px = b.x + (b.x - b.px) * 0.35;        // 반동: 바깥으로 가던 힘이 튕겨 돌아옴
-        Effects.ring(b.x, b.y, '#cfe', 34);
-        Effects.sparks(b.x, b.y, -p.facing, 6, '#dff');
+    rope._C = C;
+    const prev = { x: rope.blade.x, y: rope.blade.y };
+    // 다른 공격을 시작하면 박힌 사슬은 풀림
+    if (rope.embed && m && rope.embed.type !== 'bind' && p.swingId !== rope.embed.swing) rope.embed = null;
+
+    if (m) {
+      // 공격: 키프레임 애니메이션 (시작할 때 지금 칼날 위치에서 blendFrames 동안 보간)
+      if (rope.swing !== p.swingId) {
+        rope.swing = p.swingId;
+        rope.blendFrom = { x: rope.blade.x, y: rope.blade.y };
+        rope.fxDone = {};
+      }
+      const f = p.stateFrame;
+      let q = this.bladePoint(p, C, m, f);
+      if (rope.blendFrom && f < C.blendFrames) {
+        const t = (f + 1) / (C.blendFrames + 1);
+        q = { x: rope.blendFrom.x + (q.x - rope.blendFrom.x) * t, y: rope.blendFrom.y + (q.y - rope.blendFrom.y) * t };
+      }
+      // 바닥 아래로는 안 들어감 (오버슈트가 땅을 파고들지 않게)
+      const g = game ? this.groundFn(game)(q.x, q.y) : (q.y > 0 ? 0 : null);
+      if (g !== null) q.y = g;
+      rope.blade = q;
+      rope.mode = 'anim';
+      rope.taut = !!m.taut || !!(m.throw && f >= m.startup && f <= m.startup + m.active + 2);
+    } else if (rope.embed) {
+      rope.mode = 'embed';
+      rope.taut = false;
+      if (game) this.updateEmbed(game, p, rope, C);
+      if (rope.embed) rope.blade = { x: rope.embed.at.x, y: rope.embed.at.y };
+    } else {
+      rope.taut = false;
+      if (rope.mode !== 'phys') this.toPhysics(rope, hand, C);
+      if (rope.len > C.idleLength) rope.len = Math.max(C.idleLength, rope.len - C.retract);
+      this.simulate(rope, hand, C, game ? this.groundFn(game) : (x, y) => (y > 0 ? 0 : null), C.idleDrag);
+      const b = rope.nodes[rope.nodes.length - 1];
+      rope.blade = { x: b.x, y: b.y };
+    }
+    rope.vel = { x: rope.blade.x - prev.x, y: rope.blade.y - prev.y };
+    rope.prev = prev;
+    rope.speed = Math.hypot(rope.vel.x, rope.vel.y);
+    // 칼날 잔상 기록 (그릴 땐 급가속 구간만)
+    const dir = this.bladeDir(rope, hand);
+    rope.hist.push({ tip: { x: rope.blade.x + dir.x * C.bladeTip, y: rope.blade.y + dir.y * C.bladeTip },
+      base: { x: rope.blade.x - dir.x * C.bladeBack, y: rope.blade.y - dir.y * C.bladeBack },
+      v: m && p.stateFrame >= m.startup && p.stateFrame <= m.startup + m.active + 2 ? rope.speed : 0 });
+    if (rope.hist.length > 6) rope.hist.shift();
+    if (!game) return;
+    if (m) this.keyFx(game, p, rope, m, p.stateFrame, C);
+    // 짤랑: 칼날 속도에 비례 (물리 중엔 마디 평균 속도)
+    let v = rope.speed;
+    if (rope.mode === 'phys') {
+      const N = rope.nodes;
+      v = 0;
+      for (let i = 1; i < N.length; i++) v += Math.hypot(N[i].x - N[i].px, N[i].y - N[i].py);
+      v /= N.length - 1;
+    }
+    const fr = game.frame || 0;
+    if (v > C.jingleSpeed && fr - rope.jingleT > Math.max(4, 14 - v * 0.5)) {
+      rope.jingleT = fr;
+      Sound.play('jingle', Math.min(1, v / C.jingleLoud));
+    }
+  },
+
+  // 칼날 방향: 사슬 끝 접선 (애니메이션 중엔 베지어 제어점 → 칼날)
+  bladeDir(rope, hand) {
+    let dx, dy;
+    if (rope.mode === 'phys') {
+      const N = rope.nodes, a = N[N.length - 2], b = N[N.length - 1];
+      dx = b.x - a.x; dy = b.y - a.y;
+    } else {
+      const c = this.control(rope, hand);
+      dx = rope.blade.x - c.x; dy = rope.blade.y - c.y;
+    }
+    const d = Math.hypot(dx, dy) || 1;
+    return { x: dx / d, y: dy / d };
+  },
+
+  // 베지어 제어점: 손~칼날 가운데에서 칼날 이동 반대쪽으로 (속도에 비례). 멈추면 직선, 팽팽(taut)이면 직선
+  control(rope, hand) {
+    const b = rope.blade, mx = (hand.x + b.x) / 2, my = (hand.y + b.y) / 2;
+    const C = rope._C;
+    if (!C || rope.taut) return { x: mx, y: my };
+    if (rope.mode === 'embed') {
+      const sag = rope.embed && rope.embed.pulling ? 0 : C.embedSag;     // 당기면 직선, 아니면 살짝 처짐
+      return { x: mx, y: my + sag };
+    }
+    const s = rope.speed;
+    if (s < 0.01) return { x: mx, y: my };
+    const k = Math.min(C.curveMax, s * C.curveK);
+    return { x: mx - rope.vel.x / s * k, y: my - rope.vel.y / s * k };
+  },
+
+  // 키 도착 효과 / 급가속 크랙
+  keyFx(game, p, rope, m, f, C) {
+    const b = rope.blade, K = m.blade && m.blade.keys;
+    if (K) for (const k of K) {
+      if (!k.fx || f !== k.f || rope.fxDone[k.f]) continue;
+      rope.fxDone[k.f] = true;
+      if (k.fx === 'impact' && m.impact) this.impact(game, p, b.x, Math.max(b.y, p.y - 4), m.impact);
+      if (k.fx === 'tang') {
+        Effects.ring(b.x, b.y, '#cfe', 36);
+        Effects.sparks(b.x, b.y, -p.facing, 7, '#dff');
         Effects.addShake(3);
         Sound.play('tang');
       }
-      this.checkEmbed(game, p, rope, m, b);
     }
-    // 채찍 크랙
-    if (rope.speed >= C.crackSpeed && (game.frame || 0) - rope.crackT > 14) {
-      rope.crackT = game.frame || 0;
+    // 크랙 '착': 타격 구간(활성 프레임)에서 급가속할 때만
+    if (f >= m.startup && f <= m.startup + m.active && rope.speed >= C.crackSpeed && rope.crackSwing !== p.swingId) {
+      rope.crackSwing = p.swingId;
       Effects.flashRing(b.x, b.y);
-      Effects.sparks(b.x, b.y, Math.sign(b.x - b.px) || 1, 5, '#fff');
+      Effects.sparks(b.x, b.y, p.facing, 5, '#fff');
       Sound.play('crack');
     }
-    // 내려치기 착지 충격파
-    if (m && m.impact && rope.hitGround && rope.impactId !== p.swingId && p.stateFrame >= m.startup && Math.hypot(b.x - b.px, b.y - b.py) + rope.speed >= C.speedMin) {
-      rope.impactId = p.swingId;
-      this.impact(game, p, b.x, b.y, m.impact);
-    }
-    // 짤랑 (빠를수록 크고 자주)
-    let avg = 0;
-    for (let i = 1; i < N.length; i++) avg += Math.hypot(N[i].x - N[i].px, N[i].y - N[i].py);
-    avg /= N.length - 1;
-    const gap = Math.max(4, 14 - avg);
-    if (avg > C.jingleSpeed && (game.frame || 0) - rope.jingleT > gap) {
-      rope.jingleT = game.frame || 0;
-      Sound.play('jingle', Math.min(1, avg / 18));
-    }
   },
 
-  // 사슬 길이: 공격 중엔 풀어서 늘림 (payout), 평소엔 짧게 감음. 던진 것·박힌 것은 따로
-  lengthStep(rope, m, f, C) {
-    if (rope.throwing || rope.embed) return;
-    // payout: 그 프레임에 사슬을 풀어줌 (speed 가 크면 한 번에 — 휘둘러 얻은 운동량으로 칼날이 날아감)
-    const P = m && (m.payout || { at: m.startup, speed: C.payoutSpeed });
-    if (m && f >= P.at) rope.len = Math.min(m.len || C.length, rope.len + P.speed);
-    else if (!m) rope.len = rope.len > C.idleLength ? Math.max(C.idleLength, rope.len - C.retract) : C.idleLength;
-  },
-
-  // 카드 미리보기용: 가짜 플레이어 한 스텝 (바닥 y = 0)
-  previewStep(fake, rope, C) {
-    const m = fake.state === 'attack' ? fake.move : null;
-    const hand = this.handPoint(fake, C);
-    fake.chainHand = hand;
-    if (m && m.throw && fake.stateFrame === m.throw.at && rope.throwId !== fake.swingId) this.startThrow(fake, rope, m.throw, true);
-    if (!m || !m.throw) rope.throwing = false;
-    const cc = m && m.hand && m.hand.circle;
-    if (cc && cc.drive && fake.stateFrame >= cc.start && fake.stateFrame <= cc.end) this.drive(fake, rope, hand, cc);
-    this.lengthStep(rope, m, fake.stateFrame, C);
-    this.simulate(rope, hand, C, (x, y) => (y > 0 ? 0 : null), m || rope.throwing ? C.drag : C.idleDrag);
-    if (rope.throwing && !rope.snapped && Math.hypot(rope.nodes[rope.nodes.length - 1].x - hand.x, rope.nodes[rope.nodes.length - 1].y - hand.y) >= rope.len * 0.96) rope.snapped = true;
-  },
-
-  drive(p, rope, hand, cc) {
-    const N = rope.nodes, n = N.length, b = N[n - 1];
-    if (Math.hypot(b.x - b.px, b.y - b.py) >= cc.maxSpeed) return;
-    const sg = p.facing * Math.sign(cc.turns || 1);
-    for (let i = Math.floor(n / 2); i < n; i++) {
-      const q = N[i], rx = q.x - hand.x, ry = q.y - hand.y, d = Math.hypot(rx, ry) || 1;
-      const w = cc.drive * (i - n / 2) / (n / 2);
-      q.px -= sg * (-ry / d) * w;
-      q.py -= sg * (rx / d) * w;
-    }
-  },
-
-  startThrow(p, rope, T, silent) {
-    rope.throwId = p.swingId;
-    rope.throwing = true;
-    rope.snapped = false;
-    rope.len = T.len;
-    const N = rope.nodes, n = N.length;
-    const b = N[n - 1];
-    // 지금 칼날 속도(원심력)를 그대로 살려서 앞으로 일직선
-    const cur = Math.hypot(b.x - b.px, b.y - b.py);
-    const sp = Math.max(T.speed, T.keepVel ? cur * 1.1 : 0);
-    for (let i = 1; i < n; i++) {
-      const k = i / (n - 1);
-      N[i].px = N[i].x - p.facing * sp * k;
-      N[i].py = N[i].y - (T.vy || 0) * k;
-    }
-    if (!silent) Sound.play('chain');
-  },
-
-  // 던진 칼날이 적·벽에 닿으면 박힘
-  checkEmbed(game, p, rope, m, b) {
-    const C = this.cfg(p);
+  // ---------- 판정 (공격 중, 활성 프레임에만) ----------
+  attack(game, p) {
+    const C = this.cfg(p), rope = p.rope, m = p.move;
+    if (!C || !rope || !m || m.noHit || rope.mode !== 'anim') return;
+    const f = p.stateFrame;
+    if (f < m.startup || f > m.startup + m.active) return;
+    const a = rope.prev, b = rope.blade, R = C.hitRadius;
+    const fr = game.frame || 0;
+    if (!p.rehit || p.rehitSwing !== p.swingId) { p.rehit = new Map(); p.rehitSwing = p.swingId; }
     for (const e of game.enemies) {
-      if (e.dead || e.executed || p.hitList.has(e)) continue;
-      if (b.x < e.x - e.w / 2 - 6 || b.x > e.x + e.w / 2 + 6 || b.y < e.y - e.h - 6 || b.y > e.y + 4) continue;
+      if (e.dead || e.executed) continue;
+      if (m.rehit ? fr - (p.rehit.get(e) === undefined ? -999 : p.rehit.get(e)) < m.rehit : p.hitList.has(e)) continue;
+      const hit = this.segBox(a, b, e, R);
+      if (!hit) continue;
       p.hitList.add(e);
-      p.hitFx = { x: b.x, y: b.y };
+      p.rehit.set(e, fr);
+      p.hitFx = hit;
       Combat.hitEnemy(game, p, e, m);
-      if (e.dead) continue;
-      rope.embed = m.special === 'bind'
-        ? { type: 'bind', e, t: 0, at: { x: e.x, y: e.y - e.h * 0.5 } }
-        : { type: 'enemy', e, t: 0, at: { x: e.x, y: e.y - e.h * 0.5 } };
-      rope.throwing = false;
-      Sound.play('chain');
-      return;
+      // 던지기·포박: 맞은 적에 박힘
+      if (m.throw && !e.dead && !rope.embed) { this.embedAt(game, p, rope, { type: m.special === 'bind' ? 'bind' : 'enemy', e }); return; }
     }
-    // 벽 (지형 옆면·천장, 맵 양 끝)
-    const L = game.level;
-    if (b.x < 2 || b.x > L.width - 2) {
-      rope.embed = { type: 'wall', t: 0, at: { x: Math.max(2, Math.min(L.width - 2, b.x)), y: b.y } };
-      rope.throwing = false;
-      Effects.sparks(rope.embed.at.x, b.y, -p.facing, 8, '#dff');
-      Sound.play('clash');
-      return;
-    }
-    for (const r of L.active) {
-      if (r.oneWay) continue;
-      if (b.x > r.x && b.x < r.x + r.w && b.y > r.y && b.y < r.y + r.h) {
-        rope.embed = { type: 'wall', t: 0, at: { x: b.x, y: b.y } };
-        rope.throwing = false;
-        Effects.sparks(b.x, b.y, -p.facing, 8, '#dff');
-        Sound.play('clash');
-        return;
+    // 던지기: 벽·맵 끝에 박힘
+    if (m.throw && !rope.embed && m.special !== 'bind') {
+      const L = game.level, steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 6));
+      for (let i = 1; i <= steps; i++) {
+        const x = a.x + (b.x - a.x) * i / steps, y = a.y + (b.y - a.y) * i / steps;
+        let wall = x < 2 || x > L.width - 2;
+        if (!wall) for (const r of L.active) if (!r.oneWay && x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h) { wall = true; break; }
+        if (wall) {
+          const at = { x: Math.max(2, Math.min(L.width - 2, x)), y };
+          this.embedAt(game, p, rope, { type: 'wall', at });
+          Effects.sparks(at.x, y, -p.facing, 8, '#dff');
+          Sound.play('clash');
+          return;
+        }
       }
     }
   },
 
-  // 박힌 상태: 우클릭을 누르고 있으면 감아 당김 (가벼운 적은 끌려옴 / 무거운 적·보스·벽이면 내가 날아감)
+  // 선분(지난 칼날 → 지금 칼날)과 적 몸 상자 거리 ≤ R 이면 맞음 (빠르게 지나가도 놓치지 않게)
+  segBox(a, b, e, R) {
+    const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 6));
+    for (let i = 0; i <= steps; i++) {
+      const x = a.x + (b.x - a.x) * i / steps, y = a.y + (b.y - a.y) * i / steps;
+      const cx = Math.max(e.x - e.w / 2, Math.min(e.x + e.w / 2, x)), cy = Math.max(e.y - e.h, Math.min(e.y, y));
+      if ((x - cx) ** 2 + (y - cy) ** 2 <= R * R) return { x, y };
+    }
+    return null;
+  },
+
+  embedAt(game, p, rope, E) {
+    E.t = 0;
+    E.swing = p.swingId;
+    if (!E.at) E.at = { x: E.e.x, y: E.e.y - E.e.h * 0.5 };
+    rope.embed = E;
+    rope.blade = { x: E.at.x, y: E.at.y };
+    rope.len = Math.hypot(E.at.x - p.chainHand.x, E.at.y - p.chainHand.y);
+    Sound.play('chain');
+    p.endMove();    // 던지기 동작은 끝 — 이제 우클릭 유지로 당기기
+  },
+
+  // 박힌 상태: 우클릭을 누르고 있으면 사슬이 직선으로 팽팽해지며 감아 당김 (가벼운 적은 끌려옴 / 무거운 적·보스·벽이면 내가 날아감)
   updateEmbed(game, p, rope, C) {
     const E = rope.embed;
     E.t++;
     if (E.type === 'bind') {
-      // 포박: 묶인 적을 따라감 (휘두르기·던지기는 transform.js)
       const b = Transform.binds.find((x) => x.e === E.e);
       if (!b || b.thrown || E.e.dead) { rope.embed = null; return; }
       E.at.x = E.e.x; E.at.y = E.e.y - E.e.h * 0.5;
-      rope.len = Math.max(C.minLen, rope.len - C.retract);
+      E.pulling = true;
       return;
     }
     if (E.type === 'enemy') {
@@ -318,6 +393,7 @@ const ChainRope = {
     }
     const held = Input.isDown('heavy');
     if (held) E.held = true;
+    E.pulling = held;
     if ((E.held && !held) || (!E.held && E.t > C.embedFrames) || E.t > C.embedFrames * 3 || p.state === 'hurt' || p.dead) {
       rope.embed = null;
       return;
@@ -331,25 +407,22 @@ const ChainRope = {
     const ux = dx / d, uy = dy / d;
     const light = E.type === 'enemy' && !E.e.isBoss && (E.e.cfg.weight || 1) < 2;
     if (light) {
-      // 적을 끌어옴 (경직)
       const e = E.e;
       e.x -= ux * Math.min(excess, C.zipSpeed);
       e.vx = 0;
       if (e.state !== 'launched' && e.state !== 'broken' && e.state !== 'hurt') { e.hitstun = 12; e.setState('hurt'); }
       else if (e.state === 'hurt') e.hitstun = Math.max(e.hitstun || 0, 6);
     } else {
-      // 내가 그쪽으로
       p.vx = ux * C.zipSpeed;
       p.vy = uy * C.zipSpeed - 0.6;
       if (uy < -0.2) p.onGround = false;
     }
   },
 
-  // 내려치기 충격파
   impact(game, p, x, y, I) {
     Effects.shockwave(x, y, I.radius);
     Effects.dust(x, y, 8, 0);
-    Effects.addShake(4);
+    Effects.addShake(5);
     Sound.play('quake');
     for (const e of game.enemies) {
       if (e.dead || e.executed || Math.abs(e.x - x) > I.radius || Math.abs(e.y - y) > 40) continue;
@@ -360,88 +433,86 @@ const ChainRope = {
     }
   },
 
-  // ---------- 판정 (공격 중) ----------
-  // 칼날 머리 + 칼날 쪽 마디 2개. 속도 speedMin 미만이면 안 맞음, 이상이면 속도에 비례한 데미지
-  attack(game, p) {
-    const C = this.cfg(p), rope = p.rope, m = p.move;
-    if (!C || !rope || !m || m.noHit) return;
-    if (rope.throwing || rope.embed) return;          // 던진 칼날은 박힐 때 따로 처리
-    const v = rope.speed;
-    if (v < C.speedMin) return;
-    const N = rope.nodes, n = N.length;
-    const pts = [[N[n - 1], C.hitRadius], [N[n - 2], C.nodeRadius], [N[n - 3], C.nodeRadius]];
-    const f = game.frame || 0;
-    if (!p.rehit || p.rehitSwing !== p.swingId) { p.rehit = new Map(); p.rehitSwing = p.swingId; }
-    for (const e of game.enemies) {
-      if (e.dead || e.executed) continue;
-      if (m.rehit ? f - (p.rehit.get(e) || -999) < m.rehit : p.hitList.has(e)) continue;
-      let hitPt = null;
-      for (const [q, r] of pts) {
-        const cx = Math.max(e.x - e.w / 2, Math.min(e.x + e.w / 2, q.x)), cy = Math.max(e.y - e.h, Math.min(e.y, q.y));
-        if ((q.x - cx) ** 2 + (q.y - cy) ** 2 <= r * r) { hitPt = q; break; }
-      }
-      if (!hitPt) continue;
-      p.hitList.add(e);
-      p.rehit.set(e, f);
-      const k = Math.min(C.speedMaxMult, v / C.speedRef);
-      const mv = Object.assign({}, m, { damage: m.damage * k });
-      if (m.posture !== undefined) mv.posture = m.posture * k;
-      p.hitFx = { x: hitPt.x, y: hitPt.y };
-      Combat.hitEnemy(game, p, e, mv);
-    }
-  },
-
   // ---------- 그리기 ----------
+  // debug: 슬로모션 디버그 (키프레임 경로 점선, 활성 프레임엔 칼날 빨갛게)
   draw(ctx, p, col, debug) {
     const C = this.cfg(p), rope = p.rope;
     if (!C || !rope) return;
-    const N = rope.nodes, n = N.length, b = N[n - 1];
+    rope._C = C;
+    const hand = p.chainHand || rope.nodes[0];
     const pal = p.trailPal();
-    // 칼날 잔상 (속도에 비례)
+    const m = p.state === 'attack' ? p.move : null;
+    if (debug && m) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,230,120,0.8)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      const total = m.startup + m.active + (m.hold || 0) + m.recovery;
+      for (let f = 0; f <= total; f++) {
+        const q = this.bladePoint(p, C, m, f);
+        if (f === 0) ctx.moveTo(q.x, q.y); else ctx.lineTo(q.x, q.y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+    // 칼날 잔상: 급가속 구간에만
     const H = rope.hist;
     for (let i = 1; i < H.length; i++) {
       const a = H[i - 1], c = H[i];
-      const k = Math.min(1, c.v / C.speedRef) * (i / H.length);
-      if (k < 0.08) continue;
-      ctx.fillStyle = `rgba(${pal.outer},${0.38 * k})`;
+      if (c.v < C.blurSpeed) continue;
+      const k = Math.min(1, c.v / (C.blurSpeed * 3)) * (i / H.length);
+      ctx.fillStyle = `rgba(${pal.outer},${0.5 * k})`;
       ctx.beginPath();
       ctx.moveTo(a.base.x, a.base.y); ctx.lineTo(a.tip.x, a.tip.y); ctx.lineTo(c.tip.x, c.tip.y); ctx.lineTo(c.base.x, c.base.y);
       ctx.closePath();
       ctx.fill();
     }
-    // 사슬: 고리를 가로/세로 번갈아 (팽팽하면 직선, 느슨하면 곡선 — 마디를 따라 그대로)
+    // 사슬 경로: 물리 = 마디 / 애니메이션·박힘 = 2차 베지어
+    let pts;
+    if (rope.mode === 'phys') pts = rope.nodes.map((q) => ({ x: q.x, y: q.y }));
+    else {
+      const c = this.control(rope, hand), b = rope.blade;
+      pts = [];
+      for (let i = 0; i <= 24; i++) {
+        const t = i / 24, u = 1 - t;
+        pts.push({ x: u * u * hand.x + 2 * u * t * c.x + t * t * b.x, y: u * u * hand.y + 2 * u * t * c.y + t * t * b.y });
+      }
+    }
+    // 고리: 곡선 위에 일정 간격으로 타원 (가로/세로 번갈아)
     ctx.save();
     ctx.strokeStyle = col;
     ctx.lineWidth = 1.3;
     let carry = 0, li = 0;
-    for (let i = 0; i < n - 1; i++) {
-      const a = N[i], c = N[i + 1];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], c = pts[i + 1];
       const dx = c.x - a.x, dy = c.y - a.y, d = Math.hypot(dx, dy);
       if (d < 0.01) continue;
       const ang = Math.atan2(dy, dx);
-      for (let s = carry; s < d; s += C.linkGap) {
+      let s = carry;
+      for (; s < d; s += C.linkGap) {
         const t = s / d;
         ctx.beginPath();
         ctx.ellipse(a.x + dx * t, a.y + dy * t, 3.1, li % 2 ? 0.8 : 1.9, ang, 0, Math.PI * 2);
         ctx.stroke();
         li++;
-        carry = s + C.linkGap - d;
       }
-      if (carry < 0) carry = 0;
+      carry = s - d;
     }
     ctx.restore();
-    // 칼날 (데미지 들어가는 속도면 디버그에서 빨갛게)
-    const dir = this.bladeDir(rope);
+    // 칼날
+    const dir = this.bladeDir(rope, hand), b = rope.blade;
     const tip = { x: b.x + dir.x * C.bladeTip, y: b.y + dir.y * C.bladeTip };
     const base = { x: b.x - dir.x * C.bladeBack, y: b.y - dir.y * C.bladeBack };
-    const hot = debug && p.state === 'attack' && rope.speed >= C.speedMin;
+    const hot = debug && m && p.stateFrame >= m.startup && p.stateFrame <= m.startup + m.active;
     Anim.drawBlade(ctx, base, tip, 3, 1.2, hot ? '#ff3030' : col);
-    if (debug) {
+    if (debug && m) {
       ctx.save();
       ctx.font = 'bold 9px "Segoe UI", sans-serif';
       ctx.textAlign = 'center';
       ctx.fillStyle = hot ? '#ff6060' : '#fff';
-      ctx.fillText(rope.speed.toFixed(1), b.x, b.y - 12);
+      ctx.fillText(`${p.stateFrame}f`, b.x, b.y - 12);
       ctx.restore();
     }
   },

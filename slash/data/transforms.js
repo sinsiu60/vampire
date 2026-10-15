@@ -9,10 +9,11 @@
 //     skills: q / e 중 바꾸는 쪽만 통째로 교체
 //     blade / charge / swapIn / swapInAir / speedMult: 통째로 교체
 //   기술 필드는 config.js moves 와 같음 + special(특수 동작) / sheathe(끝나면 납도)
-//     hand: 사슬검 손 궤적 { keys: [[프레임, 앞 x, 발 기준 y], ...] } 또는 { circle: { start, end, cx, cy, r, turns, a0, squash, after, drive: 손목 회전 힘, maxSpeed } }
-//     throw: 사슬검 던지기 { at: 프레임, len: 늘어나는 사슬 길이, speed, vy, keepVel: 지금 칼날 속도 유지 }
-//     payout: 사슬 풀기 { at: 이 프레임부터, speed: 프레임당 늘어나는 길이 (999 = 한 번에) } (없으면 startup 에 한 번에) / len: 이 기술의 최대 사슬 길이
-//     impact: 칼날이 바닥을 치면 충격파 / rehit: 같은 적을 다시 맞히는 간격 / spinRelease: 회전 중 우클릭 → HEAVY_SPIN
+//     hand: 사슬검 손 궤적 { keys: [[프레임, 앞 x, 발 기준 y], ...] } 또는 { circle: { start, end, cx, cy, r, turns, a0, squash, after } } — 손이 먼저 움직임
+//     blade: 사슬검 칼날 키프레임 { pivot: [x, y], keys: [{ f, a, r, sq } 또는 { f, x, y }, e: slow|whip|lin|hold, o: 오버슈트, fx: impact|tang ] }
+//            (칼날은 손보다 3~4프레임 늦게 출발. whip = 시간 20% 에 경로 80% 급가속 → 감속하며 o 만큼 지나쳤다 돌아옴)
+//     throw: 던지기 (활성 프레임에 적·벽에 닿으면 박힘) / taut: 사슬을 직선으로 팽팽하게 / impact: fx impact 키에서 충격파
+//     rehit: 같은 적을 다시 맞히는 간격 / spinRelease: 회전 중 우클릭 → HEAVY_SPIN
 //     hold: 타격 끝 포즈로 멈추는 프레임 (예비동작 startup → 타격 active → 홀드 hold → 후딜 recovery). hold 가 있으면 공속 증가는 후딜만 줄임
 //     dual: 쌍검 손별 궤적 { R: 오른손, L: 왼손 } — { from, to: 칼 각도, r: 궤적 반지름, squash, py, reach: 팔 뻗는 길이, hold: 홀드 각도,
 //           windAng: 예비동작 각도, linear: 일정 속도 회전 } 또는 { rest: 쉬는 손 각도 }
@@ -271,24 +272,23 @@ DATA.transforms = [
 
   {
     "id": "sword_chain", "weapon": "sword", "name": "사슬검", "mech": "chain",
-    "tagline": "손으로 휘두르면 관성으로 휘감기는 쇠사슬",
-    "card": ["사슬·칼날이 물리로 따라옴 (도리깨)", "칼날이 빠를수록 큰 데미지 · 채찍 크랙", "강공: 던지기 → 박히면 우클릭 유지로 당김", "Q: 포박 (묶어서 휘두른 뒤 던짐)"],
+    "tagline": "늦게 따라와 휘감기는 쇠사슬 칼날",
+    "card": ["사거리 길고 칼날이 늦게 따라와 휘감김", "2타 내려치기 충격파 · 3타 회전 다단히트", "강공: 던지기 → 박히면 우클릭으로 당김", "Q: 포박 (묶어서 휘두른 뒤 던짐)"],
     "changes": [
-      "손만 휘두르고 사슬과 칼날은 관성으로 늦게 따라온다. 판정은 칼날과 칼날 쪽 사슬 2마디",
-      "칼날 속도에 비례해 데미지 (느리면 안 맞음). 아주 빠르면 채찍 크랙",
-      "약공 3타: 수평 휘두르기 → 머리 위로 들었다 내려치기 (착지 충격파) → 머리 위 2바퀴 회전 (다단)",
-      "강공: 칼날을 앞으로 던짐 (3타 회전 중 우클릭이면 원심력 그대로 더 멀리). 끝에서 팽팽해지며 반동",
-      "칼날이 적·벽에 박힌 채 우클릭 유지 + 뒤로 이동: 적을 끌어옴 / 벽·무거운 적이면 그쪽으로 날아감",
+      "손이 먼저 움직이고 칼날은 늦게 출발해 급가속 → 지나쳤다 튕기듯 돌아옴. 사슬은 속도만큼 휘어 보임",
+      "약공 3타: 몸 뒤 → 앞 수평 휘두르기 → 머리 위 큰 호에서 멈칫 후 내리꽂기 (착지 충격파) → 몸 주변 2바퀴 회전 (다단히트)",
+      "강공: 칼날을 직선으로 최대 사거리까지 던짐 (3타 회전 중이면 더 멀리). 끝에서 '탕' 반동",
+      "칼날이 적·벽에 박힌 채 우클릭 유지: 사슬이 팽팽해지며 적을 끌어옴 / 벽·무거운 적이면 그쪽으로 날아감",
       "Q 포박: 던진 칼날에 걸린 적을 묶어 크게 휘두른 뒤 가까운 다른 적에게 던진다 (둘 다 피해)"
     ],
     "preview": ["L1", "L2", "L3", "HEAVY0"],
     "chain": {
-      "nodes": 14, "length": 118, "idleLength": 24, "payoutSpeed": 999, "bladeMass": 3, "whipGain": 3.2, "whipMinHand": 6, "gravity": 0.34, "drag": 0.985, "idleDrag": 0.9, "iterations": 14, "groundFriction": 0.8,
-      "handRest": [9, -30], "handR": 20,
-      "hitRadius": 14, "nodeRadius": 8,
-      "speedMin": 8, "speedRef": 20, "speedMaxMult": 1.8, "crackSpeed": 28,
+      "nodes": 14, "length": 150, "idleLength": 24, "bladeMass": 3, "gravity": 0.34, "idleDrag": 0.9, "iterations": 14, "groundFriction": 0.8,
+      "handRest": [9, -30], "handR": 20, "pivot": [2, -32], "blendFrames": 3, "genericReach": 110,
+      "hitRadius": 16, "crackSpeed": 24, "blurSpeed": 12,
+      "curveK": 2.2, "curveMax": 46, "embedSag": 18,
       "retract": 9, "reelSpeed": 5, "minLen": 46, "embedFrames": 90, "zipSpeed": 10,
-      "linkGap": 5, "bladeTip": 16, "bladeBack": 7, "jingleSpeed": 4.5
+      "linkGap": 5, "bladeTip": 16, "bladeBack": 7, "jingleSpeed": 3, "jingleLoud": 30
     },
     "patch": {
       "blade": { "length": 40, "hand": 14, "w0": 2.4, "w1": 1.1, "guard": true, "chain": true },
@@ -299,101 +299,127 @@ DATA.transforms = [
         "name": "전환 · 사슬 회전", "startup": 3, "active": 18, "recovery": 12,
         "damage": 14, "posture": 18, "hitbox": { "x": 0, "y": -40, "w": 1, "h": 1 }, "omni": true,
         "knock": { "x": 4, "y": -2.5 }, "hitstun": 32, "hitstop": 7, "shake": 5,
-        "lunge": 1, "sfx": "chain", "heavy": true, "pts": 20, "swapAttack": true,
+        "lunge": 1, "sfx": "chain", "heavy": true, "pts": 20, "swapAttack": true, "rehit": 99, "taut": true,
         "swing": { "from": 0, "to": -360, "r": 60, "squash": 0.3, "py": -30 }, "pose": ["spinWind", "spinStrike", "spinX"],
-        "hand": { "circle": { "start": 3, "end": 21, "cx": 2, "cy": -40, "r": 20, "turns": 1.3, "a0": 180, "after": 8, "drive": 2.5, "maxSpeed": 22 } },
-        "payout": { "at": 6, "speed": 8 }
+        "hand": { "circle": { "start": 3, "end": 21, "cx": 2, "cy": -40, "r": 18, "turns": 1, "a0": 180, "after": 8 } },
+        "blade": { "pivot": [0, -40], "keys": [
+          { "f": 0, "a": 110, "r": 30 }, { "f": 3, "a": 180, "r": 90, "sq": 0.4, "e": "slow" },
+          { "f": 21, "a": -180, "r": 140, "sq": 0.4, "e": "lin" }, { "f": 33, "a": -270, "r": 40, "e": "slow" } ] }
       },
       "skills": {
         "q": {
           "name": "포박", "kind": "move", "cooldown": 480, "desc": "칼날을 던져 걸린 적을 묶고 휘두른 뒤 다른 적에게 던진다",
           "move": {
-            "name": "포박", "startup": 6, "active": 8, "recovery": 18,
+            "name": "포박", "startup": 7, "active": 7, "recovery": 18,
             "damage": 6, "posture": 10, "hitbox": { "x": 0, "y": -40, "w": 1, "h": 1 },
             "knock": { "x": 0, "y": 0 }, "hitstun": 60, "hitstop": 6, "shake": 3,
-            "lunge": 0, "sfx": "chain", "pts": 20, "skill": true, "special": "bind",
+            "lunge": 0, "sfx": "chain", "pts": 20, "skill": true, "special": "bind", "throw": true,
             "swing": { "from": 0, "to": 0, "r": 60 }, "pose": ["thrustWind", "thrustStrike"],
-            "hand": { "keys": [[0, 9, -30], [5, -14, -34], [8, 24, -34], [26, 24, -32], [32, 9, -30]] },
-            "throw": { "at": 7, "len": 280, "speed": 24, "vy": -1.5 }
+            "hand": { "keys": [[0, 9, -30], [4, -14, -34], [7, 24, -34], [24, 24, -32], [32, 9, -30]] },
+            "blade": { "keys": [
+              { "f": 0, "a": 110, "r": 30 }, { "f": 4, "a": 170, "r": 45, "e": "slow" }, { "f": 7, "x": -30, "y": -8, "e": "slow" },
+              { "f": 14, "x": 280, "y": -4, "e": "whip", "o": 0.05, "fx": "tang" }, { "f": 22, "x": 250, "y": 14, "e": "slow" },
+              { "f": 32, "x": 50, "y": 24, "e": "slow" } ] }
           },
           "bind": { "spinFrames": 40, "radius": 66, "throwSpeed": 17, "damage": 30, "posture": 30, "bossDamage": 20, "bossPosture": 30 }
         }
       },
       "moves": {
         "L1": {
-          "name": "수평 휘두르기", "startup": 8, "active": 8, "recovery": 18,
+          "name": "수평 휘두르기", "startup": 8, "active": 7, "recovery": 19,
           "damage": 13, "hitbox": { "x": 0, "y": -40, "w": 1, "h": 1 },
           "knock": { "x": 4, "y": -1 }, "hitstun": 26, "hitstop": 6, "shake": 3,
           "lunge": 1, "next": "L2", "sfx": "chain", "pts": 6,
           "swing": { "from": 160, "to": 0, "r": 60, "squash": 0.5 }, "pose": ["spinWind", "cutStrike"],
-          "hand": { "keys": [[0, 9, -30], [6, -20, -44], [10, 28, -32], [11, 29, -32], [30, 26, -32], [34, 9, -30]] },
-          "payout": { "at": 9, "speed": 999 }
+          "hand": { "keys": [[0, 9, -30], [4, -16, -38], [8, 26, -32], [9, 28, -32], [30, 24, -32], [34, 9, -30]] },
+          "blade": { "keys": [
+            { "f": 0, "a": 110, "r": 30 }, { "f": 5, "a": 170, "r": 60, "sq": 0.6, "e": "slow" }, { "f": 8, "a": 182, "r": 80, "sq": 0.3, "e": "slow" },
+            { "f": 15, "a": 362, "r": 150, "sq": 0.3, "e": "whip", "o": 0.1 }, { "f": 24, "a": 380, "r": 130, "sq": 0.5, "e": "slow" },
+            { "f": 34, "a": 440, "r": 40, "e": "slow" } ] }
         },
         "L2": {
-          "name": "내려치기", "startup": 12, "active": 8, "recovery": 20,
+          "name": "내려치기", "startup": 15, "active": 7, "recovery": 18,
           "damage": 16, "posture": 16, "hitbox": { "x": 0, "y": -40, "w": 1, "h": 1 },
           "knock": { "x": 3, "y": -2 }, "hitstun": 30, "hitstop": 8, "shake": 5,
           "lunge": 1, "next": "L3", "sfx": "chain", "heavy": true, "pts": 8,
           "swing": { "from": -100, "to": 60, "r": 60 }, "pose": ["riseStrike", "cutStrike"],
-          "hand": { "keys": [[0, 9, -30], [5, -10, -24], [11, -4, -72], [14, 30, -38], [15, 31, -36], [36, 26, -32], [40, 9, -30]] },
-          "payout": { "at": 12, "speed": 999 },
-          "impact": { "damage": 10, "radius": 56, "posture": 10 }
+          "hand": { "keys": [[0, 9, -30], [5, -8, -22], [10, -2, -70], [13, -2, -70], [15, 30, -36], [16, 31, -35], [36, 26, -32], [40, 9, -30]] },
+          "blade": { "keys": [
+            { "f": 0, "a": 110, "r": 30 }, { "f": 6, "a": 150, "r": 50, "e": "slow" }, { "f": 13, "a": 265, "r": 118, "e": "slow" },
+            { "f": 15, "a": 265, "r": 118, "e": "hold" }, { "f": 22, "a": 375, "r": 122, "e": "whip", "o": 0.05, "fx": "impact" },
+            { "f": 30, "a": 380, "r": 118, "e": "slow" }, { "f": 40, "a": 450, "r": 40, "e": "slow" } ] },
+          "impact": { "damage": 10, "radius": 60, "posture": 12 }
         },
         "L3": {
-          "name": "머리 위 회전", "startup": 4, "active": 40, "recovery": 14,
+          "name": "몸 주변 회전", "startup": 4, "active": 40, "recovery": 12,
           "damage": 9, "posture": 8, "hitbox": { "x": 0, "y": -40, "w": 1, "h": 1 }, "omni": true,
           "knock": { "x": 3, "y": -2 }, "hitstun": 24, "hitstop": 4, "shake": 2,
-          "lunge": 0, "next": null, "sfx": "chain", "pts": 6, "rehit": 12, "spinRelease": true,
+          "lunge": 0, "next": null, "sfx": "chain", "pts": 6, "rehit": 10, "spinRelease": true, "taut": true,
           "swing": { "from": 180, "to": -540, "r": 60, "squash": 0.3, "py": -40 }, "pose": ["riseWind", "riseStrike"],
-          "hand": { "circle": { "start": 4, "end": 44, "cx": 0, "cy": -56, "r": 20, "turns": 3, "a0": 180, "squash": 0.6, "after": 10, "drive": 2.2, "maxSpeed": 22 } },
-          "payout": { "at": 8, "speed": 5 }, "len": 96
+          "hand": { "circle": { "start": 4, "end": 44, "cx": 0, "cy": -56, "r": 14, "turns": 2, "a0": 180, "squash": 0.6, "after": 10 } },
+          "blade": { "pivot": [0, -50], "keys": [
+            { "f": 0, "a": 110, "r": 30 }, { "f": 4, "a": 180, "r": 80, "sq": 0.45, "e": "slow" },
+            { "f": 44, "a": -540, "r": 112, "sq": 0.45, "e": "lin" }, { "f": 56, "a": -630, "r": 40, "e": "slow" } ] }
         },
         "THRUST": {
-          "name": "사슬 던지기", "startup": 6, "active": 8, "recovery": 24,
+          "name": "사슬 던지기", "startup": 7, "active": 7, "recovery": 22,
           "damage": 16, "posture": 14, "hitbox": { "x": 0, "y": -40, "w": 1, "h": 1 },
           "knock": { "x": 2, "y": -1 }, "hitstun": 40, "hitstop": 7, "shake": 4,
-          "lunge": 0, "next": null, "sfx": "chain", "heavy": true, "pts": 10,
+          "lunge": 0, "next": null, "sfx": "chain", "heavy": true, "pts": 10, "throw": true,
           "swing": { "from": 0, "to": 0, "r": 60 }, "pose": ["thrustWind", "thrustStrike"],
-          "hand": { "keys": [[0, 9, -30], [5, -14, -34], [8, 24, -34], [30, 24, -32], [38, 9, -30]] },
-          "throw": { "at": 7, "len": 300, "speed": 24, "vy": -1.5 }
+          "hand": { "keys": [[0, 9, -30], [4, -14, -34], [7, 24, -34], [28, 24, -32], [36, 9, -30]] },
+          "blade": { "keys": [
+            { "f": 0, "a": 110, "r": 30 }, { "f": 4, "a": 170, "r": 45, "e": "slow" }, { "f": 7, "x": -30, "y": -8, "e": "slow" },
+            { "f": 14, "x": 330, "y": -4, "e": "whip", "o": 0.05, "fx": "tang" }, { "f": 24, "x": 300, "y": 16, "e": "slow" },
+            { "f": 36, "x": 50, "y": 24, "e": "slow" } ] }
         },
         "A1": {
-          "name": "공중 휘두르기", "startup": 6, "active": 8, "recovery": 14, "air": true,
+          "name": "공중 휘두르기", "startup": 5, "active": 7, "recovery": 14, "air": true,
           "damage": 10, "hitbox": { "x": 0, "y": -40, "w": 1, "h": 1 },
           "knock": { "x": 1.2, "y": -4.2 }, "hitstun": 30, "hitstop": 4, "shake": 2,
           "lunge": 1, "next": "A2", "sfx": "chain",
           "swing": { "from": -110, "to": 50, "r": 60 }, "pose": ["airWind", "airStrike"],
-          "hand": { "keys": [[0, 9, -30], [5, -18, -44], [9, 26, -22], [10, 27, -22], [24, 9, -30]] },
-          "payout": { "at": 8, "speed": 999 }
+          "hand": { "keys": [[0, 9, -30], [3, -16, -46], [6, 26, -22], [7, 27, -22], [26, 9, -30]] },
+          "blade": { "keys": [
+            { "f": 0, "a": 110, "r": 30 }, { "f": 5, "a": 210, "r": 70, "e": "slow" },
+            { "f": 12, "a": 400, "r": 140, "e": "whip", "o": 0.1 }, { "f": 26, "a": 450, "r": 40, "e": "slow" } ] }
         },
         "A2": {
-          "name": "공중 올려치기", "startup": 6, "active": 8, "recovery": 14, "air": true,
+          "name": "공중 올려치기", "startup": 5, "active": 7, "recovery": 14, "air": true,
           "damage": 11, "hitbox": { "x": 0, "y": -40, "w": 1, "h": 1 },
           "knock": { "x": 1.4, "y": -4.4 }, "hitstun": 30, "hitstop": 4, "shake": 2,
           "lunge": 1, "next": null, "sfx": "chain",
           "swing": { "from": 70, "to": -110, "r": 60 }, "pose": ["airRiseWind", "airRiseStrike"],
-          "hand": { "keys": [[0, 9, -30], [5, -14, -10], [9, 24, -56], [10, 25, -57], [24, 9, -30]] },
-          "payout": { "at": 8, "speed": 999 }
+          "hand": { "keys": [[0, 9, -30], [3, -14, -10], [6, 24, -56], [7, 25, -57], [26, 9, -30]] },
+          "blade": { "keys": [
+            { "f": 0, "a": 110, "r": 30 }, { "f": 5, "a": 150, "r": 60, "e": "slow" },
+            { "f": 12, "a": -70, "r": 140, "e": "whip", "o": 0.1 }, { "f": 26, "a": -270, "r": 40, "e": "slow" } ] }
         },
         "HEAVY": [
           {
-            "name": "사슬 던지기", "startup": 6, "active": 8, "recovery": 24,
+            "name": "사슬 던지기", "startup": 7, "active": 7, "recovery": 22,
             "damage": 16, "posture": 14, "hitbox": { "x": 0, "y": -40, "w": 1, "h": 1 },
             "knock": { "x": 2, "y": -1 }, "hitstun": 40, "hitstop": 7, "shake": 4,
-            "lunge": 0, "sfx": "chain", "heavy": true,
+            "lunge": 0, "sfx": "chain", "heavy": true, "throw": true,
             "swing": { "from": 0, "to": 0, "r": 60 }, "pose": ["thrustWind", "thrustStrike"],
-            "hand": { "keys": [[0, 9, -30], [5, -14, -34], [8, 24, -34], [30, 24, -32], [38, 9, -30]] },
-            "throw": { "at": 7, "len": 300, "speed": 24, "vy": -1.5 }
+            "hand": { "keys": [[0, 9, -30], [4, -14, -34], [7, 24, -34], [28, 24, -32], [36, 9, -30]] },
+            "blade": { "keys": [
+              { "f": 0, "a": 110, "r": 30 }, { "f": 4, "a": 170, "r": 45, "e": "slow" }, { "f": 7, "x": -30, "y": -8, "e": "slow" },
+              { "f": 14, "x": 330, "y": -4, "e": "whip", "o": 0.05, "fx": "tang" }, { "f": 24, "x": 300, "y": 16, "e": "slow" },
+              { "f": 36, "x": 50, "y": 24, "e": "slow" } ] }
           }
         ],
         "HEAVY_SPIN": {
-          "name": "회전 던지기", "startup": 1, "active": 8, "recovery": 24,
+          "name": "회전 던지기", "startup": 1, "active": 7, "recovery": 22,
           "damage": 22, "posture": 20, "hitbox": { "x": 0, "y": -40, "w": 1, "h": 1 },
           "knock": { "x": 4, "y": -2 }, "hitstun": 44, "hitstop": 9, "shake": 6,
-          "lunge": 0, "sfx": "chain", "heavy": true, "pts": 14,
+          "lunge": 0, "sfx": "chain", "heavy": true, "pts": 14, "throw": true,
           "swing": { "from": 0, "to": 0, "r": 60 }, "pose": ["thrustWind", "thrustStrike"],
-          "hand": { "keys": [[0, 0, -56], [3, 26, -40], [30, 24, -34], [38, 9, -30]] },
-          "throw": { "at": 2, "len": 340, "speed": 30, "vy": -1, "keepVel": true }
+          "hand": { "keys": [[0, 0, -54], [3, 26, -40], [22, 24, -34], [30, 9, -30]] },
+          "blade": { "keys": [
+            { "f": 0, "x": -10, "y": -40 }, { "f": 1, "x": -10, "y": -40, "e": "slow" },
+            { "f": 8, "x": 350, "y": -6, "e": "whip", "o": 0.05, "fx": "tang" }, { "f": 18, "x": 320, "y": 16, "e": "slow" },
+            { "f": 30, "x": 50, "y": 24, "e": "slow" } ] }
         }
       }
     }

@@ -507,11 +507,11 @@ const Transform = {
       let n = Math.max(0, Math.min(4, Math.round(ft - pv.ft)));
       if (ft < pv.ft) n = 1;
       const fe = ft;
-      for (let k = n - 1; k >= 0; k--) { fake.stateFrame = Math.max(0, Math.round(fe - k)); ChainRope.previewStep(fake, pv.rope, C); }
+      fake.rope = pv.rope;
+      for (let k = n - 1; k >= 0; k--) { fake.stateFrame = Math.max(0, Math.round(fe - k)); ChainRope.update(null, fake, C); }
       fake.stateFrame = fe;
       if (!fake.chainHand) fake.chainHand = ChainRope.handPoint(fake, C);
       pv.ft = ft;
-      fake.rope = pv.rope;
     }
     const fig = Anim.playerFigure(fake);
     Anim.drawFigure(ctx, fig, { color: '#dfe9f2', back: '#7f8c98', glow: W.trail.glow, glowBlur: 6 }, null);
