@@ -394,6 +394,7 @@ class Boss extends Enemy {
     const p = game.player;
     for (let i = this.zones.length - 1; i >= 0; i--) {
       const z = this.zones[i];
+      if (!z) continue;   // 판정 도중 반격(철벽 등)으로 페이즈가 바뀌어 목록이 비었을 수 있음
       z.t++;
       if (!z.boom && z.t >= z.warn) {
         z.boom = 1;

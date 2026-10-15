@@ -379,6 +379,21 @@ const Sound = {
       case 'invClose':
         this._tone(0.08, 'sine', 600, 400, 0.08);
         break;
+      // ----- 함정 / 모닥불 (10단계) -----
+      case 'trapWarn':
+        this._tone(0.12, 'square', 300, 260, 0.04);
+        break;
+      case 'trapSpike':
+        this._metal(900, 0.18, 0.1, 0.2, [1, 1.7, 2.9]);
+        this._noise(0.1, 'highpass', 3000, 1500, 0.3);
+        break;
+      case 'trapFlame':
+        this._noise(0.6, 'lowpass', 2400, 300, 0.5, 0, 0.3);
+        this._noise(0.3, 'bandpass', 600, 1800, 0.3);
+        break;
+      case 'rest':
+        [0, 4, 7].forEach((n, i) => this._tone(0.9, 'sine', 392 * Math.pow(2, n / 12), 392 * Math.pow(2, n / 12), 0.1, i * 0.1, 0.6));
+        break;
       // ----- 로고 / 메뉴 (9단계) -----
       case 'logoSlash':         // 로고: 화면을 가르는 일섬
         this._noise(0.35, 'bandpass', 7000, 1800, 0.5, 2, 0.6);

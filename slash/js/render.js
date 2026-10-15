@@ -301,6 +301,52 @@ const Render = {
     }
   },
 
+  // 모닥불 (층 시작방): 쓰기 전엔 타오르고, 쓰고 나면 잔불
+  rest(ctx, r) {
+    if (!r) return;
+    const t = Game.frame || 0;
+    ctx.save();
+    ctx.translate(r.x, r.y);
+    // 장작
+    ctx.fillStyle = '#060506';
+    ctx.save(); ctx.rotate(0.35); ctx.fillRect(-16, -6, 32, 6); ctx.restore();
+    ctx.save(); ctx.rotate(-0.35); ctx.fillRect(-16, -6, 32, 6); ctx.restore();
+    // 불빛
+    const k = r.used ? 0.25 : 1;
+    const g = ctx.createRadialGradient(0, -14, 2, 0, -14, 90);
+    g.addColorStop(0, `rgba(255,170,70,${(0.45 * k).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(255,120,40,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(-90, -104, 180, 104);
+    // 불꽃
+    ctx.shadowColor = '#ff8a2a';
+    ctx.shadowBlur = 14 * k;
+    for (let i = 0; i < (r.used ? 1 : 3); i++) {
+      const h = (r.used ? 8 : 26 - i * 6) + Math.sin(t * 0.3 + i * 2) * 4;
+      const ox = (i - 1) * 6 + Math.sin(t * 0.2 + i) * 2;
+      ctx.fillStyle = i === 2 ? '#fff0c0' : i === 1 ? '#ffb040' : '#ff6a20';
+      ctx.beginPath();
+      ctx.moveTo(ox - 7 + i * 2, -4);
+      ctx.quadraticCurveTo(ox - 4, -h * 0.6, ox, -h);
+      ctx.quadraticCurveTo(ox + 4, -h * 0.6, ox + 7 - i * 2, -4);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+    const p = Game.player;
+    if (!r.used && Math.abs(p.x - r.x) < 90) {
+      ctx.font = 'bold 10px "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 3;
+      const txt = `${Input.label('up')}: 모닥불에서 쉬기 (체력 +${Math.round(r.heal * 100)}%)`;
+      ctx.strokeText(txt, 0, -50);
+      ctx.fillStyle = '#ffe0a0';
+      ctx.fillText(txt, 0, -50);
+    }
+    ctx.restore();
+  },
+
   // 보상 상자: 최고 랭크 색으로 빛남
   chest(ctx, ch) {
     if (!ch) return;
@@ -504,6 +550,8 @@ const Render = {
     const fig = Anim.enemyFigure(e);
     const look = e.cfg.look;
     ctx.save();
+    // 정예: 몸을 키워 그림 (발밑 기준)
+    if (e.scale) { ctx.translate(e.x, e.y); ctx.scale(e.scale, e.scale); ctx.translate(-e.x, -e.y); }
     if (e.dead && !e.executed) ctx.globalAlpha = Math.max(0, 1 - e.stateFrame / 24);
     const white = e.flash > 0;
     let col = '#060506', back = '#2b2225', glow = null, blur = 0;
@@ -526,6 +574,10 @@ const Render = {
       // 슈퍼아머: 은빛 테두리
       glow = 'rgba(190,205,225,0.9)';
       blur = 5;
+    } else if (e.elite) {
+      // 정예: 층 색 기운
+      glow = e.eliteColor;
+      blur = 7 + Math.sin((Game.frame || 0) * 0.15 + e.seed) * 3;
     }
     if (white) { col = '#ffffff'; back = '#e8e8e8'; glow = null; }
     if (this.lit > 0.05 && !white) {

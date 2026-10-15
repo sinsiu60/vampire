@@ -97,6 +97,10 @@ const Dungeon = {
         r.bossId = D.bossByFloor[Math.min(fi, D.bossByFloor.length - 1)];
       }
       r.level = this.genRoom(r);
+      Traps.place(r, r.level, fi);
+      // 층 시작방 모닥불 (2층부터): 위 키로 한 번 회복
+      const F = CONFIG.floors[Math.min(fi, CONFIG.floors.length - 1)];
+      if (r.kind === 'start' && F.rest > 0) r.rest = { x: 440, y: CONFIG.dungeon.baseY, used: false, heal: F.rest };
     }
     this.layoutMinimap(rooms);
     return { index: fi, rooms };

@@ -282,6 +282,10 @@ const CONFIG = {
   // ---------- 공중 전투 ----------
   air: {
     attackGravityMult: 0.35,   // 공중 공격 중 플레이어 중력 배율 (체공)
+    // 체공(중력 감소 + 낙하 멈칫)은 올라가는 중엔 안 걸림. 적을 못 맞히면 점프당 freeSwings 번까지만
+    floatRiseVy: -3,           // 이보다 빠르게 올라가는 중엔 체공 없음 (무한 상승 방지)
+    freeSwings: 3,             // 맞히지 못한 공중 공격도 이만큼은 체공
+    floatHitWindow: 45,        // 마지막 적중 후 이 시간 안이면 계속 체공
     hitHangVy: -1.6,           // 공중 공격이 맞으면 플레이어 세로속도를 이 값으로 (살짝 머무름)
     launcherFollowVy: -12.6,   // 런처 때 K 유지 시 플레이어 상승 속도
     launchedGravityMult: 0.85, // 띄워진 적 중력 배율
@@ -363,11 +367,11 @@ const CONFIG = {
       // 전환기: 내려찍기 + 충격파 / 공중이면 낙하 쪼개기
       swapIn: {
         name: '전환 · 내려찍기', startup: 6, active: 6, recovery: 20,
-        damage: 30, posture: 30, hitbox: { x: -10, y: -106, w: 122, h: 106 },
+        damage: 26, posture: 30, hitbox: { x: -10, y: -106, w: 122, h: 106 },
         knock: { x: 8, y: -4 }, hitstun: 40, hitstop: 11, shake: 10,
         lunge: 5, sfx: 'swingHeavy', heavy: true, impactFrame: true, pts: 22, swapAttack: true, armor: true,
         swing: { from: -175, to: 85, r: 114, squash: 1 }, pose: ['cutWind', 'cutStrike'],
-        quake: { damage: 18, range: 220, speed: 9, height: 70, stun: 40, bossPosture: 15 },
+        quake: { damage: 14, range: 220, speed: 9, height: 70, stun: 40, bossPosture: 15 },
       },
       swapInAir: {
         name: '전환 · 낙하 쪼개기', startup: 5, active: 6, recovery: 18, air: true,
@@ -671,6 +675,7 @@ const CONFIG = {
   // ---------- 무기 교체 / 공명 ----------
   swap: {
     cooldown: 24,              // 스왑 자체 쿨타임 (0.4초)
+    attackCooldown: 60,        // 전환기(스왑 어택) 쿨타임 (1초) — 이 안에 또 스왑하면 무기만 바뀜 (연타 남용 방지)
     sheatheMult: 2,            // 칼집 회복: 장착하지 않은 무기의 스킬 쿨타임은 이 배속으로 감소
     // 공명: 스왑 직후 duration 동안. 공명 중 다시 스왑하면 단계 상승 (최대 maxLevel)
     resonance: {
@@ -741,7 +746,7 @@ const CONFIG = {
     enemyDropChance: [0.1, 0.12, 0.14],   // 층별 일반 적 드랍 확률
     bossDrops: 2,              // 보스 드랍 수 (영웅 이상 확정)
     bossMinRarity: 2,
-    chestHealMult: 0.5,        // 상자 체력 회복 (스타일 clearHeal × 이 배율)
+    chestHealMult: 0.6,        // 상자 체력 회복 (스타일 clearHeal × 이 배율)
     pickupDelay: 30,           // 떨어진 뒤 주울 수 있을 때까지
     pickupRange: 26,
     bagSize: 12,
@@ -868,6 +873,8 @@ const CONFIG = {
     kill: 18,
     postureBreak: 30,
     swapAttack: 20,            // 스왑 어택(전환기) 적중 보너스
+    trapKill: 30,              // 함정으로 적 처치
+    eliteKill: 40,             // 정예 처치
     resonanceMax: 70,          // 공명 3단계 도달
     trinity: 100,              // 한 콤보(히트 수가 끊기기 전)에 무기 3개를 모두 맞힘
     skill: 6,                  // 스킬 적중 추가
@@ -1051,7 +1058,7 @@ const CONFIG = {
     platformChance: 0.55,      // 평지 위 통과 발판
     doorHeight: 96,
     killDepth: 220,            // 바닥 아래로 이만큼 떨어지면 낙사 판정
-    fallDamage: 12,            // 낭떠러지에 떨어지면 데미지 + 직전 발판으로 복귀
+    fallDamage: 8,             // 낭떠러지에 떨어지면 데미지 + 직전 발판으로 복귀
     fallInvuln: 60,
     spawnDelay: 40,            // 문이 잠기고 적이 나타나기까지
     waveDelay: 50,             // 웨이브 사이
@@ -1066,6 +1073,49 @@ const CONFIG = {
     twoWaveWidth: 1700,        // 이보다 넓은 방은 웨이브 2번
     // 층별 보스 (bosses 의 이름)
     bossByFloor: ['dusk', 'moon', 'flame'],
+  },
+
+  // ---------- 층별 특색 (10단계) ----------
+  // enemy: 일반 적 능력치 배율 / eliteChance: 정예 등장 확률 / traps: 전투방 함정
+  // rest: 층 시작방 모닥불 회복 (최대 체력의 비율, 0 = 없음) / music: 던전·보스 곡 (audio.music 이름)
+  floors: [
+    {
+      name: '노을의 성벽', desc: '함정 없음 · 기본기를 익히는 층',
+      enemy: { hp: 1, damage: 1, posture: 1 }, eliteChance: 0,
+      traps: null, rest: 0, music: 'dungeon', bossMusic: 'boss',
+    },
+    {
+      name: '달빛 회랑', desc: '가시 함정 · 정예 등장',
+      enemy: { hp: 1.3, damage: 1.15, posture: 1.1 }, eliteChance: 0.12,
+      traps: { kind: 'spikes', min: 1, max: 2 }, rest: 0.5, music: 'dungeon2', bossMusic: 'boss2',
+    },
+    {
+      name: '불타는 왕좌', desc: '화염 분출구 · 정예 다수',
+      enemy: { hp: 1.6, damage: 1.3, posture: 1.2 }, eliteChance: 0.2,
+      traps: { kind: 'flames', min: 1, max: 3 }, rest: 0.5, music: 'dungeon3', bossMusic: 'boss3',
+    },
+  ],
+
+  // 정예: 층 배율 위에 추가로 곱함. 처치하면 희귀 이상 장비 확정
+  elite: {
+    hp: 1.8, damage: 1.3, posture: 1.6, weight: 1.5,
+    scale: 1.15,               // 몸 크기
+    dropMinRarity: 1,
+    colors: ['#ffd23a', '#9fd0ff', '#ff6a3a'],   // 층별 기운 색
+  },
+
+  // 함정: idle(대기, 범위에서 무작위) → warn(예고, 빨강) → active(판정). 적도 맞음 (밀어 넣으면 이득)
+  traps: {
+    doorGap: 280,              // 문에서 이만큼은 비움
+    minSeg: 150,               // 이보다 좁은 땅에는 안 놓음
+    spikes: {
+      name: '가시 함정', width: 64, height: 34, idle: [130, 210], warn: 50, active: 26,
+      damage: 10, enemyDamage: 34, knock: { x: 3, y: -7 },
+    },
+    flames: {
+      name: '화염 분출구', width: 46, height: 150, idle: [120, 190], warn: 56, active: 40,
+      damage: 12, enemyDamage: 44, knock: { x: 2, y: -9 },
+    },
   },
 
   // ---------- 보스 ----------
@@ -1104,7 +1154,7 @@ const CONFIG = {
   bosses: {
     dusk: {
       name: '황혼의 검귀', title: '1층 · 노을',
-      width: 40, height: 72, hp: 900, posture: 240,
+      width: 40, height: 72, hp: 1600, posture: 240,
       weight: 4, friction: 0.8, walkSpeed: 1.6, spacing: [110, 250],
       idleMin: 36, idleMax: 70,              // 패턴 사이 대기
       look: { body: 'boss', weapon: 'greatsword' }, aura: '#ff7a3a',
@@ -1113,7 +1163,7 @@ const CONFIG = {
     },
     moon: {
       name: '월야의 창기사', title: '2층 · 달밤',
-      width: 38, height: 74, hp: 1100, posture: 270,
+      width: 38, height: 74, hp: 2000, posture: 270,
       weight: 4, friction: 0.8, walkSpeed: 1.9, spacing: [130, 280],
       idleMin: 30, idleMax: 60,
       look: { body: 'boss', weapon: 'lance' }, aura: '#8fb4ff',
@@ -1123,7 +1173,7 @@ const CONFIG = {
     },
     flame: {
       name: '불꽃 성주', title: '3층 · 불타는 성',
-      width: 44, height: 78, hp: 1300, posture: 300,
+      width: 44, height: 78, hp: 2400, posture: 300,
       weight: 5, friction: 0.8, walkSpeed: 1.5, spacing: [110, 240],
       idleMin: 28, idleMax: 56,
       look: { body: 'boss', weapon: 'flameblade' }, aura: '#ff5020',
@@ -1189,6 +1239,36 @@ const CONFIG = {
         bass: [0, null, 0, null, 12, null, 0, null, 0, null, 0, null, 10, null, 7, null], bassGain: 0.55,
         arp: null,
         kick: 'x.......x.......', snare: '....x.......x...', hat: '..x...x...x...x.', drumGain: 0.5,
+      },
+      // 2층 달밤: 조금 빠르고 어둡게 (프리지안 느낌)
+      dungeon2: {
+        bpm: 112, root: 48, chords: [[0, 3, 7], [1, 5, 8], [-2, 3, 7], [0, 3, 7]],
+        pad: 0.3,
+        bass: [0, null, 0, 12, null, 0, null, 0, 0, null, 0, 12, null, 10, null, 7], bassGain: 0.55,
+        arp: [null, null, 2, null, null, null, 1, null, null, null, 2, null, null, null, 0, null], arpOct: 24, arpGain: 0.12,
+        kick: 'x.....x...x.....', snare: '....x.......x...', hat: '..x.x...x.x.x...', drumGain: 0.5,
+      },
+      // 3층 불타는 성: 빠르고 거칠게
+      dungeon3: {
+        bpm: 124, root: 45, chords: [[0, 3, 7], [1, 5, 8], [-4, 0, 3], [-2, 2, 5]],
+        pad: 0.3,
+        bass: [0, 0, 12, 0, 0, 12, 0, 0, 0, 0, 12, 0, 13, 0, 12, 0], bassGain: 0.55,
+        arp: null,
+        kick: 'x..x....x..x....', snare: '....x.......x...', hat: 'x.x.x.x.x.x.x.x.', drumGain: 0.55,
+      },
+      boss2: {
+        bpm: 146, root: 47, chords: [[0, 3, 7], [1, 5, 8], [-2, 2, 5], [-5, -1, 2]],
+        pad: 0.3,
+        bass: [0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 13, 0, 12, 0, 7, 0], bassGain: 0.6,
+        arp: [2, null, 1, null, 0, null, 1, null, 2, null, 1, null, 3, null, 2, null], arpOct: 12, arpGain: 0.18,
+        kick: 'x..x..x.x..x..x.', snare: '....x.......x..x', hat: 'xxxxxxxxxxxxxxxx', drumGain: 0.6,
+      },
+      boss3: {
+        bpm: 156, root: 44, chords: [[0, 3, 7], [1, 5, 8], [-4, 0, 3], [-1, 3, 6]],
+        pad: 0.32,
+        bass: [0, 12, 0, 0, 12, 0, 0, 12, 0, 0, 13, 0, 12, 0, 10, 0], bassGain: 0.62,
+        arp: [3, 2, 1, 0, 3, 2, 1, 0, 2, 1, 0, null, 3, null, 2, null], arpOct: 12, arpGain: 0.15,
+        kick: 'x.xx..x.x.xx..x.', snare: '....x.......x.xx', hat: 'xxxxxxxxxxxxxxxx', drumGain: 0.62,
       },
       boss: {
         bpm: 138, root: 45, chords: [[0, 3, 7], [-4, 0, 3], [-2, 2, 5], [-5, -1, 2]],

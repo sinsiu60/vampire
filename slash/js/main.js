@@ -111,7 +111,8 @@ const Game = {
     this.prevRoom = null;
     Render.setTheme(fi % THEMES.length);
     this.enterRoom(0, 'left');
-    this.floorBanner = { text: `${fi + 1}층`, sub: THEMES[fi % THEMES.length].name, life: 150, max: 150 };
+    const F = this.floorCfg;
+    this.floorBanner = { text: `${fi + 1}층 · ${F.name}`, sub: F.desc, life: 170, max: 170 };
   },
 
   enterRoom(i, side) {
@@ -207,14 +208,46 @@ const Game = {
     }
   },
 
+  // 지금 층 설정 (CONFIG.floors)
+  get floorCfg() {
+    const F = CONFIG.floors;
+    return F[Math.min(this.floorIndex || 0, F.length - 1)];
+  },
+
   spawnRoomWave(types) {
+    const F = this.floorCfg;
     for (const t of types) {
       const pt = Dungeon.spawnPoint(this.level, this.player.x);
       const e = this.spawnEnemy(t, pt.x, pt.y);
-      Effects.ring(e.x, e.y - e.h / 2, '#ff4040', 40);
+      if (Math.random() < F.eliteChance) this.makeElite(e);
+      Effects.ring(e.x, e.y - e.h / 2, e.elite ? e.eliteColor : '#ff4040', e.elite ? 56 : 40);
       Effects.dust(e.x, pt.y, 10, 0);
     }
     Sound.play('spawn');
+  },
+
+  // 적 능력치 배율 (층 / 정예). 공격 데미지는 공격 목록을 복사해서 바꿈
+  scaleEnemy(e, hp, dmg, posture) {
+    e.maxHp = e.hp = Math.round(e.maxHp * hp);
+    e.maxPosture = Math.round(e.maxPosture * posture);
+    if (dmg !== 1) {
+      e.cfg = Object.assign({}, e.cfg, {
+        attacks: e.cfg.attacks.map((a) => Object.assign({}, a, { damage: Math.round(a.damage * dmg) })),
+      });
+    }
+  },
+
+  // 정예: 더 크고 단단하고 아프다. 처치하면 장비 확정
+  makeElite(e) {
+    const E = CONFIG.elite;
+    this.scaleEnemy(e, E.hp, E.damage, E.posture);
+    e.elite = true;
+    e.eliteColor = E.colors[Math.min(this.floorIndex || 0, E.colors.length - 1)];
+    e.scale = E.scale;
+    e.w = Math.round(e.w * E.scale);
+    e.h = Math.round(e.h * E.scale);
+    e.cfg = Object.assign({}, e.cfg, { weight: e.cfg.weight * E.weight });
+    Effects.popText(e.x, e.y - e.h - 24, '정예', e.eliteColor, 15);
   },
 
   // 보스 등장: 하늘에서 떨어지며 이름 표시
@@ -275,7 +308,20 @@ const Game = {
   },
 
   updateChest() {
-    const ch = this.room && this.room.chest, p = this.player;
+    const p = this.player;
+    // 모닥불 (층 시작방): 위 키로 한 번 회복
+    const rest = this.room && this.room.rest;
+    if (rest && !rest.used && Math.abs(p.x - rest.x) < 40 && Math.abs(p.y - rest.y) < 40 && Input.isPressed('up')) {
+      rest.used = true;
+      const h = Math.round(p.maxHp * rest.heal);
+      p.heal(h);
+      p.stamina = p.maxStamina;
+      Effects.popText(rest.x, rest.y - 60, `휴식 +${h} HP`, '#7f7', 18);
+      Effects.radialSparks(rest.x, rest.y - 20, 24, '#ffb050', 1);
+      Effects.ring(rest.x, rest.y - 20, '#ffd080', 70);
+      Sound.play('rest');
+    }
+    const ch = this.room && this.room.chest;
     if (!ch || ch.opened) return;
     if (ch.shake > 0) ch.shake--;
     const near = Math.abs(p.x - ch.x) < 30 && Math.abs(p.y - ch.y) < 30;
@@ -315,6 +361,11 @@ const Game = {
       x = g.x; y = g.y;
     }
     const e = new Enemy(type, x, y);
+    // 층 배율 (던전)
+    if (this.mode === 'dungeon') {
+      const S = this.floorCfg.enemy;
+      if (S.hp !== 1 || S.damage !== 1 || S.posture !== 1) this.scaleEnemy(e, S.hp, S.damage, S.posture);
+    }
     this.enemies.push(e);
     this.waveCleared = false;
     Effects.dust(x, y, 6, 0);
@@ -390,7 +441,12 @@ const Game = {
     }
     // 아이템 드랍
     if (enemy.isBoss) Loot.bossDrop(this, enemy);
-    else Loot.enemyDrop(this, enemy);
+    else if (enemy.elite && this.mode === 'dungeon') {
+      // 정예: 장비 확정 + 스타일 보너스
+      Loot.spawnDrop(this, Loot.roll(this.floorIndex || 0, 1, CONFIG.elite.dropMinRarity), enemy.x, enemy.y);
+      Style.gain(CONFIG.style.eliteKill);
+      Style.pushFeed('ELITE', enemy.eliteColor);
+    } else Loot.enemyDrop(this, enemy);
   },
 
   onParry(enemy, tier) {
@@ -649,7 +705,9 @@ const Game = {
       this.updateChest();
       // 음악: 보스가 있으면 보스 곡
       const b = this.boss;
-      if (this.state === 'playing') Music.play(b && b.state !== 'bossDeath' ? 'boss' : 'dungeon');
+      const F = this.floorCfg;
+      if (this.state === 'playing') Music.play(b && b.state !== 'bossDeath' ? F.bossMusic : F.music);
+      Traps.update(this);
     } else {
       // 콤보 연습장: 허수아비
       Practice.update(this);
@@ -749,7 +807,11 @@ const Game = {
     Render.lit = this.dim * 0.6;
     Effects.drawBack(ctx);
     const ex = this.exec;
-    if (this.room) Render.chest(ctx, this.room.chest);
+    if (this.room) {
+      Render.rest(ctx, this.room.rest);
+      Render.chest(ctx, this.room.chest);
+      Traps.draw(ctx, this);
+    }
     Loot.drawDrops(ctx, this);
     Skills.draw(ctx);
     for (const e of this.enemies) if (e.isBoss) Render.bossHazards(ctx, e);

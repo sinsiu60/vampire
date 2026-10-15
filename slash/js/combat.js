@@ -92,6 +92,7 @@ const Combat = {
       launchSfx: move.launch, styleId: player.styleId || player.moveId, pts: move.pts,
     });
 
+    if (res !== 'blocked') player.lastHitAt = Game.frame || 0;
     if (res !== 'blocked') {
       // 스왑 어택(전환기) 적중 보너스
       if (player.swapAttackPending) { player.swapAttackPending = false; Style.onSwapAttack(); }

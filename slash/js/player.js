@@ -101,6 +101,7 @@ class Player {
     this.swapDir = 1;
     this.swapFlash = 0;
     this.swapAttackPending = false; // 스왑 어택 적중 보너스 대기
+    this.swapAttackCd = 0;        // 전환기 쿨타임
     // 스킬 쿨타임: 무기마다 따로 { sword: { q, e }, greatsword: {...}, gauntlet: {...} }
     this.skillCd = {}; this.skillCdMax = {}; this.skillFlash = {}; this.skillDeny = {};
     for (const t of WEAPON_ORDER) {
@@ -120,6 +121,8 @@ class Player {
     this.lifeAcc = 0;             // 흡혈 소수점 누적
     this.dashHits = new Set();    // 전설 '그림자': 이번 대시에 맞힌 적
     this.styleId = null;
+    this.airSwings = 0;           // 이번 점프에서 휘두른 공중 공격 수
+    this.lastHitAt = -1e9;        // 마지막으로 적을 맞힌 프레임
     this.recalcStats();
     this.hp = this.maxHp;
     this.stamina = this.maxStamina;
@@ -228,8 +231,9 @@ class Player {
     Effects.popText(this.x, this.y - this.h - 22, W.name, `rgb(${W.trail.inner})`, 13);
     Sound.play('swap');
 
-    if (midCombo) {
+    if (midCombo && this.swapAttackCd <= 0) {
       // 스왑 어택: 새 무기의 전환기 (히트 수 / 공중 저글링은 그대로 이어짐)
+      this.swapAttackCd = S.attackCooldown;
       this.slamPhase = null;
       this.slamCfg = null;
       const air = !this.onGround;
@@ -237,11 +241,12 @@ class Player {
       const m = air && !base.air ? Object.assign({}, base, { air: true }) : base;
       this.startAttack('SWAPIN_' + this.weaponType().toUpperCase(), 0, m);
       this.swapAttackPending = true;
-    } else {
+    } else if (!midCombo) {
       if (this.state === 'charge' || this.state === 'guard') { this.move = null; this.setState('free'); }
       this.lastMoveId = null;
       this.comboGrace = 0;
     }
+    // (전환기 쿨타임 중 콤보 도중 스왑: 지금 동작은 그대로 이어지고 다음 공격부터 새 무기)
     return true;
   }
 
@@ -588,6 +593,7 @@ class Player {
 
     // 무기 교체 / 공명 / 스킬 쿨타임 (칸에 넣어둔 무기는 sheatheMult 배속으로 회복)
     if (this.swapCooldown > 0) this.swapCooldown--;
+    if (this.swapAttackCd > 0) this.swapAttackCd--;
     if (this.swapFlash > 0) this.swapFlash--;
     if (this.res.timer > 0 && --this.res.timer === 0) { this.res.level = 0; this.res.cdCut = 0; }
     if (this.ironWall > 0) this.ironWall--;
@@ -641,7 +647,7 @@ class Player {
     if (!noGravity) {
       let g = CONFIG.physics.gravity;
       // 공중 공격 중엔 살짝 체공
-      if (this.state === 'attack' && this.move && this.move.air &&
+      if (this.state === 'attack' && this.move && this.move.air && this.canFloat() &&
           this.stateFrame < this.move.startup + this.move.active + 4) {
         const W = this.weaponCfg();
         g *= W.airGravityMult !== undefined && !this.move.skill ? W.airGravityMult : A.attackGravityMult;
@@ -663,6 +669,7 @@ class Player {
     }
 
     // 착지
+    if (this.onGround) this.airSwings = 0;
     if (this.onGround && !this.wasOnGround) {
       this.landSquash = 8;
       this.jumpCut = false;
@@ -714,6 +721,7 @@ class Player {
     this.jumpCut = true;
     this.landSquash = 0;
     if (this.jumpsUsed === 1) Effects.dust(this.x, this.y, 4, 0);
+    this.airSwings = 0;
     Sound.play('jump');
     return true;
   }
@@ -841,7 +849,8 @@ class Player {
     this.launchFollow = false;
     this.setState('attack');
     this.vx *= 0.3;
-    if (move.air && this.vy > 0) this.vy *= 0.3;   // 공중 공격 시작 시 낙하 멈칫
+    if (move.air && !this.onGround) this.airSwings++;
+    if (move.air && this.vy > 0 && this.canFloat()) this.vy *= 0.3;   // 공중 공격 시작 시 낙하 멈칫
   }
 
   // 반격 일섬: 적의 반대편으로 순간이동하며 벤다
@@ -1180,6 +1189,13 @@ class Player {
 
   updateDead(game) {
     this.vx *= 0.9;
+  }
+
+  // 공중 체공 가능? 올라가는 중엔 안 됨, 헛손질만 계속하면 몇 번 뒤 그냥 떨어짐
+  canFloat() {
+    const A = CONFIG.air;
+    if (this.vy < A.floatRiseVy) return false;
+    return this.airSwings <= A.freeSwings || (Game.frame || 0) - this.lastHitAt <= A.floatHitWindow;
   }
 
   // 공중 공격이 적중했을 때: 살짝 머무름 (적의 저글링 감쇠와 같이 줄어듦)
