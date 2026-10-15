@@ -65,6 +65,8 @@ const Game = {
     this.waveCleared = true;
     this.clearBanner = null;   // 방(웨이브) 클리어 결과 표시
     this.floorBanner = null;   // 층 시작 표시
+    this.bossIntro = null;     // 보스 등장 표시
+    this.bossPhaseBanner = null;
     this.transition = null;    // 방 이동 페이드
     this.floor = null;
     this.room = null;
@@ -162,6 +164,8 @@ const Game = {
             this.roomWave++;
             this.roomTimer = D.waveDelay;
           }
+        } else if (room.kind === 'boss' && !room.bossSpawned) {
+          if (--this.roomTimer <= 0) this.spawnBoss();
         } else {
           this.clearRoom();
         }
@@ -185,6 +189,27 @@ const Game = {
       Effects.dust(e.x, pt.y, 10, 0);
     }
     Sound.play('spawn');
+  },
+
+  // 보스 등장: 하늘에서 떨어지며 이름 표시
+  spawnBoss(id, x) {
+    id = id || (this.room && this.room.bossId) || 'dusk';
+    if (this.room) this.room.bossSpawned = true;
+    const L = this.level;
+    x = x !== undefined ? x : L.width * 0.68;
+    const g = this.groundAt(x);
+    const b = new Boss(id, g.x, g.y - 380);
+    this.enemies.push(b);
+    this.waveCleared = false;
+    this.bossIntro = { name: b.name, title: b.cfg.title, life: CONFIG.boss.introFrames + 40, max: CONFIG.boss.introFrames + 40 };
+    Sound.play('bossIntro');
+    return b;
+  },
+
+  // 화면에 표시할 보스 (살아 있거나 격파 연출 중)
+  get boss() {
+    for (const e of this.enemies) if (e.isBoss && !e.remove) return e;
+    return null;
   },
 
   // 방 클리어: 문 열림 + 최고 랭크에 따른 보상 상자
@@ -367,7 +392,7 @@ const Game = {
     const R = CONFIG.posture.executeRange;
     let best = null, bd = 1e9;
     for (const e of this.enemies) {
-      if (e.dead || e.executed || e.state !== 'broken') continue;
+      if (e.dead || e.executed || (e.state !== 'broken' && e.state !== 'groggy')) continue;
       const d = Math.abs(e.x - p.x);
       if (d <= R && Math.abs(e.y - p.y) < 70 && d < bd) { best = e; bd = d; }
     }
@@ -425,7 +450,32 @@ const Game = {
     }
     if (ex.f > slashAt) ex.line = Math.max(0, ex.line - 1 / (X.stillFrames + 20));
 
-    if (ex.f === splitAt) {
+    // 보스 처형: 체력이 충분하면 큰 데미지만 주고 날려버림 (두 동강은 마지막 일격일 때만)
+    if (ex.f === splitAt && e.isBoss && e.hp > e.maxHp * CONFIG.boss.executeDamage) {
+      const dmg = e.maxHp * CONFIG.boss.executeDamage;
+      e.hp -= dmg;
+      ex.survived = true;
+      e.executed = false;
+      e.groggyTimer = 0;
+      e.posture = 0;
+      e.armorBroken = 30;
+      e.vx = ex.dir * 7; e.vy = -7;
+      e.onGround = false;
+      e.setState('launched');
+      if (e.phase === 1 && e.hp <= e.maxHp * CONFIG.boss.phase2At) e.pendingPhase2 = true;
+      Effects.damageNumber(e.x, e.y - e.h - 10, dmg, true);
+      Effects.radialSparks(e.x, ex.cutY, 30, '#ff3030', 2);
+      Effects.ring(e.x, ex.cutY, '#ff5040', 130);
+      Effects.addShake(X.shake);
+      Effects.impactFrame(1);
+      Effects.popText(e.x, e.y - e.h - 34, '처형', '#ff4a3a', 30);
+      p.execPose = 'flick';
+      p.stateFrame = 0;
+      for (let i = 0; i < 3; i++) Effects.afterimage(Anim.snapshot(Anim.playerFigure(p)), 'rgb(80,240,255)', 50);
+      Sound.play('execSplit');
+      this.registerHit();
+      this.onExecution(e);
+    } else if (ex.f === splitAt) {
       // 두 동강 → 파편
       e.hp = 0;
       e.dead = true;
@@ -449,7 +499,8 @@ const Game = {
     if (ex.f > splitAt) ex.split += X.splitSpeed * Math.max(0.2, 1 - (ex.f - splitAt) / X.splitFrames);
 
     if (ex.f >= endAt) {
-      e.remove = true;
+      if (!ex.survived) e.remove = true;
+      if (e.pendingPhase2) { e.pendingPhase2 = false; e.startPhase2(); }
       this.enemies = this.enemies.filter((o) => !o.remove);
       this.exec = null;
       this.execDark = 0;
@@ -488,6 +539,10 @@ const Game = {
       const types = ['grunt', 'shield', 'flyer', 'heavy', 'archer', 'charger'];
       for (let i = 0; i < types.length; i++) {
         if (Input.isPressed('spawn' + (i + 1))) this.spawnEnemy(types[i], this.player.x + this.player.facing * 260);
+      }
+      // 7: 보스 소환 (층 번호에 맞는 보스)
+      if (Input.isPressed('spawn7') && !this.boss) {
+        this.spawnBoss(CONFIG.dungeon.bossByFloor[(this.floorIndex || 0) % 3], this.player.x + this.player.facing * 300);
       }
     }
 
@@ -544,6 +599,8 @@ const Game = {
     if (this.combo.pop > 0) this.combo.pop--;
 
     if (this.floorBanner && --this.floorBanner.life <= 0) this.floorBanner = null;
+    if (this.bossIntro && --this.bossIntro.life <= 0) this.bossIntro = null;
+    if (this.bossPhaseBanner && --this.bossPhaseBanner.life <= 0) this.bossPhaseBanner = null;
     // 낭떠러지 낙사
     if (p.y > this.level.killY && !p.dead) this.playerFell();
     if (this.mode === 'dungeon') {
@@ -651,6 +708,7 @@ const Game = {
     Effects.drawBack(ctx);
     const ex = this.exec;
     if (this.room) Render.chest(ctx, this.room.chest);
+    for (const e of this.enemies) if (e.isBoss) Render.bossHazards(ctx, e);
     for (const e of this.enemies) if (!e.executed) Render.enemy(ctx, e);
     for (const pr of this.projectiles) pr.draw(ctx);
     // 처형 암전: 배경과 다른 적은 검게, 플레이어와 대상만 밝은 실루엣으로

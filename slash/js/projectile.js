@@ -8,6 +8,7 @@ class Projectile {
     this.x = x; this.y = y;
     this.vx = vx; this.vy = vy;
     this.r = P.radius;
+    this.hh = P.height || P.radius * 2;   // 판정 높이 (보스 검기는 세로로 김)
     this.life = P.life;
     this.atk = atk;
     this.shooter = shooter;
@@ -20,8 +21,8 @@ class Projectile {
 
   box(out) {
     out = out || {};
-    out.x = this.x - this.r; out.y = this.y - this.r;
-    out.w = this.r * 2; out.h = this.r * 2;
+    out.x = this.x - this.r; out.y = this.y - this.hh / 2;
+    out.w = this.r * 2; out.h = this.hh;
     return out;
   }
 
@@ -94,6 +95,7 @@ class Projectile {
   }
 
   draw(ctx) {
+    if (this.kind === 'wave') { this.drawWave(ctx); return; }
     const reflected = this.owner === 'player';
     const core = reflected ? '#e8ffff' : '#fff2b0';
     const glow = reflected ? '#3ff' : '#ffc830';   // 노랑 = 패링/반사 가능
@@ -117,6 +119,38 @@ class Projectile {
     ctx.fillStyle = core;
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.r * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 보스 검기: 진행 방향으로 볼록한 초승달
+  drawWave(ctx) {
+    const reflected = this.owner === 'player';
+    const glow = reflected ? '#3ff' : '#ffc830';
+    const dir = Math.sign(this.vx) || 1, h = this.hh / 2;
+    ctx.save();
+    for (let i = 0; i < this.trail.length; i++) {
+      const t = this.trail[i], k = (i + 1) / this.trail.length;
+      ctx.globalAlpha = k * 0.25;
+      ctx.fillStyle = glow;
+      ctx.fillRect(t.x - 2, t.y - h * k, 4, h * 2 * k);
+    }
+    ctx.globalAlpha = 1;
+    ctx.translate(this.x, this.y);
+    ctx.scale(dir, 1);
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.moveTo(-4, -h);
+    ctx.quadraticCurveTo(16, 0, -4, h);
+    ctx.quadraticCurveTo(4, 0, -4, -h);
+    ctx.fill();
+    ctx.fillStyle = reflected ? '#e8ffff' : '#fff6c8';
+    ctx.beginPath();
+    ctx.moveTo(-1, -h * 0.8);
+    ctx.quadraticCurveTo(11, 0, -1, h * 0.8);
+    ctx.quadraticCurveTo(5, 0, -1, -h * 0.8);
     ctx.fill();
     ctx.restore();
   }

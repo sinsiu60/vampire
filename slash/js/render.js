@@ -441,15 +441,18 @@ const Render = {
     // 예고: 빨강(패링 불가) / 노랑(패링 가능) / 흰색 섬광(간파, 보스) 기운이 깜빡이며 차오름
     if (e.telegraphing) {
       const tc = e.telegraphColor;
-      const k = clamp01(e.stateFrame / e.atk.windup);
+      const k = e.teleProgress;
       const on = (e.stateFrame >> 2) % 2 === 0;
       glow = Render.TELE[tc].glow;
       blur = on ? 10 + 16 * k : 6;
       if (on) { col = Render.TELE[tc].body; back = Render.TELE[tc].back; }
-    } else if (e.state === 'broken') {
-      // 체간 붕괴: 붉게 맥동
+    } else if (e.state === 'broken' || e.state === 'groggy') {
+      // 체간 붕괴 / 보스 그로기: 붉게 맥동
       glow = '#ff2a1a';
       blur = 8 + Math.sin((Game.frame || 0) * 0.3) * 5;
+    } else if (e.isBoss) {
+      // 보스 2페이즈: 분노의 기운
+      if (e.phase === 2) { glow = e.cfg.aura; blur = 10 + Math.sin((Game.frame || 0) * 0.2) * 4; }
     } else if (e.armored) {
       // 슈퍼아머: 은빛 테두리
       glow = 'rgba(190,205,225,0.9)';
@@ -474,7 +477,7 @@ const Render = {
     const headY = fig.j.head.y - fig.dim.headR;
     // 예고 표시 "!"
     if (e.telegraphing) {
-      const k = clamp01(e.stateFrame / e.atk.windup);
+      const k = e.teleProgress;
       const c = Render.TELE[e.telegraphColor].mark;
       ctx.save();
       ctx.fillStyle = c;
@@ -498,6 +501,10 @@ const Render = {
       }
       ctx.restore();
     }
+    if (e.isBoss) {   // 보스는 화면 아래 큰 바 + 그로기 표식만
+      if (e.state === 'groggy') this.executePrompt(ctx, e, headY - 18);
+      return;
+    }
     // 체력바 + 체간 바 (세키로식: 가운데서 양옆으로 차오름)
     const bw = look.body === 'heavy' ? 56 : 40;
     const by = Math.min(e.y - e.h - 12, headY - 10);
@@ -509,37 +516,39 @@ const Render = {
     }
     if (!e.dead && e.posture > 0.5) this.postureBar(ctx, e.x, by - 7, bw, e.posture / e.maxPosture, e.state === 'broken', e.postureFlash > 0);
     // 체간 붕괴: 붉은 처형 표식 + 안내
-    if (e.state === 'broken' && !e.dead) {
-      const t = (Game.frame || 0);
-      const pulse = 1 + Math.sin(t * 0.25) * 0.15;
-      const my = by - 22;
-      ctx.save();
-      ctx.translate(e.x, my);
-      ctx.scale(pulse, pulse);
-      ctx.fillStyle = '#ff2a1a';
-      ctx.shadowColor = '#f00';
-      ctx.shadowBlur = 14;
-      ctx.beginPath();
-      ctx.moveTo(0, -9); ctx.lineTo(7, 0); ctx.lineTo(0, 9); ctx.lineTo(-7, 0);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.moveTo(0, -4); ctx.lineTo(3, 0); ctx.lineTo(0, 4); ctx.lineTo(-3, 0);
-      ctx.fill();
-      ctx.restore();
-      const near = Math.abs(Game.player.x - e.x) <= CONFIG.posture.executeRange;
-      ctx.save();
-      ctx.font = 'bold 11px "Segoe UI", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = near ? '#fff' : 'rgba(255,255,255,0.6)';
-      ctx.strokeStyle = '#000';
-      ctx.lineWidth = 3;
-      const txt = `${Input.label('light')} 처형`;
-      ctx.strokeText(txt, e.x, e.y + 16);
-      ctx.fillText(txt, e.x, e.y + 16);
-      ctx.restore();
-    }
+    if (e.state === 'broken' && !e.dead) this.executePrompt(ctx, e, by - 22);
+  },
+
+  // 처형 가능 표식 (붉은 마름모) + 안내
+  executePrompt(ctx, e, my) {
+    const t = (Game.frame || 0);
+    const pulse = 1 + Math.sin(t * 0.25) * 0.15;
+    ctx.save();
+    ctx.translate(e.x, my);
+    ctx.scale(pulse, pulse);
+    ctx.fillStyle = '#ff2a1a';
+    ctx.shadowColor = '#f00';
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.moveTo(0, -9); ctx.lineTo(7, 0); ctx.lineTo(0, 9); ctx.lineTo(-7, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.moveTo(0, -4); ctx.lineTo(3, 0); ctx.lineTo(0, 4); ctx.lineTo(-3, 0);
+    ctx.fill();
+    ctx.restore();
+    const near = Math.abs(Game.player.x - e.x) <= CONFIG.posture.executeRange;
+    ctx.save();
+    ctx.font = 'bold 11px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = near ? '#fff' : 'rgba(255,255,255,0.6)';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+    const txt = `${Input.label('light')} 처형` + (e.isBoss ? ` / ${Input.label('down')}+${Input.label('heavy')} 띄우기` : '');
+    ctx.strokeText(txt, e.x, e.y + 16);
+    ctx.fillText(txt, e.x, e.y + 16);
+    ctx.restore();
   },
 
   // 예고 색 (색 = 정보)
@@ -566,6 +575,7 @@ const Render = {
   executionTarget(ctx, ex) {
     const e = ex.target, X = CONFIG.execution;
     const slashAt = X.prepFrames, splitAt = slashAt + X.stillFrames;
+    if (ex.survived) return;   // 보스가 버텼으면 일반 렌더가 그림
     if (ex.f < splitAt) {
       this.enemy(ctx, e);
     } else {
@@ -708,6 +718,47 @@ const Render = {
         ctx.fill();
         break;
       }
+      case 'greatsword':
+        Anim.drawBlade(ctx, w.base, w.tip, 3.4, 6.5, col);
+        this.bossCrest(ctx, fig, e, col);
+        break;
+      case 'lance': {
+        ctx.lineWidth = 3.5;
+        ctx.beginPath(); ctx.moveTo(w.base.x, w.base.y); ctx.lineTo(w.tip.x, w.tip.y); ctx.stroke();
+        const dx = w.tip.x - w.base.x, dy = w.tip.y - w.base.y, L = Math.hypot(dx, dy) || 1;
+        const ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
+        // 창날 + 깃발
+        ctx.beginPath();
+        ctx.moveTo(w.tip.x + ux * 16, w.tip.y + uy * 16);
+        ctx.lineTo(w.tip.x + nx * 5, w.tip.y + ny * 5);
+        ctx.lineTo(w.tip.x - nx * 5, w.tip.y - ny * 5);
+        ctx.closePath(); ctx.fill();
+        const fx = w.tip.x - ux * 14, fy = w.tip.y - uy * 14, wave = Math.sin((Game.frame || 0) * 0.3) * 3;
+        ctx.beginPath();
+        ctx.moveTo(fx, fy); ctx.lineTo(fx - ux * 14 + nx * (10 + wave), fy - uy * 14 + ny * (10 + wave)); ctx.lineTo(fx - ux * 16, fy - uy * 16);
+        ctx.closePath(); ctx.fill();
+        this.bossCrest(ctx, fig, e, col);
+        break;
+      }
+      case 'flameblade': {
+        Anim.drawBlade(ctx, w.base, w.tip, 3.2, 6, col);
+        // 칼날을 따라 일렁이는 불꽃
+        const t = Game.frame || 0;
+        ctx.save();
+        ctx.shadowColor = '#ff6020';
+        ctx.shadowBlur = 12;
+        for (let i = 0; i < 6; i++) {
+          const k = (i + 1) / 7, fx = w.base.x + (w.tip.x - w.base.x) * k, fy = w.base.y + (w.tip.y - w.base.y) * k;
+          const fl = 4 + Math.sin(t * 0.5 + i * 1.7) * 2.5;
+          ctx.fillStyle = i % 2 ? 'rgba(255,140,40,0.85)' : 'rgba(255,210,90,0.85)';
+          ctx.beginPath();
+          ctx.ellipse(fx, fy - fl * 0.6, 2.4, fl, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+        this.bossCrest(ctx, fig, e, col);
+        break;
+      }
       case 'horns': {
         // 앞으로 휜 뿔 두 개
         ctx.lineWidth = 3;
@@ -719,6 +770,98 @@ const Render = {
         }
         break;
       }
+    }
+  },
+
+  // 보스 투구 장식: 검귀 = 뿔, 창기사 = 깃털 장식, 성주 = 왕관
+  bossCrest(ctx, fig, e, col) {
+    const j = fig.j, d = fig.dim, f = fig.facing;
+    const hx = j.head.x, hy = j.head.y, r = d.headR;
+    ctx.fillStyle = col;
+    ctx.strokeStyle = col;
+    ctx.lineCap = 'round';
+    if (e.bossId === 'dusk') {
+      ctx.lineWidth = 3;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(hx + s * 3, hy - r * 0.6);
+        ctx.quadraticCurveTo(hx + s * 10, hy - r - 6, hx + s * 6 - f * 4, hy - r - 14);
+        ctx.stroke();
+      }
+    } else if (e.bossId === 'moon') {
+      const wave = Math.sin((Game.frame || 0) * 0.15) * 2;
+      ctx.beginPath();
+      ctx.moveTo(hx, hy - r);
+      ctx.quadraticCurveTo(hx - f * 10, hy - r - 16, hx - f * (24 + wave), hy - r - 4);
+      ctx.quadraticCurveTo(hx - f * 10, hy - r - 6, hx, hy - r + 2);
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(hx - r, hy - r * 0.5);
+      for (let i = 0; i <= 4; i++) {
+        const x = hx - r + (2 * r) * (i / 4);
+        ctx.lineTo(x, hy - r - (i % 2 ? 2 : 8));
+        if (i < 4) ctx.lineTo(x + r / 4, hy - r * 0.6);
+      }
+      ctx.lineTo(hx + r, hy - r * 0.5);
+      ctx.fill();
+    }
+    // 어깨 갑주
+    ctx.beginPath();
+    ctx.arc(j.shoulder.x, j.shoulder.y + 2, 9, Math.PI, 0);
+    ctx.fill();
+  },
+
+  // 보스 바닥 경고: 붉은 원이 차오르고 안쪽 고리가 좁혀지면 폭발. 내려찍기 착지 표시
+  bossHazards(ctx, b) {
+    for (const z of b.zones) {
+      ctx.save();
+      if (!z.boom) {
+        const k = clamp01(z.t / z.warn);
+        ctx.fillStyle = `rgba(255,40,20,${(0.12 + 0.3 * k).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.ellipse(z.x, z.y - 2, z.r, z.r * 0.22, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ff3a20';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = '#f00';
+        ctx.shadowBlur = 8;
+        ctx.stroke();
+        const rr = z.r * (1.6 - 0.6 * k);   // 좁혀오는 고리 = 남은 시간
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.ellipse(z.x, z.y - 2, rr, rr * 0.22, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        const k = z.boom / 22;
+        ctx.globalAlpha = 1 - k;
+        const g = ctx.createLinearGradient(0, z.y - 140, 0, z.y);
+        g.addColorStop(0, 'rgba(255,120,40,0)');
+        g.addColorStop(1, 'rgba(255,200,90,0.9)');
+        ctx.fillStyle = g;
+        ctx.fillRect(z.x - z.r * 0.6 * (1 - k * 0.5), z.y - 140, z.r * 1.2 * (1 - k * 0.5), 140);
+      }
+      ctx.restore();
+    }
+    const m = b.marker;
+    if (m) {
+      const k = clamp01(m.t / m.T);
+      ctx.save();
+      ctx.strokeStyle = '#ff3a20';
+      ctx.fillStyle = `rgba(255,30,20,${(0.1 + 0.25 * k).toFixed(3)})`;
+      ctx.lineWidth = 2;
+      ctx.shadowColor = '#f00';
+      ctx.shadowBlur = 10;
+      const r = b.pat ? b.pat.cfg.radius : 110;
+      ctx.beginPath();
+      ctx.ellipse(m.x, m.y - 2, r, r * 0.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(m.x - 10, m.y - 2); ctx.lineTo(m.x + 10, m.y - 2);
+      ctx.moveTo(m.x, m.y - 8); ctx.lineTo(m.x, m.y + 4);
+      ctx.stroke();
+      ctx.restore();
     }
   },
 

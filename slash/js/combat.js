@@ -91,6 +91,7 @@ const Combat = {
     const PO = CONFIG.posture;
     let pd = move.posture !== undefined ? move.posture : move.damage * PO.hitMult;
     if (wasDeflected) pd *= PO.deflectedHitMult;   // 휘청이는 빈틈을 공략하면 더 크게
+    if (enemy.cfg.hitPostureMult !== undefined) pd *= enemy.cfg.hitPostureMult;   // 보스: 공격보다 패링으로
     if (res === 'blocked') enemy.addPosture(move.damage * PO.blockMult, game);
     else if (res !== 'kill') enemy.addPosture(pd, game);
 

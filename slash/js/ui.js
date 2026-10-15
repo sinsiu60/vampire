@@ -70,8 +70,10 @@ const UI = {
     else ctx.fillText(`처치 ${game.kills}`, 720, 30);
     if (game.floor) this.minimap(ctx, game);
     if (game.floorBanner) this.floorBanner(ctx, game.floorBanner);
+    const boss = game.boss;
+    if (boss) this.bossBar(ctx, game, boss);
 
-    if (this.showHelp) {
+    if (this.showHelp && !boss) {
       // 키 이름은 KEYBINDS 에서 가져온다 (config.js 에서 바꾸면 도움말도 같이 바뀜)
       const k = (a) => Input.label(a);
       const lines = [
@@ -154,6 +156,84 @@ const UI = {
     ctx.beginPath();
     ctx.arc(px, oy + cur.mapY + cur.mapH / 2, 2.2, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
+  },
+
+  // ---------- 보스 체력바 (화면 아래) + 그로기 게이지 + 이름 ----------
+  bossBar(ctx, game, b) {
+    const V = CONFIG.view, B = CONFIG.boss;
+    const w = 560, x = (V.width - w) / 2, y = 506;
+    // 등장 연출: 위아래 검은 띠 + 큰 이름
+    const intro = game.bossIntro;
+    if (intro) {
+      const t = 1 - intro.life / intro.max;
+      const a = Math.min(1, t * 5, intro.life / 25);
+      ctx.save();
+      ctx.fillStyle = `rgba(0,0,0,${(0.85 * a).toFixed(3)})`;
+      ctx.fillRect(0, 0, V.width, 46 * a);
+      ctx.fillRect(0, V.height - 46 * a, V.width, 46 * a);
+      ctx.globalAlpha = a;
+      ctx.textAlign = 'center';
+      ctx.font = '14px "Segoe UI", sans-serif';
+      ctx.fillStyle = '#ccc';
+      ctx.fillText(intro.title, V.width / 2, 178);
+      ctx.font = 'bold 44px "Segoe UI", sans-serif';
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = '#000';
+      ctx.strokeText(intro.name, V.width / 2, 222);
+      ctx.fillStyle = b.cfg.aura;
+      ctx.shadowColor = b.cfg.aura;
+      ctx.shadowBlur = 16;
+      ctx.fillText(intro.name, V.width / 2, 222);
+      ctx.restore();
+      return;
+    }
+    const pb = game.bossPhaseBanner;
+    if (pb) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, pb.life / 30, (pb.max - pb.life) / 10);
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 30px "Segoe UI", sans-serif';
+      ctx.fillStyle = b.cfg.aura;
+      ctx.shadowColor = b.cfg.aura;
+      ctx.shadowBlur = 14;
+      ctx.fillText('2 페이즈', V.width / 2, 200);
+      ctx.restore();
+    }
+    ctx.save();
+    // 이름
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#000';
+    ctx.strokeText(b.name, x, y - 6);
+    ctx.fillStyle = '#f2e6d8';
+    ctx.fillText(b.name, x, y - 6);
+    if (b.phase === 2) { ctx.fillStyle = b.cfg.aura; ctx.font = 'bold 11px "Segoe UI", sans-serif'; ctx.fillText('분노', x + ctx.measureText(b.name).width + 60, y - 6); }
+    // 체력 (흰색 잔상 + 빨강)
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(x - 3, y - 3, w + 6, 16);
+    ctx.fillStyle = '#3a1012';
+    ctx.fillRect(x, y, w, 10);
+    ctx.fillStyle = 'rgba(255,240,220,0.8)';
+    ctx.fillRect(x, y, w * clamp01(b.hpLag / b.maxHp), 10);
+    ctx.fillStyle = b.phase === 2 ? '#e8402a' : '#c42a2a';
+    ctx.fillRect(x, y, w * clamp01(b.hp / b.maxHp), 10);
+    // 2페이즈 경계
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillRect(x + w * B.phase2At - 1, y - 2, 2, 14);
+    // 그로기 게이지 (체간): 가운데서 양옆으로
+    const gt = clamp01(b.posture / b.maxPosture), gy = y + 15;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(V.width / 2 - 180, gy - 1, 360, 6);
+    const groggy = b.state === 'groggy' || b.groggyTimer > 0;
+    ctx.fillStyle = groggy ? ((game.frame >> 2) % 2 ? '#ff3020' : '#ffd0a0') : `rgb(255,${Math.round(210 - 170 * gt)},${Math.round(60 - 50 * gt)})`;
+    const gw = groggy ? 360 * (b.groggyTimer / B.groggyFrames) : 360 * gt;
+    ctx.fillRect(V.width / 2 - gw / 2, gy, gw, 4);
+    ctx.font = 'bold 9px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillText(groggy ? '그로기!' : '그로기', V.width / 2, gy + 14);
     ctx.restore();
   },
 

@@ -94,7 +94,7 @@ const Dungeon = {
           r.waves.push(list);
         }
       } else if (r.kind === 'boss') {
-        r.waves.push(D.bossRoom[Math.min(fi, D.bossRoom.length - 1)].slice());
+        r.bossId = D.bossByFloor[Math.min(fi, D.bossByFloor.length - 1)];
       }
       r.level = this.genRoom(r);
     }

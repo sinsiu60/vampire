@@ -31,6 +31,7 @@ const KEYBINDS = {
   // 적 소환 (개발용): 1 잡몹 / 2 방패병 / 3 비행형 / 4 중갑병 / 5 원거리형 / 6 돌진형
   spawn1: ['Digit1'], spawn2: ['Digit2'], spawn3: ['Digit3'],
   spawn4: ['Digit4'], spawn5: ['Digit5'], spawn6: ['Digit6'],
+  spawn7: ['Digit7'],           // 보스 소환 (개발용)
   help: ['F1'],                 // 조작 도움말 표시/숨기기
 };
 
@@ -579,12 +580,84 @@ const CONFIG = {
     ],
     roomEnemies: [3, 4, 5],    // 층별 웨이브당 적 수 (방이 넓으면 +1)
     twoWaveWidth: 1700,        // 이보다 넓은 방은 웨이브 2번
-    // 보스방 (7단계에서 진짜 보스로 교체 예정): 층별 강적 묶음
-    bossRoom: [
-      ['heavy', 'grunt', 'archer'],
-      ['heavy', 'shield', 'charger', 'archer'],
-      ['heavy', 'heavy', 'shield', 'flyer', 'archer'],
-    ],
+    // 층별 보스 (bosses 의 이름)
+    bossByFloor: ['dusk', 'moon', 'flame'],
+  },
+
+  // ---------- 보스 ----------
+  // 패턴 기본값. 보스마다 patterns 에서 일부만 덮어씀
+  //  telegraphMs: 예고 시작 → 타격까지 (페이즈 2 에선 phase2Speed 배 빨라짐)
+  //  parryable: true = 노랑(패링·가드 가능) / false = 빨강(회피) / telegraph: 'white' = 간파(퍼펙트 패링 시 체간 대폭)
+  bossPatterns: {
+    // 돌진베기: 웅크렸다가 순식간에 붙어서 벰 (노랑)
+    dashSlash: { weight: 3, telegraphMs: 640, dashFrames: 10, maxDist: 380, active: 5, recovery: 42,
+      damage: 20, hitbox: { x: -10, y: -84, w: 104, h: 84 }, knock: { x: 9, y: -4 }, parryable: true },
+    // 점프 내려찍기: 플레이어 위치로 뛰어올라 내려찍고 충격파 (빨강, 점프로 피하기)
+    jumpSlam: { weight: 2, windFrames: 30, airFrames: 42, peak: 220, radius: 120, recovery: 46,
+      damage: 24, knock: { x: 10, y: -7 }, parryable: false, minDist: 110 },
+    // 검기 3연발: 낮게(점프) / 높게(가만히) / 가운데 (노랑, 패링하면 반사)
+    swordWaves: { weight: 2, count: 3, telegraphMs: 430, gapFrames: 12, speed: 7.5, heights: [-16, -66, -36],
+      damage: 14, recovery: 36, parryable: true, reflectDamage: 45, minDist: 160 },
+    // 광역 경고 후 폭발: 바닥에 붉은 원 → 잠시 뒤 폭발 (빨강)
+    areaBlast: { weight: 2, zones: 4, spread: 170, radius: 74, warnFrames: 68, recovery: 50,
+      damage: 26, knock: { x: 8, y: -8 }, parryable: false },
+    // ----- 페이즈 2 추가 패턴 (보스마다 하나) -----
+    // 난무: 노랑 → 노랑 → 흰색 섬광 찌르기 (리듬 패링)
+    flurry: { weight: 3, phase2: true, hits: [
+      { telegraphMs: 400, telegraph: 'yellow' },
+      { telegraphMs: 320, telegraph: 'yellow' },
+      { telegraphMs: 560, telegraph: 'white', thrust: true },
+    ], lunge: 5, damage: 16, hitbox: { x: -6, y: -80, w: 96, h: 80 }, thrustBox: { x: 0, y: -60, w: 150, h: 26 },
+      knock: { x: 8, y: -3 }, recovery: 46, maxDist: 260 },
+    // 연속 내려찍기 3회 (빨강)
+    triSlam: { weight: 3, phase2: true, count: 3, windFrames: 16, airFrames: 34, peak: 170, radius: 110, recovery: 54,
+      damage: 20, knock: { x: 9, y: -6 }, parryable: false },
+    // 화염 기둥: 보스에서 플레이어 쪽으로 연달아 폭발이 번져감 (빨강)
+    pillars: { weight: 3, phase2: true, count: 8, step: 110, interval: 12, warnFrames: 42, radius: 58, recovery: 54,
+      damage: 22, knock: { x: 7, y: -8 }, parryable: false },
+  },
+
+  bosses: {
+    dusk: {
+      name: '황혼의 검귀', title: '1층 · 노을',
+      width: 40, height: 72, hp: 900, posture: 240,
+      weight: 4, friction: 0.8, walkSpeed: 1.6, spacing: [110, 250],
+      idleMin: 36, idleMax: 70,              // 패턴 사이 대기
+      look: { body: 'boss', weapon: 'greatsword' }, aura: '#ff7a3a',
+      patterns: { dashSlash: {}, jumpSlam: {}, swordWaves: {}, areaBlast: {}, flurry: {} },
+    },
+    moon: {
+      name: '월야의 창기사', title: '2층 · 달밤',
+      width: 38, height: 74, hp: 1100, posture: 270,
+      weight: 4, friction: 0.8, walkSpeed: 1.9, spacing: [130, 280],
+      idleMin: 30, idleMax: 60,
+      look: { body: 'boss', weapon: 'lance' }, aura: '#8fb4ff',
+      patterns: { dashSlash: { telegraphMs: 600, maxDist: 460, hitbox: { x: -10, y: -70, w: 140, h: 40 } },
+        jumpSlam: { weight: 3 }, swordWaves: { speed: 9 }, areaBlast: {}, triSlam: {} },
+    },
+    flame: {
+      name: '불꽃 성주', title: '3층 · 불타는 성',
+      width: 44, height: 78, hp: 1300, posture: 300,
+      weight: 5, friction: 0.8, walkSpeed: 1.5, spacing: [110, 240],
+      idleMin: 28, idleMax: 56,
+      look: { body: 'boss', weapon: 'flameblade' }, aura: '#ff5020',
+      patterns: { dashSlash: { damage: 24 }, jumpSlam: { radius: 140 }, swordWaves: { count: 4, heights: [-16, -66, -36, -16] },
+        areaBlast: { weight: 3, zones: 5, radius: 84 }, pillars: {} },
+    },
+  },
+  // 보스 공통
+  boss: {
+    phase2At: 0.5,             // 체력 50% 이하 → 2페이즈
+    phase2Speed: 1.3,          // 2페이즈 예고·동작 속도 배율
+    roarFrames: 80,            // 2페이즈 전환 포효 (그동안 무적)
+    roarPush: 9,               // 포효로 플레이어를 밀어냄
+    groggyFrames: 220,         // 그로기 게이지(체간)가 차면 쓰러져 있는 시간 → 런처로 띄우기 / 처형 가능
+    groggyDamageMult: 1.5,     // 그로기 중 받는 데미지 배율
+    hitPostureMult: 0.35,      // 일반 공격으로 쌓이는 그로기(체간) 배율 — 보스는 패링 위주로 무너뜨리게
+    executeDamage: 0.3,        // 처형 데미지 = 최대 체력의 비율 (체력이 그보다 적으면 처형으로 격파)
+    deflectStagger: 26,        // 퍼펙트 패링 당하면 휘청 (패턴이 끊김)
+    introFrames: 100,          // 등장 연출
+    deathFrames: 110,
   },
 
   // ---------- 연습/테스트 아레나 (1단계) ----------

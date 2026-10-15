@@ -226,6 +226,35 @@ const Sound = {
         this._tone(0.12, 'triangle', 988, 988, 0.15, 0.08);
         this._tone(0.3, 'triangle', 1318, 1318, 0.18, 0.16, 0.5);
         break;
+      case 'bossIntro':
+        this._tone(1.2, 'sawtooth', 55, 45, 0.3, 0, 0.6);
+        this._tone(1.2, 'sine', 82, 70, 0.3, 0.1, 0.6);
+        break;
+      case 'bossLand':
+        this._noise(0.5, 'lowpass', 1200, 50, 1.0, 1, 0.4);
+        this._tone(0.5, 'sine', 70, 30, 0.9);
+        break;
+      case 'bossRoar':
+        this._noise(0.9, 'bandpass', 300, 120, 0.7, 0.8, 0.5);
+        this._tone(0.9, 'sawtooth', 110, 60, 0.35, 0, 0.5);
+        this._tone(0.9, 'sawtooth', 165, 80, 0.2, 0.05, 0.5);
+        break;
+      case 'bossWave':
+        this._noise(0.25, 'bandpass', 1500, 4000, 0.5, 1.5);
+        this._tone(0.2, 'triangle', 900, 400, 0.15);
+        break;
+      case 'bossCast':
+        this._tone(0.6, 'sawtooth', 200, 400, 0.15, 0, 0.5);
+        this._noise(0.5, 'bandpass', 400, 1600, 0.3, 2, 0.4);
+        break;
+      case 'boom':
+        this._noise(0.4, 'lowpass', 1800, 60, 0.9, 1, 0.3);
+        this._tone(0.35, 'sine', 90, 35, 0.7);
+        break;
+      case 'bossDeath':
+        this._metal(130, 2.2, 0.4, 1.0, [1, 2.03, 2.74, 3.6]);
+        this._noise(1.0, 'lowpass', 2500, 50, 0.9, 1, 0.6);
+        break;
       case 'telegraphWhite':
         this._tone(0.3, 'sine', 2600, 2600, 0.12, 0, 0.6);
         break;

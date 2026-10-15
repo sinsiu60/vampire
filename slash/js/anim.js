@@ -34,6 +34,7 @@ const Anim = (() => {
     heavy: { thigh: 14, shin: 13, torso: 19, neck: 2, headR: 7.5, upper: 12, fore: 12, limbW: 8, torsoW: 19, foot: 6 },
     slim: { thigh: 12, shin: 12, torso: 15, neck: 4, headR: 5.5, upper: 10, fore: 10, limbW: 3.8, torsoW: 7, foot: 4 },
     flyer: { thigh: 8, shin: 8, torso: 13, neck: 3, headR: 6, upper: 9, fore: 9, limbW: 4, torsoW: 9, foot: 3 },
+    boss: { thigh: 17, shin: 16, torso: 23, neck: 3, headR: 8, upper: 14, fore: 13, limbW: 7.5, torsoW: 15, foot: 7 },
   };
 
   // ---------- 포즈 라이브러리 ----------
@@ -271,6 +272,15 @@ const Anim = (() => {
 
   function enemyPose(e) {
     const r = { pose: null, rot: 0, sx: 1, sy: 1, grounded: e.onGround && !e.hovering };
+    // 보스 패턴이 직접 지정한 포즈
+    if (e.animPose) {
+      const ap = e.animPose;
+      r.pose = lerpPose(POSES[ap.a], POSES[ap.b], ease.inOut(clamp01(ap.t)));
+      if (ap.shake) r.pose.torso += Math.sin((Game.frame || 0) * 1.9) * 2.5;
+      r.rot = ap.rot || 0;
+      if (r.rot) r.grounded = false;
+      return r;
+    }
     const f = e.stateFrame, A = e.atk;
     const t = (Game.frame || 0) + e.seed;
     const flying = e.hovering;
@@ -280,7 +290,14 @@ const Anim = (() => {
     const wind = POSES[set[0]], strike = POSES[set[1]];
     switch (e.state) {
       case 'chase':
+      case 'bossIdle':
         r.pose = !flying && Math.abs(e.vx) > 0.3 ? walkPose(e.walkPhase, POSES.gIdle) : base;
+        break;
+      case 'groggy':
+        // 보스 그로기: 무릎 꿇고 크게 휘청
+        r.pose = lerpPose(POSES.gDeflect, POSES.gKneel, ease.outCubic(clamp01(f / 12)));
+        r.pose.torso += Math.sin(t * 0.12) * 9;
+        r.pose.head += Math.sin(t * 0.12 + 1.2) * 10;
         break;
       case 'windup': {
         // 예고: 크게 들어 올리고 뒤로 젖힘, 막판엔 부들부들
@@ -526,6 +543,9 @@ const Anim = (() => {
     blade: { hand: 13, base: 9, tip: 42 },
     shield: { hand: 15, base: 15, tip: 15 },
     hammer: { hand: 16, base: 6, tip: 56 },
+    greatsword: { hand: 16, base: 8, tip: 74 },
+    lance: { hand: 15, base: -26, tip: 92 },
+    flameblade: { hand: 16, base: 8, tip: 70 },
     bow: { hand: 19, base: 19, tip: 19 },
     horns: null,
     claws: null,

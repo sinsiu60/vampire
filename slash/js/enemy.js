@@ -20,8 +20,9 @@
 })();
 
 class Enemy {
-  constructor(type, x, y) {
-    const T = CONFIG.enemies[type];
+  // cfg: 보스처럼 CONFIG.enemies 밖의 설정을 쓰는 경우 직접 전달
+  constructor(type, x, y, cfg) {
+    const T = cfg || CONFIG.enemies[type];
     this.type = type;
     this.cfg = T;
     this.w = T.width;
@@ -35,7 +36,7 @@ class Enemy {
     this.state = 'idle';
     this.stateFrame = 0;
     this.cooldown = 30 + Math.random() * 40;
-    this.atk = T.attacks[0];      // 현재(또는 다음) 공격
+    this.atk = T.attacks ? T.attacks[0] : { id: 'slash', kind: 'melee', windup: 30, recovery: 40 };   // 현재(또는 다음) 공격
     this.flash = 0;
     this.hitPlayer = false;
     this.dead = false;
@@ -72,6 +73,17 @@ class Enemy {
   // 예고 중인가? (렌더러가 빨강/노랑 번쩍에 사용)
   get telegraphing() {
     return this.state === 'windup';
+  }
+
+  // 예고 진행도 0~1 (렌더러가 빛 세기에 사용)
+  get teleProgress() {
+    return clamp01(this.stateFrame / this.atk.windup);
+  }
+
+  // 체간이 회복되는 평상시 상태인가
+  isNeutral() {
+    const s = this.state;
+    return s === 'idle' || s === 'chase' || s === 'windup' || s === 'attack' || s === 'recover';
   }
 
   get armored() {
@@ -124,8 +136,7 @@ class Enemy {
     // 체간 회복: 한동안 안 맞으면 천천히 (체력이 적을수록 느리게)
     const PO = CONFIG.posture;
     // 휘청·경직·그로기·공중 상태에선 회복하지 않음 (빈틈을 공략할 시간)
-    const neutral = this.state === 'idle' || this.state === 'chase' || this.state === 'windup' ||
-      this.state === 'attack' || this.state === 'recover';
+    const neutral = this.isNeutral();
     if (this.postureDelay > 0) { if (neutral) this.postureDelay--; }
     else if (this.posture > 0 && neutral) {
       const hpK = 1 - PO.regenHpFactor * (1 - this.hp / this.maxHp);
@@ -187,7 +198,7 @@ class Enemy {
         // 퍼펙트 패링 당함: 뒤로 휘청
         this.vx *= 0.85;
         if (this.hovering) this.vy *= 0.9;
-        if (this.stateFrame >= CONFIG.parry.deflectStagger) this.afterHurt();
+        if (this.stateFrame >= (this.deflectFrames || CONFIG.parry.deflectStagger)) this.afterHurt();
         break;
 
       case 'broken':
@@ -269,7 +280,7 @@ class Enemy {
       // 부유: 중력 없음, 통과 발판 무시
       this.dropThrough = 2;
     } else if (!(this.state === 'attack' && this.atk.kind === 'dive')) {
-      const g = CONFIG.physics.gravity * (this.state === 'launched' ? CONFIG.air.launchedGravityMult : 1);
+      const g = this.gravOverride || CONFIG.physics.gravity * (this.state === 'launched' ? CONFIG.air.launchedGravityMult : 1);
       this.vy = Math.min(this.vy + g, CONFIG.physics.maxFall);
     }
     Dungeon.moveAndCollide(this);
@@ -523,7 +534,7 @@ class Enemy {
     }
 
     // 체간 붕괴 중: 데미지만 받고 그대로 무릎 꿇고 있음 (처형 기회 유지)
-    if (this.state === 'broken') {
+    if (this.state === 'broken' || (this.state === 'groggy' && !info.launch && !info.slam)) {
       this.vx += info.dir * 0.4;
       return 'hit';
     }
