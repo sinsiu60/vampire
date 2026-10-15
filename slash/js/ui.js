@@ -64,7 +64,7 @@ const UI = {
     } else if (p.state === 'charge') {
       ctx.textAlign = 'left';
       ctx.font = 'bold 14px "Segoe UI", sans-serif';
-      ctx.fillStyle = p.chargeLevel >= p.weaponCfg().charge.maxLevel ? '#fff' : '#5ff';
+      ctx.fillStyle = p.chargeLevel >= p.chargeCfg().maxLevel ? '#fff' : '#5ff';
       ctx.fillText('차지 Lv' + p.chargeLevel, 20, 128);
     }
 
@@ -87,7 +87,7 @@ const UI = {
       ctx.textAlign = 'center';
       ctx.font = '12px "Segoe UI", sans-serif';
       ctx.fillStyle = '#fff';
-      ctx.fillText(`${Input.label('pause')} 일시정지·조작법   ${Input.label('inventory')} 인벤토리   ${Input.label('help')} 도움말`, 580, 520);
+      ctx.fillText(`${Input.label('pause')} 일시정지·조작법   ${Input.label('inventory')} 각인   ${Input.label('help')} 도움말`, 580, 520);
       ctx.restore();
     }
 
@@ -98,8 +98,8 @@ const UI = {
         `${k('left')}/${k('right')} 이동  ${k('jump')} 점프(2단)  ${k('dash')} 대시(무적)  ${k('light')} 약공 콤보  ${k('heavy')} 강공(길게=차지)  약공 2타 후 ${k('heavy')} 찌르기`,
         `${k('down')}+${k('heavy')} 런처(${k('heavy')} 유지=같이 점프)  공중 ${k('light')} 콤보  공중 ${k('heavy')} 강공  공중 ${k('down')}+${k('heavy')} 내려찍기`,
         `${k('parry')} 탭 = 패링 / 누르기 = 가드  패링 직후 ${k('light')} 일섬 / ${k('heavy')} 런처  체간 붕괴 시 ${k('light')} 처형`,
-        `${k('swap')}/휠 무기 교체(공격 중이면 전환기 + 공명)  ${k('skill1')}/${k('skill2')} 무기 스킬  머리 위 아이콘 = 약점 무기  ${k('inventory')} 인벤토리`,
-        `${k('spawn1')}~${k('spawn7')} 적·보스  ${k('spawn8')} 아이템  ${k('debug')} 히트박스  ${k('debugMode')} 패링 디버그  ${k('mode')} 던전/연습장  ${k('help')} 도움말`,
+        `${k('swap')}/휠 무기 교체(공격 중이면 전환기 + 공명)  ${k('skill1')}/${k('skill2')} 무기 스킬  머리 위 아이콘 = 약점 무기  ${k('inventory')} 각인`,
+        `${k('spawn1')}~${k('spawn7')} 적·보스  ${k('spawn8')} 각인  ${k('debug')} 히트박스  ${k('debugMode')} 패링 디버그  ${k('mode')} 던전/연습장  ${k('help')} 도움말`,
       ];
       ctx.textAlign = 'center';
       ctx.font = '11px "Segoe UI", sans-serif';
@@ -125,6 +125,12 @@ const UI = {
       const y = yb - qs - 4 - s;
       const W = CONFIG.weapons[t];
       this.iconBox(ctx, x, y, s, p.gear.weapons[i], null, big ? 1 : 0.7);
+      // 장착한 각인: 속성 색 점 (아이콘 위쪽)
+      p.engr[t].forEach((inst, k) => {
+        const px = x + 4 + k * (big ? 9 : 7), py = y + 4, r = big ? 3 : 2.4;
+        ctx.fillStyle = inst ? DATA.elements[Engrave.def(inst).element].color : 'rgba(255,255,255,0.15)';
+        ctx.beginPath(); ctx.arc(px + r, py + r, r, 0, Math.PI * 2); ctx.fill();
+      });
       if (big) {
         // 공명: 테두리 청록 빛 (단계가 높을수록 밝게)
         if (g > 0) {

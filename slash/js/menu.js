@@ -459,7 +459,7 @@ const Menu = {
       ['무기', [
         [`${k('swap')} / 휠`, '무기 교체 (공격 중이면 전환기 + 공명)'],
         [`${k('skill1')} / ${k('skill2')}`, '현재 무기의 스킬'],
-        [k('inventory'), '인벤토리'],
+        [k('inventory'), '각인·인벤토리'],
         [k('up'), '보상 상자 열기 (공격으로 쳐도 됨)'],
         [k('map'), '층 지도'],
         [k('pause'), '일시정지'],
@@ -501,7 +501,7 @@ const Menu = {
       this.text(ctx, `${k('skill1')} ${W.skills.q.name} · ${k('skill2')} ${W.skills.e.name}   — ${W.desc}`, x + 90, yy, '11px "Segoe UI", sans-serif', 'rgba(255,255,255,0.7)', 'left');
       yy += 16;
     }
-    this.text(ctx, `개발용: ${k('spawn1')}~${k('spawn7')} 적·보스 소환 · ${k('spawn8')} 아이템 · ${k('debug')} 히트박스 · ${k('debugMode')} 패링 디버그 · ${k('help')} 게임 중 도움말 · ${k('mode')} 던전↔연습장`,
+    this.text(ctx, `개발용: ${k('spawn1')}~${k('spawn7')} 적·보스 소환 · ${k('spawn8')} 무작위 각인 · ${k('debug')} 히트박스 · ${k('debugMode')} 패링 디버그 · ${k('help')} 게임 중 도움말 · ${k('mode')} 던전↔연습장`,
       x + w - 24, y + 34, '10px "Segoe UI", sans-serif', 'rgba(255,255,255,0.35)', 'right');
     this.text(ctx, `${k('back')} / ${k('confirm')} / 클릭: 돌아가기`, V.width / 2, y + h + 18, '11px "Segoe UI", sans-serif', 'rgba(255,255,255,0.5)');
   },

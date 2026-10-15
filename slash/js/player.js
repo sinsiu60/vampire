@@ -88,9 +88,9 @@ class Player {
     // 무기 3개를 모두 장착 (칸 순서 = WEAPON_ORDER: 검 → 대검 → 건틀릿). 가방의 같은 종류 무기로만 교체
     this.gear = {
       weapons: [
-        Loot.make('weapon', 'sword', 0, [{ k: 'atk', v: 5 }]),
-        Loot.make('weapon', 'greatsword', 0, [{ k: 'posture', v: 8 }]),
-        Loot.make('weapon', 'gauntlet', 0, [{ k: 'aspd', v: 5 }]),
+        Loot.make('weapon', 'sword', 0, []),
+        Loot.make('weapon', 'greatsword', 0, []),
+        Loot.make('weapon', 'gauntlet', 0, []),
       ],
       armor: null,
       ring: null,
@@ -110,6 +110,9 @@ class Player {
       this.skillFlash[t] = { q: 0, e: 0 };   // 쿨 완료 반짝임
       this.skillDeny[t] = { q: 0, e: 0 };    // 쿨타임 중 눌렀을 때 흔들림
     }
+    this.engr = Engrave.emptySlots();   // 각인: { sword: [3칸], greatsword: [...], gauntlet: [...] }
+    this.windCrit = 0;            // 각인 '바람의 춤': 공중 대시 후 첫 공격 치명타
+    this.gtHits = 0;              // 각인 '연타 흡혈' 카운트
     this.res = { level: 0, timer: 0, cdCut: 0, hit: false };   // 공명 (단계 / 남은 시간 / 다음 스킬 쿨감% / 스왑 후 적중 여부)
     this.stanceTimer = 0;         // 검 Q: 간파 자세
     this.stanceCfg = null;
@@ -139,6 +142,7 @@ class Player {
   recalcStats() {
     const P = CONFIG.player;
     this.stats = Loot.computeStats(this.gear, this.activeWeapon);
+    if (this.engr) Engrave.applyStats(this, this.stats);
     this.maxHp = P.maxHp + this.stats.maxHp;
     this.maxStamina = P.maxStamina + this.stats.stamina;
     if (this.hp > this.maxHp) this.hp = this.maxHp;
@@ -264,6 +268,7 @@ class Player {
       this.buf[key] = 0;
       // 쿨타임: 아이템 쿨감 × 공명 쿨감 (공명 쿨감은 한 번 쓰면 소모)
       let cd = S.cooldown * (1 - this.stats.cdr / 100);
+      if (t === 'gauntlet' && slot === 'q') cd *= 1 - Engrave.v(this, 'gt_ascension', 'cdr') / 100;
       const r = this.res;
       if (r.timer > 0 && r.cdCut > 0) {
         cd *= 1 - r.cdCut / 100;
@@ -575,6 +580,7 @@ class Player {
     if (this.landSquash > 0) this.landSquash--;
     if (this.flipTimer > 0) this.flipTimer--;
     if (this.critReady > 0) this.critReady--;
+    if (this.windCrit > 0) this.windCrit--;
     if (this.parryFlash > 0) this.parryFlash--;
     if (this.guardFlash > 0) this.guardFlash--;
     if (this.chainShow > 0) this.chainShow--;
@@ -614,7 +620,7 @@ class Player {
     if (this.onGround) {
       this.coyote = P.coyoteFrames;
       this.jumpsUsed = 0;
-      this.airDashesLeft = P.airDashes;
+      this.airDashesLeft = P.airDashes + (Engrave.get(this, 'gt_wind_dance') ? 1 : 0);
     } else if (this.coyote > 0) {
       this.coyote--;
       if (this.coyote === 0 && this.jumpsUsed === 0) this.jumpsUsed = 1; // 걸어서 떨어지면 공중 점프 1회만
@@ -731,7 +737,12 @@ class Player {
     if (!this.onGround && this.airDashesLeft <= 0) return false;
     if (!this.useStamina(CONFIG.player.dashStamina)) { this.buf.dash = 0; return false; }
     this.buf.dash = 0;
-    if (!this.onGround) this.airDashesLeft--;
+    if (!this.onGround) {
+      this.airDashesLeft--;
+      // 각인 '바람의 춤': 공중 대시 후 첫 공격 치명타
+      const wd = Engrave.get(this, 'gt_wind_dance');
+      if (wd) this.windCrit = Math.round(Engrave.val(wd, 'sec') * 60) + 11;
+    }
     this.dashDir = ax !== 0 ? ax : this.facing;
     this.facing = this.dashDir;
     this.vy = 0;
@@ -828,7 +839,8 @@ class Player {
   startAttack(id, ax, moveData) {
     let move = moveData || this.moveData(id);
     // 공격 속도: 선딜·후딜이 짧아짐 (스킬 제외)
-    const sp = 1 + this.stats.aspd / 100;
+    // 공격 속도 (각인 '무중력': 공중에서 더 빠르게)
+    const sp = 1 + (this.stats.aspd + (this.onGround ? 0 : Engrave.v(this, 'gt_zero_g', 'aspd'))) / 100;
     if (sp > 1.001 && !move.skill) {
       move = Object.assign({}, move);
       move.startup = Math.max(1, Math.round(move.startup / sp));
@@ -934,8 +946,20 @@ class Player {
     if (f === m.startup) {
       this.vx = this.facing * m.lunge;
       if (m.swing.thrust) Effects.thrust(this, m.swing.r, this.facing, (m.multiHit ? m.multiHit.interval : m.active) + 8, this.trailPal().glow, (m.swing.py || -32) + 32);
-      if (m.quake) Skills.quake(game, this, m.quake);
-      if (m.ironWall) { this.ironWall = m.ironWall.duration; this.ironCfg = m.ironWall; Effects.ring(this.x, this.y - this.h * 0.5, '#ffb050', 70); }
+      if (m.quake) {
+        // 각인 '지진 전환': 대검 전환기 충격파 강화
+        const qs = this.moveId === 'SWAPIN_GREATSWORD' && Engrave.get(this, 'gs_quake_swap');
+        Skills.quake(game, this, qs ? Object.assign({}, m.quake, {
+          range: m.quake.range * (1 + Engrave.val(qs, 'range') / 100), damage: m.quake.damage * (1 + Engrave.val(qs, 'pct') / 100),
+        }) : m.quake);
+      }
+      if (m.ironWall) {
+        // 각인 '불굴': 철벽 지속·반격 강화
+        const un = Engrave.get(this, 'gs_unyielding');
+        this.ironCfg = un ? Object.assign({}, m.ironWall, { reflectMult: m.ironWall.reflectMult * (1 + Engrave.val(un, 'pct') / 100) }) : m.ironWall;
+        this.ironWall = m.ironWall.duration + (un ? Math.round(Engrave.val(un, 'sec') * 60) : 0);
+        Effects.ring(this.x, this.y - this.h * 0.5, '#ffb050', 70);
+      }
       if (m.iai) Skills.iai(game, this, m.iai);
       Sound.play(m.sfx);
     }
@@ -1041,6 +1065,9 @@ class Player {
           Effects.radialSparks(this.x, this.y - 10, 28, `rgb(${this.trailPal().outer})`, 2);
           Effects.screenFlash('rgba(200,150,255,', 6);
           Sound.play('boom');
+          // 각인 '유성우': 작은 유성
+          const ms = Engrave.get(this, 'gt_meteor_shower');
+          if (ms) Skills.meteorShower(game, this, Math.round(Engrave.val(ms, 'count')), Engrave.val(ms, 'dmg') * this.damageMult());
         }
       }
     } else {
@@ -1059,8 +1086,15 @@ class Player {
     }
   }
 
+  // 차지 설정 (각인 '거인의 일격': 단계 +1, 차지 속도)
+  chargeCfg() {
+    const C = this.weaponCfg().charge, g = Engrave.get(this, 'gs_giant');
+    if (!g) return C;
+    return Object.assign({}, C, { maxLevel: C.maxLevel + 1, framesPerLevel: Math.round(C.framesPerLevel / (1 + Engrave.val(g, 'speed') / 100)) });
+  }
+
   updateCharge(game, input, ax) {
-    const C = this.weaponCfg().charge;
+    const C = this.chargeCfg();
     this.vx *= 0.75;
     if (this.tryParry()) return;    // 차지 중 패링 / 대시 / 무기 교체로 취소 가능 (교체는 update 에서)
     if (this.tryDash(ax)) return;
@@ -1180,6 +1214,11 @@ class Player {
     this.posture = Math.min(CONFIG.posture.player.max - 1, this.posture + PR.perfectSelfPosture);
     if (enemy) this.facing = Math.sign(enemy.x - this.x) || this.facing;
     if (this.state !== 'stance') this.setState('free');
+    else {
+      // 각인 '무념': 자세 지속 연장
+      const mu = Engrave.get(this, 'sword_mushin');
+      if (mu) { this.stanceTimer += Math.round(Engrave.val(mu, 'sec') * 60); Effects.popText(this.x, this.y - this.h - 40, '무념', '#8fd8ff', 13); }
+    }
   }
 
   updateHurt(game) {

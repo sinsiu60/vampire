@@ -379,6 +379,14 @@ const Sound = {
       case 'invClose':
         this._tone(0.08, 'sine', 600, 400, 0.08);
         break;
+      case 'engrave':           // 각인 장착
+        this._metal(1200, 0.5, 0.1, 0.7, [1, 2.4, 3.9]);
+        this._tone(0.4, 'triangle', 600, 900, 0.1, 0.05, 0.6);
+        break;
+      case 'engraveUp':         // 각인 강화
+        [0, 7, 12].forEach((n, i) => this._tone(0.35, 'triangle', 660 * Math.pow(2, n / 12), 660 * Math.pow(2, n / 12), 0.1, i * 0.07, 0.6));
+        this._metal(1760, 0.6, 0.06, 0.8, [1, 2.01]);
+        break;
       case 'coin':              // 골드 줍기
         this._tone(0.06, 'square', 1800, 1800, 0.035);
         this._tone(0.1, 'triangle', 2400, 2400, 0.05, 0.04);

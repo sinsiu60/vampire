@@ -24,6 +24,7 @@ const KEYBINDS = {
   swapNext: ['WheelDown'],      // 마우스 휠 아래: 다음 무기
   swapPrev: ['WheelUp'],        // 마우스 휠 위: 이전 무기
   inventory: ['Tab'],
+  upgrade: ['KeyU'],            // 각인 장착 화면: 이 칸의 각인 강화
   map: ['KeyM'],                // 층 지도
   pause: ['Escape'],
   restart: ['Enter', 'NumpadEnter'],   // 게임오버 / 일시정지에서 재시작
@@ -467,6 +468,15 @@ const CONFIG = {
             lunge: 6, sfx: 'swingHeavy', heavy: true, pts: 38, armor: true, impactFrame: true,
             swing: { from: -178, to: 88, r: 142, squash: 1 },
             quake: { damage: 30, range: 300, speed: 9, height: 70, stun: 70, bossPosture: 30 },
+          },
+          {
+            // 각인 '거인의 일격' 이 있을 때만 (차지 단계 +1)
+            name: '대검 차지 Lv4 · 붕천', startup: 8, active: 9, recovery: 34,
+            damage: 150, posture: 120, hitbox: { x: -26, y: -160, w: 200, h: 160 },
+            knock: { x: 18, y: -9 }, hitstun: 60, hitstop: 20, shake: 20,
+            lunge: 7, sfx: 'swingHeavy', heavy: true, pts: 44, armor: true, impactFrame: true,
+            swing: { from: -179, to: 89, r: 158, squash: 1 },
+            quake: { damage: 40, range: 380, speed: 10, height: 80, stun: 90, bossPosture: 40 },
           },
         ],
         LAUNCHER: {
@@ -986,6 +996,21 @@ const CONFIG = {
 
   floors: DATA.floors,            // data/floors.js (층 수 = 이 배열 길이)
   rooms: DATA.rooms,              // data/rooms.js (방 종류)
+
+  // ---------- 각인 (data/engravings.js) ----------
+  engrave: {
+    slots: 3,                  // 무기마다 각인 슬롯
+    maxLevel: 3,               // 강화 최대 +3
+    rarityMult: [1, 1.3, 1.6, 2],   // 등급별 수치 배율 (일반/희귀/영웅/전설)
+    // 층별 등급 확률 [일반, 희귀, 영웅] (전설 각인은 3단계)
+    rarityWeights: [[70, 26, 4], [55, 35, 10], [44, 40, 16], [34, 44, 22], [26, 46, 28]],
+    bossLuck: 1,               // 보스 보상: 한 등급 위 쪽으로 (가중치 이동)
+    bossCards: 3,              // 보스 보상 카드 수
+    declineGold: 25,           // 엘리트 각인 거절 시 골드 (층 배율 곱함)
+    discardGold: 10,           // 받은 각인을 버리면 골드
+    slowMult: 0.5,             // 둔화: 적 행동 속도 배율
+    bossSlowMult: 0.8,         // 보스는 덜 느려짐
+  },
 
   // 정예: 층 배율 위에 추가로 곱함. 처치하면 희귀 이상 장비 확정
   elite: {

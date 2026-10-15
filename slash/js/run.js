@@ -137,7 +137,10 @@ const Run = {
         options: [
           { label: '쉬기', icon: 'rest', color: '#7fe08a', desc: `체력 ${Math.round(R.rest.heal * 100)}% 회복\n(${Math.round(p.maxHp * R.rest.heal)} HP)`,
             act: () => { st.used = true; const h = Math.round(p.maxHp * R.rest.heal); p.heal(h); Effects.popText(st.x, st.y - 70, `+${h} HP`, '#7f7', 18); Sound.play('rest'); } },
-          { label: '각인 강화', icon: 'forge', color: '#b0c8ff', desc: '장착한 각인 하나를 +1 강화', disabled: true, note: '2단계에서 열림' },
+          { label: '각인 강화', icon: 'forge', color: '#b0c8ff', desc: '장착한 각인 하나를 +1 강화',
+            disabled: !Engrave.all(p).some((a) => a.inst.level < CONFIG.engrave.maxLevel),
+            note: Engrave.all(p).length ? '더 강화할 각인이 없음' : '장착한 각인이 없음',
+            act: () => { EngraveUI.open(game, { mode: 'upgrade', then: (g, r) => { if (r === 'done') st.used = true; } }); return true; } },
         ],
       });
     } else if (st.kind === 'shop') {

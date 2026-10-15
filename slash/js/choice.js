@@ -57,7 +57,9 @@ const Choice = {
       if (o.cost) game.gold -= o.cost;
       Sound.play('menuSelect');
       const keep = o.act ? o.act(game) : false;
-      if (!keep && this.cfg === c) this.close(game);
+      if (this.cfg !== c) return;
+      if (game.state !== 'choice') { this.cfg = null; return; }   // act 가 다른 화면(각인 장착 등)을 열었음
+      if (!keep) this.close(game);
     }
   },
 
@@ -80,6 +82,13 @@ const Choice = {
       const x = x0 + k * (w + gap), on = k === this.sel;
       const col = o.color || '#9fd8ff';
       this.rects.push({ x, y, w, h });
+      if (o.draw) {   // 직접 그리는 카드 (각인 카드 등)
+        ctx.save();
+        ctx.translate(0, on ? -6 : 0);
+        o.draw(ctx, x, y, w, h, on);
+        ctx.restore();
+        return;
+      }
       ctx.save();
       ctx.translate(0, on ? -6 : 0);
       ctx.fillStyle = on ? 'rgba(26,26,34,0.97)' : 'rgba(16,16,22,0.94)';

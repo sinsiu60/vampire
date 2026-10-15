@@ -8,18 +8,57 @@ const Skills = {
   bolts: [],     // 번개 연출
   cuts: [],      // 발도 일섬: 지나간 뒤 터지는 베기
 
+  shots: [],     // 플레이어 검기 (각인 '반격의 검기')
+  minis: [],     // 작은 유성 (각인 '유성우')
+
   reset() {
     this.waves.length = 0;
     this.bolts.length = 0;
     this.cuts.length = 0;
+    this.shots.length = 0;
+    this.minis.length = 0;
+  },
+
+  // 앞으로 날아가는 검기: 지나가는 적을 한 번씩 벰. o: { dmg, posture, weapon, styleId }
+  shot(game, p, o) {
+    this.shots.push({ x: p.x + p.facing * 20, y: p.y - p.h * 0.55, dir: p.facing, speed: 10, life: 48, hit: new Set(), o });
+    Sound.play('swingHeavy');
+  },
+
+  // 폭발: 반경 안의 적에게 데미지 + 체간
+  blast(game, x, y, r, dmg, posture, weapon, color, styleId) {
+    Effects.ring(x, y, color || '#ff8a2a', r);
+    Effects.radialSparks(x, y, 22, color || '#ffb050', 2);
+    Effects.addShake(6);
+    Sound.play('boom');
+    for (const e of game.enemies) {
+      if (e.dead || e.executed) continue;
+      const dx = e.x - x, dy = (e.y - e.h / 2) - y;
+      if (dx * dx + dy * dy > r * r) continue;
+      const dir = Math.sign(dx) || 1;
+      const res = Combat.applyHit(game, e, dmg, false, { dir, knockX: 5, knockY: -3, hitstun: 26, launch: false, attackerX: x },
+        { hitstop: 4, shake: 3, heavy: true, x: e.x, y: e.y - e.h * 0.5, styleId: styleId || 'BLAST', weapon });
+      if (res !== 'kill' && posture) e.addPosture(posture, game);
+    }
+  },
+
+  // 작은 유성: 착지 지점 주변에 차례로 떨어져 터짐
+  meteorShower(game, p, count, dmg) {
+    for (let i = 0; i < count; i++) {
+      const x = p.x + (i - (count - 1) / 2) * 70 + (Math.random() - 0.5) * 30;
+      this.minis.push({ x, y: p.y - 260 - Math.random() * 60, ty: p.y, delay: 10 + i * 7, dmg, weapon: p.weaponType() });
+    }
   },
 
   // ---------- 검 E: 발도 일섬 ----------
   // 앞으로 순간이동 (벽·낭떠러지 앞에서 멈춤). 지나간 경로의 적은 delay 뒤 한꺼번에 베임
   iai(game, p, C) {
     const L = game.level, dir = p.facing, x0 = p.x;
+    // 각인 '발도의 극': 거리·데미지
+    const dist = C.distance + Engrave.v(p, 'sword_iai_mastery', 'dist');
+    const iaiMult = 1 + Engrave.v(p, 'sword_iai_mastery', 'pct') / 100;
     let x = x0, safe = x0;
-    for (let d = 6; d <= C.distance; d += 6) {
+    for (let d = 6; d <= dist; d += 6) {
       const nx = x0 + dir * d;
       if (nx < 16 || nx > L.width - 16) break;
       let blocked = false;
@@ -46,7 +85,7 @@ const Skills = {
     const lo = Math.min(x0, x1) - 20, hi = Math.max(x0, x1) + 20;
     const targets = game.enemies.filter((e) => !e.dead && !e.executed && e.x + e.w / 2 > lo && e.x - e.w / 2 < hi &&
       e.y > p.y - C.height - 40 && e.y - e.h < p.y + 10);
-    this.cuts.push({ x0, x1, y, t: C.delay, C, targets, dir, mult: p.damageMult(), styleId: p.styleId, weapon: p.weaponType() });
+    this.cuts.push({ x0, x1, y, t: C.delay, C, targets, dir, mult: p.damageMult() * iaiMult, styleId: p.styleId, weapon: p.weaponType() });
     Sound.play('teleport');
   },
 
@@ -85,6 +124,30 @@ const Skills = {
   },
 
   update(game) {
+    // 검기
+    for (let i = this.shots.length - 1; i >= 0; i--) {
+      const s = this.shots[i];
+      s.x += s.dir * s.speed;
+      if (--s.life <= 0 || s.x < 0 || s.x > game.level.width) { this.shots.splice(i, 1); continue; }
+      for (const e of game.enemies) {
+        if (e.dead || e.executed || s.hit.has(e)) continue;
+        if (Math.abs(e.x - s.x) > e.w / 2 + 14 || s.y < e.y - e.h - 10 || s.y > e.y + 6) continue;
+        s.hit.add(e);
+        const res = Combat.applyHit(game, e, s.o.dmg, false, { dir: s.dir, knockX: 4, knockY: -2, hitstun: 24, launch: false, attackerX: s.x - s.dir * 20 },
+          { hitstop: 4, shake: 3, heavy: false, x: e.x, y: s.y, styleId: s.o.styleId, weapon: s.o.weapon });
+        if (res !== 'kill' && s.o.posture) e.addPosture(s.o.posture, game);
+      }
+    }
+    // 작은 유성
+    for (let i = this.minis.length - 1; i >= 0; i--) {
+      const m = this.minis[i];
+      if (m.delay > 0) { m.delay--; continue; }
+      m.y += 14;
+      if (m.y >= m.ty) {
+        this.minis.splice(i, 1);
+        this.blast(game, m.x, m.ty - 14, 54, m.dmg, 8, m.weapon, '#c08aff', 'METEOR_SHOWER');
+      }
+    }
     for (let i = this.waves.length - 1; i >= 0; i--) {
       const w = this.waves[i], Q = w.Q;
       w.t++;
@@ -205,6 +268,35 @@ const Skills = {
 
   // ---------- 그리기 (월드 좌표) ----------
   draw(ctx) {
+    // 검기: 초승달 모양
+    for (const s of this.shots) {
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.scale(s.dir, 1);
+      ctx.globalAlpha = Math.min(1, s.life / 12);
+      ctx.shadowColor = '#ffe14a';
+      ctx.shadowBlur = 16;
+      ctx.fillStyle = 'rgba(255,245,190,0.9)';
+      ctx.beginPath();
+      ctx.arc(-10, 0, 26, -1.1, 1.1);
+      ctx.arc(-22, 0, 22, 1.0, -1.0, true);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    // 작은 유성
+    for (const m of this.minis) {
+      if (m.delay > 0) continue;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(200,150,255,0.8)';
+      ctx.shadowColor = '#b46cff';
+      ctx.shadowBlur = 12;
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(m.x - 6, m.y - 30); ctx.lineTo(m.x, m.y); ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(m.x, m.y, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
     const t = Game.frame || 0;
     // 충격파: 바닥에서 솟는 바위 가시들
     for (const w of this.waves) {

@@ -2,7 +2,7 @@
 // 게임 루프 (60fps 고정 타임스텝), 상태 관리, 카메라
 
 const Game = {
-  state: 'gate',        // gate(첫 입력) | logo | title | playing | paused | inventory | gameover | victory
+  state: 'gate',        // gate(첫 입력) | logo | title | playing | paused | map | choice | engrave | gameover | victory
   stateTime: 0,
   frame: 0,             // 전체 프레임 카운터 (애니메이션용)
   simTime: 0,           // 게임 시간 (ms). 히트스톱 중엔 멈추고 슬로모션 중엔 느리게 흐름 → 패링 판정 기준
@@ -75,7 +75,6 @@ const Game = {
     Effects.reset();
     Style.reset();
     Skills.reset();
-    Inventory.reset();
     if (this.mode === 'practice') {
       Render.setTheme(0);
       const level = Dungeon.buildArena();
@@ -288,10 +287,13 @@ const Game = {
     this.clearBanner = {
       rank: best, gold: bonus, life: CONFIG.style.clearBannerFrames, max: CONFIG.style.clearBannerFrames,
       note: room.kind === 'boss' ? (last ? '오른쪽 끝: 탈출' : '오른쪽 끝: 다음 층으로')
-        : room.kind === 'elite' ? '엘리트 보상: 각인 (2단계에서)' : '오른쪽 끝의 문 중 하나를 골라라',
+        : '오른쪽 끝의 문 중 하나를 골라라',
     };
     Sound.play('gateOpen');
     Sound.play('clear');
+    // 보상: 엘리트 = 각인 1개 (받기/거절), 보스 = 각인 카드 3장
+    if (room.kind === 'elite') Engrave.rewardElite(this);
+    else if (room.kind === 'boss') Engrave.rewardBoss(this);
   },
 
   // 플레이어가 낭떠러지에 떨어짐: 데미지 + 직전 발판으로 복귀
@@ -419,6 +421,9 @@ const Game = {
 
   onPostureBreak(enemy) {
     Style.onPostureBreak();
+    // 각인 '파쇄': 체간 붕괴 시 폭발
+    const p = this.player, sh = Engrave.get(p, 'gs_shatter');
+    if (sh) Skills.blast(this, enemy.x, enemy.y - enemy.h * 0.5, Engrave.val(sh, 'radius'), Engrave.val(sh, 'dmg') * p.damageMult(), Engrave.val(sh, 'posture'), 'greatsword', '#ff8a2a', 'SHATTER');
   },
 
   // ---------- 처형 ----------
@@ -583,10 +588,10 @@ const Game = {
       if (Input.isPressed('spawn7') && !this.boss) {
         this.spawnBoss(this.mode === 'dungeon' ? this.floorCfg.boss : 'dusk', this.player.x + this.player.facing * 300);
       }
-      // 8: 아이템 떨어뜨리기 (높은 등급이 잘 나옴)
+      // 8: 무작위 각인 받기 (개발용)
       if (Input.isPressed('spawn8')) {
-        const p = this.player;
-        Loot.spawnDrop(this, Loot.roll(2, 4, 0), p.x + p.facing * 50, p.y - 10, p.facing * 1.5);
+        const [inst] = Engrave.offer(this, 1, 2);
+        if (inst) { Engrave.beginEquip(this, inst); return; }
       }
     }
 
@@ -596,19 +601,17 @@ const Game = {
       return;
     }
     if (this.state === 'choice') { Choice.update(this); return; }
+    if (this.state === 'engrave') { EngraveUI.update(this); return; }
     if (this.state === 'playing' && this.mode === 'dungeon' && Input.isPressed('map') && !this.exec && !this.transition) {
       this.setState('map');
       Sound.play('invOpen');
       return;
     }
 
-    // 인벤토리 (Tab): 게임 정지
-    if (this.state === 'inventory') {
-      Inventory.update(this);
-      return;
-    }
+    // 인벤토리 (Tab): 무기·각인 보기 (게임 정지)
     if (this.state === 'playing' && Input.isPressed('inventory') && !this.exec && !this.transition && !this.player.dead) {
-      Inventory.open(this);
+      EngraveUI.open(this, { mode: 'view' });
+      Sound.play('invOpen');
       return;
     }
 
@@ -660,7 +663,16 @@ const Game = {
 
     p.update(this, Input);
     Combat.playerAttack(this, p);
-    for (const e of this.enemies) e.update(this);
+    for (const e of this.enemies) {
+      // 둔화: 일부 프레임만 행동 (각인 효과)
+      if (e.slowTimer > 0) {
+        e.slowTimer--;
+        e.slowAcc = (e.slowAcc || 0) + e.slowMult;
+        if (e.slowAcc < 1) continue;
+        e.slowAcc -= 1;
+      }
+      e.update(this);
+    }
     this.enemies = this.enemies.filter((e) => !e.remove);
     for (const pr of this.projectiles) pr.update(this);
     this.projectiles = this.projectiles.filter((pr) => !pr.dead);
@@ -847,9 +859,9 @@ const Game = {
     }
 
     UI.hud(ctx, this);
-    if (this.state === 'inventory') Inventory.draw(ctx, this);
     if (this.state === 'map') Run.drawMap(ctx, this);
     if (this.state === 'choice') Choice.draw(ctx, this);
+    if (this.state === 'engrave') EngraveUI.draw(ctx, this);
     if (this.state === 'paused' || this.state === 'gameover' || this.state === 'victory') Menu.draw(ctx, this);
     // 시작 페이드 인
     if (this.fadeIn > 0) {

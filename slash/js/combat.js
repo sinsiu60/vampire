@@ -64,10 +64,14 @@ const Combat = {
   hitEnemy(game, player, enemy, move) {
     const P = CONFIG.player;
     // 패링 성공 후엔 크리티컬 확정
-    const sure = player.critReady > 0;
+    // 패링 성공 후 / 각인 '바람의 춤' 공중 대시 직후엔 크리티컬 확정
+    const sure = player.critReady > 0 || player.windCrit > 0;
     const crit = sure || Math.random() < player.critChance();
-    if (sure) player.critReady = 0;
-    const dmg = move.damage * player.damageMult() * (crit ? P.critMult : 1);
+    if (sure) { player.critReady = 0; player.windCrit = 0; }
+    let dmg = move.damage * player.damageMult() * (crit ? P.critMult : 1);
+    // 각인 '역습': 반격 일섬·반격 런처 강화
+    const counter = /^COUNTER/.test(player.moveId);
+    if (counter) dmg *= 1 + Engrave.v(player, 'sword_riposte', 'pct') / 100;
     // 회오리 베기 등 360° 기술은 적이 있는 쪽으로 밀어냄
     const dir = move.omni ? (Math.sign(enemy.x - player.x) || player.facing) : player.facing;
     const wasDeflected = enemy.state === 'deflected' || enemy.state === 'stun';
@@ -103,10 +107,16 @@ const Combat = {
     const PO = CONFIG.posture;
     let pd = (move.posture !== undefined ? move.posture : move.damage * PO.hitMult) * player.postureMult()
       * this.weakMult(enemy, player.weaponType(), 'postureMult');
+    // 각인: 체간 피해
+    pd *= 1 + Engrave.v(player, 'gs_breaker', 'pct') / 100;
+    if (move.air || !player.onGround) pd *= 1 + Engrave.v(player, 'gt_air_breaker', 'pct') / 100;
+    if (crit) pd *= 1 + Engrave.v(player, 'sword_keen', 'cpost') / 100;
+    if (counter) pd *= 1 + Engrave.v(player, 'sword_riposte', 'post') / 100;
     if (wasDeflected) pd *= PO.deflectedHitMult;   // 휘청이는 빈틈을 공략하면 더 크게
     if (enemy.cfg.hitPostureMult !== undefined) pd *= enemy.cfg.hitPostureMult;   // 보스: 공격보다 패링으로
     if (res === 'blocked') enemy.addPosture(move.damage * PO.blockMult, game);
     else if (res !== 'kill') enemy.addPosture(pd, game);
+    if (res !== 'blocked') this.engraveOnHit(game, player, enemy, move, res);
 
     if (res === 'blocked') {
       // 방패에 막힘: 플레이어가 튕겨남
@@ -116,6 +126,28 @@ const Combat = {
       player.airHang(enemy.juggleMult());
     }
     if (sure && res !== 'blocked') Effects.popText(enemy.x, enemy.y - enemy.h - 34, 'CRITICAL', '#ffd83a', 16);
+  },
+
+  // 무기 각인 적중 효과 (회복, 둔화 등)
+  engraveOnHit(game, p, e, move, res) {
+    const id = p.moveId, t = p.weaponType();
+    // 혈무: 검 4타째·질풍 베기
+    if (t === 'sword' && (id === 'L4' || id === 'SWAPIN_SWORD')) {
+      const h = Engrave.v(p, 'sword_blood_dance', 'heal');
+      if (h > 0) { p.heal(h); Effects.popText(p.x, p.y - p.h - 26, `+${Math.round(h)}`, '#f66', 12); }
+    }
+    // 연타 흡혈: 건틀릿 5타마다
+    const vp = Engrave.get(p, 'gt_vampiric');
+    if (vp && t === 'gauntlet' && ++p.gtHits % 5 === 0) {
+      const h = Engrave.val(vp, 'heal');
+      p.heal(h);
+      Effects.popText(p.x, p.y - p.h - 26, `+${Math.round(h)}`, '#f66', 12);
+    }
+    if (res === 'kill') return;
+    // 대지 울림: 대검 강공·차지 → 둔화
+    if (t === 'greatsword' && /^HEAVY/.test(id)) Engrave.slow(e, Engrave.v(p, 'gs_tremor', 'sec'));
+    // 승천: 승룡권에 뜬 적 둔화
+    if (id === 'SKILL_GAUNTLET_Q') Engrave.slow(e, Engrave.v(p, 'gt_ascension', 'sec'));
   },
 
   // 약점 상성 배율: 적의 약점 무기(enemy.weakTo)로 때리면 CONFIG.weakness[key], 아니면 1
@@ -386,5 +418,8 @@ const Combat = {
     game.onParry(enemy, tier);
     // 전설 '폭염': 퍼펙트 패링 시 주변 폭발
     if (player.stats.uniques.parryBlast) Skills.parryBlast(game, player, x, y);
+    // 각인 '반격의 검기': 전방 검기
+    const pw = Engrave.get(player, 'sword_parry_wave');
+    if (pw) Skills.shot(game, player, { dmg: Engrave.val(pw, 'dmg') * player.damageMult(), posture: Engrave.val(pw, 'posture'), weapon: 'sword', styleId: 'PARRY_WAVE' });
   },
 };

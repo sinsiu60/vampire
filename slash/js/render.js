@@ -598,6 +598,10 @@ const Render = {
       // 슈퍼아머: 은빛 테두리
       glow = 'rgba(190,205,225,0.9)';
       blur = 5;
+    } else if (e.slowTimer > 0) {
+      // 둔화: 서리빛
+      glow = '#8fd8ff';
+      blur = 8;
     } else if (e.elite) {
       // 정예: 층 색 기운
       glow = e.eliteColor;
