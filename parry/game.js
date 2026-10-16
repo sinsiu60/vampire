@@ -161,7 +161,15 @@ const CONFIG = {
 
   hintTime: 7,                        // 시작 후 조작법 안내 표시 시간
 
-  audio: { enabled: true, volume: 0.35 }, // M 키로 음소거 토글
+  audio: {
+    enabled: true, volume: 0.7,       // M 키로 음소거 토글
+    // 휘두르기: 짧은 바람 소리 '쉭' — 걸러낸 잡음의 대역이 낮→높→낮으로 휩쓸림
+    swing: { dur: 0.16, vol: 0.9, sweep: [650, 2900, 850], q: 1.3, pitchJitter: 0.12 },
+    // 처치: 날카로운 고음 '칭' + 묵직한 저음 '쿵' 두 겹
+    kill: { high: 3400, highVol: 0.9, highDur: 0.16, low: 130, lowEnd: 36, lowVol: 1.0, lowDur: 0.42, drive: 3 },
+    // 패링: 금속이 부딪치는 높은 '챙' — 비정수배 배음이 길게 울리고 살짝 맥놀이
+    parry: { base: 2150, vol: 1.0, ring: 0.85 },
+  },
 
   restartFade: 0.18,                  // 재시작 직후 화면이 밝아지는 짧은 페이드 (입력은 즉시 받음)
 
@@ -614,74 +622,130 @@ const Pieces = {
 //  효과음 (WebAudio 로 즉석 합성, 파일 없음)
 // -------------------------------------------------------------
 const Sfx = {
-  ac: null, master: null, noiseBuf: null,
+  ac: null, master: null, noiseBuf: null, shaper: null,
   muted: false,
+
+  // 오디오 그래프 준비: 마스터 볼륨 → 컴프레서(여러 겹이 동시에 나도 찢어지지 않게) → 출력
+  // (테스트에서 OfflineAudioContext 로 같은 코드를 렌더링할 수 있도록 분리)
+  init(ac, dest) {
+    this.ac = ac;
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.knee.value = 8; comp.ratio.value = 4;
+    comp.attack.value = 0.002; comp.release.value = 0.12;
+    comp.connect(dest);
+    this.master = ac.createGain();
+    this.master.gain.value = CONFIG.audio.volume;
+    this.master.connect(comp);
+    const n = Math.floor(ac.sampleRate * 0.6);
+    this.noiseBuf = ac.createBuffer(1, n, ac.sampleRate);
+    const d = this.noiseBuf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    // 저음을 묵직하게 만드는 소프트 클리핑 곡선
+    const drive = CONFIG.audio.kill.drive, curve = new Float32Array(1024);
+    for (let i = 0; i < curve.length; i++) {
+      const x = i / (curve.length - 1) * 2 - 1;
+      curve[i] = Math.tanh(x * drive) / Math.tanh(drive);
+    }
+    this.shaper = curve;
+  },
   ensure() {
     if (!CONFIG.audio.enabled) return false;
     if (!this.ac) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return false;
-      this.ac = new AC();
-      this.master = this.ac.createGain();
-      this.master.gain.value = CONFIG.audio.volume;
-      this.master.connect(this.ac.destination);
-      const n = this.ac.sampleRate * 0.5;
-      this.noiseBuf = this.ac.createBuffer(1, n, this.ac.sampleRate);
-      const d = this.noiseBuf.getChannelData(0);
-      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      const ac = new AC();
+      this.init(ac, ac.destination);
     }
     if (this.ac.state === 'suspended') this.ac.resume();
     return !this.muted;
   },
   toggleMute() { this.muted = !this.muted; },
-  tone(type, f0, f1, dur, vol, delay = 0) {
+
+  // 볼륨 엔벨로프: 0 → (attack) vol → (지수 감쇠) 0
+  env(param, t, vol, attack, dur) {
+    param.setValueAtTime(0.0001, t);
+    param.linearRampToValueAtTime(vol, t + attack);
+    param.exponentialRampToValueAtTime(0.0001, t + dur);
+  },
+  // 오실레이터 한 겹. f 는 [시작, 끝] 주파수, drive 면 소프트 클리핑
+  osc({ type = 'sine', f, dur, vol, attack = 0.001, delay = 0, drive = false }) {
     const ac = this.ac, t = ac.currentTime + delay;
     const o = ac.createOscillator(), gn = ac.createGain();
     o.type = type;
-    o.frequency.setValueAtTime(f0, t);
-    o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
-    gn.gain.setValueAtTime(vol, t);
-    gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(gn).connect(this.master);
-    o.start(t); o.stop(t + dur + 0.02);
+    o.frequency.setValueAtTime(f[0], t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(1, f[1] ?? f[0]), t + dur);
+    this.env(gn.gain, t, vol, attack, dur);
+    let node = o;
+    if (drive) { const ws = ac.createWaveShaper(); ws.curve = this.shaper; node = node.connect(ws); }
+    node.connect(gn).connect(this.master);
+    o.start(t); o.stop(t + dur + 0.05);
   },
-  noise(dur, vol, filterType, f0, f1, delay = 0) {
+  // 걸러낸 잡음 한 겹. sweep = 필터 주파수가 시간에 따라 지나가는 점들
+  noise({ type, sweep, q = 1, dur, vol, attack = 0.001, delay = 0 }) {
     const ac = this.ac, t = ac.currentTime + delay;
     const src = ac.createBufferSource(), flt = ac.createBiquadFilter(), gn = ac.createGain();
     src.buffer = this.noiseBuf;
-    flt.type = filterType;
-    flt.frequency.setValueAtTime(f0, t);
-    flt.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
-    gn.gain.setValueAtTime(vol, t);
-    gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.playbackRate.value = rand(0.9, 1.1);
+    flt.type = type; flt.Q.value = q;
+    flt.frequency.setValueAtTime(sweep[0], t);
+    for (let i = 1; i < sweep.length; i++) {
+      flt.frequency.exponentialRampToValueAtTime(sweep[i], t + dur * i / (sweep.length - 1));
+    }
+    this.env(gn.gain, t, vol, attack, dur);
     src.connect(flt).connect(gn).connect(this.master);
-    src.start(t); src.stop(t + dur + 0.02);
+    src.start(t, rand(0, 0.1)); src.stop(t + dur + 0.05);
   },
+
   play(name) {
     if (!juiceOn.sound) return;
     if (!this.ensure()) return;
+    this.synth(name);
+  },
+
+  synth(name) {
+    const A = CONFIG.audio;
     switch (name) {
-      case 'slash': // 짧은 바람 소리: 대역 통과 잡음이 위→아래로 휩쓸림
-        this.noise(0.11, 0.55, 'bandpass', 2800, 600);
-        this.noise(0.07, 0.25, 'highpass', 5000, 2500);
+      case 'slash': { // 휘두르기: 짧은 바람 소리 '쉭'
+        const S = A.swing, k = 1 + rand(-1, 1) * S.pitchJitter;   // 매번 살짝 다른 높이
+        this.noise({ type: 'bandpass', q: S.q, sweep: S.sweep.map((f) => f * k), dur: S.dur, vol: S.vol, attack: S.dur * 0.25 });
+        this.noise({ type: 'highpass', q: 0.7, sweep: [7000 * k, 3800 * k], dur: S.dur * 0.7, vol: S.vol * 0.3, attack: S.dur * 0.15 });
         break;
-      case 'parry': // 금속 '챙': 비정수배 배음 여러 개가 길게 울림 + 날카로운 타격 잡음
-        [[2093, 0.22], [3227, 0.18], [4870, 0.12], [6311, 0.08]].forEach(([f, v], i) =>
-          this.tone('sine', f, f * 0.995, 0.55 - i * 0.08, v));
-        this.tone('square', 1500, 1200, 0.06, 0.18);
-        this.noise(0.05, 0.8, 'highpass', 4000, 8000);
-        this.tone('sine', 160, 60, 0.18, 0.5);
+      }
+      case 'kill': { // 처치: 날카로운 고음 + 묵직한 저음 두 겹
+        const K = A.kill;
+        // 고음 '칭': 짧게 떨어지는 금속성 음 + 아주 짧은 고역 잡음
+        this.osc({ type: 'triangle', f: [K.high, K.high * 0.68], dur: K.highDur, vol: K.highVol });
+        this.osc({ type: 'sine', f: [K.high * 1.5, K.high * 1.3], dur: K.highDur * 0.6, vol: K.highVol * 0.35 });
+        this.noise({ type: 'highpass', q: 0.8, sweep: [6500, 9000], dur: 0.035, vol: K.highVol * 1.2 });
+        // 저음 '쿵': 음높이가 뚝 떨어지는 사인파를 클리핑해 두껍게 + 낮은 잡음 덩어리
+        this.osc({ type: 'sine', f: [K.low, K.lowEnd], dur: K.lowDur, vol: K.lowVol, attack: 0.003, drive: true });
+        this.noise({ type: 'lowpass', q: 0.9, sweep: [520, 60], dur: K.lowDur * 0.65, vol: K.lowVol * 0.8, attack: 0.002 });
         break;
-      case 'kill': // 두 겹: 날카로운 고음 + 묵직한 저음
-        this.tone('triangle', 2600, 1400, 0.09, 0.3);
-        this.noise(0.05, 0.6, 'highpass', 3500, 7000);
-        this.tone('sine', 95, 32, 0.32, 0.9);
-        this.noise(0.22, 0.7, 'lowpass', 900, 80);
-        return;
-      case 'shot': this.noise(0.1, 0.5, 'lowpass', 3000, 300); this.tone('square', 220, 60, 0.08, 0.15); break;
-      case 'charge': this.tone('sine', 900, 1400, 0.3, 0.06); break;
-      case 'death': this.noise(0.4, 0.7, 'lowpass', 1200, 60); this.tone('sawtooth', 200, 40, 0.4, 0.2); break;
-      case 'clear': [523, 659, 784, 1046].forEach((f, i) => this.tone('triangle', f, f, 0.25, 0.15, i * 0.08)); break;
+      }
+      case 'parry': { // 패링: 금속 '챙'
+        const P = A.parry, f = P.base;
+        // 금속 막대의 비정수배 배음 [비율, 볼륨, 울림 길이]. 1과 1.0045 가 겹쳐 '웅~' 하는 맥놀이
+        const partials = [[1, 0.26, 1], [1.0045, 0.2, 1], [2.33, 0.15, 0.7], [2.76, 0.13, 0.6], [4.07, 0.07, 0.4], [5.4, 0.04, 0.25]];
+        for (const [r, v, d] of partials) {
+          this.osc({ type: 'sine', f: [f * r, f * r * 0.997], dur: P.ring * d, vol: v * P.vol });
+        }
+        // 부딪치는 순간의 '칭' 타격음
+        this.noise({ type: 'highpass', q: 0.7, sweep: [4500, 9000], dur: 0.03, vol: 0.9 * P.vol });
+        this.osc({ type: 'square', f: [f * 1.7], dur: 0.014, vol: 0.18 * P.vol });
+        // 손에 전해지는 짧은 몸통 울림
+        this.osc({ type: 'sine', f: [240, 90], dur: 0.1, vol: 0.35 * P.vol });
+        break;
+      }
+      case 'shot':
+        this.noise({ type: 'lowpass', sweep: [3000, 300], dur: 0.1, vol: 0.5 });
+        this.osc({ type: 'square', f: [220, 60], dur: 0.08, vol: 0.12 });
+        break;
+      case 'charge': this.osc({ f: [900, 1400], dur: 0.3, vol: 0.05, attack: 0.05 }); break;
+      case 'death':
+        this.noise({ type: 'lowpass', sweep: [1200, 60], dur: 0.4, vol: 0.7 });
+        this.osc({ type: 'sawtooth', f: [200, 40], dur: 0.4, vol: 0.18 });
+        break;
+      case 'clear': [523, 659, 784, 1046].forEach((fr, i) => this.osc({ type: 'triangle', f: [fr], dur: 0.25, vol: 0.15, attack: 0.005, delay: i * 0.08 })); break;
     }
   },
 };
@@ -1513,6 +1577,10 @@ const Game = {
       const all = JUICE.every((j) => juiceOn[j.key]);
       for (const j of JUICE) juiceOn[j.key] = !all;
     }
+    // 사운드 미리 듣기
+    if (Input.hit('KeyZ')) Sfx.play('slash');
+    if (Input.hit('KeyX')) Sfx.play('kill');
+    if (Input.hit('KeyC')) Sfx.play('parry');
   },
 
   // 방향성 흔들림 엔벨로프: 공격 방향으로 확 밀렸다가 (1-k)² 로 되돌아옴. 끝에 반대쪽으로 살짝 넘어감.
@@ -1822,7 +1890,7 @@ const Game = {
     g.save();
     g.globalAlpha = 0.7;
     g.fillStyle = '#000';
-    g.fillRect(x - 4, y0 - 8, 118, lh * (JUICE.length + 2) + 4);
+    g.fillRect(x - 4, y0 - 8, 118, lh * (JUICE.length + 3) + 4);
     g.globalAlpha = 1;
     g.fillStyle = CONFIG.colors.ui;
     g.font = 'bold 10px sans-serif';
@@ -1835,6 +1903,7 @@ const Game = {
     });
     g.globalAlpha = 0.7;
     g.fillText('0  전부 켜기/끄기', x, y0 + lh * (JUICE.length + 1));
+    g.fillText('Z 휘두르기 X 처치 C 패링 듣기', x, y0 + lh * (JUICE.length + 2));
     g.restore();
   },
 
