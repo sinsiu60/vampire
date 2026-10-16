@@ -55,6 +55,33 @@ const CONFIG = {
     lunge: 170,                       // 공격 순간 앞으로 내딛는 속도
     recover: 0.6,                     // 공격 후 경직
     hitbox: { w: 24, h: 24 },         // 몸 앞쪽 공격 판정
+    unparryableChance: 0,             // 패링 불가(보라) 공격 확률 — 프로토타입에선 0 (구조만)
+  },
+
+  gunner: {                           // 총잡이: 가늘고 총이 튀어나온 실루엣
+    w: 8, h: 20,
+    speed: 48, accel: 500,
+    aggroRange: 290, aggroHeight: 130,
+    keepMin: 85, keepMax: 175,        // 이 거리 사이를 유지하며 사격
+    firstDelay: 0.5,                  // 발견 후 첫 사격 준비까지
+    telegraph: 0.4,                   // 발사 예고 (총구 빨간 점멸)
+    aimLock: 0.12,                    // 발사 직전 이 시간 동안은 조준 고정 (피할 틈)
+    blinkRate: 0.05,
+    cooldown: 1.35,                   // 발사 후 다음 예고까지
+    gunLength: 15,
+    unparryableChance: 0,             // 패링 불가(보라) 총알 확률 — 프로토타입에선 0 (구조만)
+  },
+
+  bullet: {
+    speed: 150,                       // 적 총알 속도 (피할 수 있을 정도)
+    radius: 2,
+    life: 4,
+    reflectSpeedMul: 1.9,             // 반사된 총알 속도 배수
+  },
+
+  parry: {
+    bulletLeniency: 3,                // 총알 패링 판정 여유 (px)
+    meleeEarly: 0.1,                  // 근접 적 예고 마지막 이 시간 동안 베어도 '패링'으로 인정
   },
 
   restartFade: 0.18,                  // 재시작 직후 화면이 밝아지는 짧은 페이드 (입력은 즉시 받음)
@@ -86,6 +113,10 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const approach = (v, target, d) => (v < target ? Math.min(v + d, target) : Math.max(v - d, target));
 const rand = (a, b) => a + Math.random() * (b - a);
 const angDiff = (a, b) => { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
+const circleRect = (cx, cy, r, b) => {
+  const qx = clamp(cx, b.x, b.x + b.w), qy = clamp(cy, b.y, b.y + b.h);
+  return (cx - qx) ** 2 + (cy - qy) ** 2 <= r * r;
+};
 const overlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
 // -------------------------------------------------------------
@@ -165,6 +196,8 @@ const ROOM = {
   enemies: [
     { type: 'melee', x: 300, y: 238 },
     { type: 'melee', x: 830, y: 238 },
+    { type: 'gunner', x: 440, y: 146 },   // 발판 B 위
+    { type: 'gunner', x: 720, y: 188 },   // 발판 C 위
   ],
 };
 
@@ -252,6 +285,73 @@ const Particles = {
     g.globalAlpha = 1;
   },
 };
+
+// -------------------------------------------------------------
+//  총알
+// -------------------------------------------------------------
+class Bullet {
+  constructor(x, y, angle, speed, parryable = true) {
+    this.x = x; this.y = y;
+    this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed;
+    this.r = CONFIG.bullet.radius;
+    this.owner = 'enemy';     // enemy | player(반사됨)
+    this.parryable = parryable;
+    this.life = CONFIG.bullet.life;
+    this.dead = false;
+    this.trail = [];
+  }
+  update(dt) {
+    this.life -= dt;
+    if (this.life <= 0) { this.dead = true; return; }
+    this.trail.unshift(this.x, this.y);
+    if (this.trail.length > 24) this.trail.length = 24;
+    // 빠른 총알이 벽을 뚫지 않도록 나눠서 이동. 일방향 발판은 통과.
+    const n = Math.max(1, Math.ceil(Math.hypot(this.vx, this.vy) * dt / 3));
+    for (let i = 0; i < n; i++) {
+      this.x += this.vx * dt / n; this.y += this.vy * dt / n;
+      if (solidAt(this.x, this.y, false)) {
+        this.dead = true;
+        Particles.burst(this.x, this.y, 5, this.color, 80, { life: 0.2 });
+        return;
+      }
+    }
+  }
+  get color() {
+    const C = CONFIG.colors;
+    if (this.owner === 'player') return C.parry;
+    return this.parryable ? C.attack : C.unparryable;
+  }
+  reflect(angle) {
+    const sp = Math.hypot(this.vx, this.vy) * CONFIG.bullet.reflectSpeedMul;
+    this.vx = Math.cos(angle) * sp; this.vy = Math.sin(angle) * sp;
+    this.owner = 'player';
+    this.life = CONFIG.bullet.life;
+  }
+  draw(g) {
+    const col = this.color;
+    g.save();
+    g.shadowColor = col; g.shadowBlur = 6;
+    g.strokeStyle = col; g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(this.x, this.y);
+    const len = Math.min(this.trail.length, 6);
+    if (len >= 2) g.lineTo(this.trail[len - 2], this.trail[len - 1]);
+    g.stroke();
+    g.fillStyle = col;
+    g.beginPath(); g.arc(this.x, this.y, this.r, 0, Math.PI * 2); g.fill();
+    g.restore();
+  }
+}
+
+// 두 점 사이 시야가 트였는가 (일방향 발판은 막지 않음)
+function lineOfSight(x0, y0, x1, y1) {
+  const d = Math.hypot(x1 - x0, y1 - y0);
+  const n = Math.ceil(d / 4);
+  for (let i = 1; i < n; i++) {
+    if (solidAt(lerp(x0, x1, i / n), lerp(y0, y1, i / n), false)) return false;
+  }
+  return true;
+}
 
 // -------------------------------------------------------------
 //  플레이어
@@ -478,6 +578,20 @@ class Melee extends Enemy {
   constructor(def) {
     super(def, CONFIG.melee);
     this.kind = 'melee';
+    this.parryable = true;
+  }
+
+  // 지금 칼을 맞대면 패링으로 인정되는가 (공격 중 / 예고 마지막 순간)
+  parryVulnerable() {
+    if (!this.parryable) return false;
+    return this.state === 'attack' ||
+      (this.state === 'windup' && this.t >= this.cfg.telegraph - CONFIG.parry.meleeEarly);
+  }
+  // 예고 중/공격 중 무기가 차지하는 영역 (패링 판정용)
+  threatBox() {
+    const hb = this.cfg.hitbox;
+    const x = this.facing > 0 ? this.x + this.w - 4 : this.x - hb.w + 4;
+    return { x, y: this.y + this.h - hb.h - 6, w: hb.w, h: hb.h + 6 };
   }
 
   update(dt, player) {
@@ -495,6 +609,7 @@ class Melee extends Enemy {
         const gap = Math.abs(dx) - (this.w + player.w) / 2;
         if (gap <= C.attackRange && Math.abs(dy) < C.attackHeight && this.onGround) {
           this.setState('windup');
+          this.parryable = Math.random() >= C.unparryableChance;
         } else {
           this.walk(this.facing, C.speed, C.accel, dt);
         }
@@ -552,6 +667,7 @@ class Melee extends Enemy {
     const fx = Math.round(this.cx), fy = Math.round(this.y + this.h);
     const wa = this.weaponAngle();
     const hot = this.weaponHot();
+    const atkCol = this.parryable ? Col.attack : Col.unparryable;
     g.save();
     g.translate(fx, fy);
     g.scale(this.facing, 1);
@@ -569,8 +685,8 @@ class Melee extends Enemy {
     if (this.state === 'attack') {
       g.save();
       g.globalAlpha = 0.55;
-      g.fillStyle = Col.attack;
-      g.shadowColor = Col.attack; g.shadowBlur = 8;
+      g.fillStyle = atkCol;
+      g.shadowColor = atkCol; g.shadowBlur = 8;
       g.beginPath();
       g.arc(6, -15, 20, -2.4, wa);
       g.arc(6, -15, 9, wa, -2.4, true);
@@ -586,8 +702,8 @@ class Melee extends Enemy {
       poly(g, [6, -3, 17, -4, 20, 0, 17, 3, 6, 3]);
     };
     if (hot) {
-      g.shadowColor = Col.attack; g.shadowBlur = 8;
-      blade(g, Col.attack);
+      g.shadowColor = atkCol; g.shadowBlur = 8;
+      blade(g, atkCol);
       g.shadowBlur = 0;
     } else {
       drawRimmed(g, blade, Col.enemyWeapon, Col.enemyRim);
@@ -596,7 +712,123 @@ class Melee extends Enemy {
   }
 }
 
-const ENEMY_TYPES = { melee: Melee };
+// -------------------------------------------------------------
+//  총잡이: 가는 몸 + 긴 코트 + 앞으로 튀어나온 총. 발사 0.4초 전 총구 빨간 점멸
+// -------------------------------------------------------------
+class Gunner extends Enemy {
+  constructor(def) {
+    super(def, CONFIG.gunner);
+    this.kind = 'gunner';
+    this.aim = this.facing > 0 ? 0 : Math.PI;
+    this.cool = 0;
+    this.nextParryable = true;
+  }
+  get pivotX() { return this.cx + this.facing; }
+  get pivotY() { return this.y + this.h - 14; }
+  get muzzleX() { return this.pivotX + Math.cos(this.aim) * this.cfg.gunLength; }
+  get muzzleY() { return this.pivotY + Math.sin(this.aim) * this.cfg.gunLength; }
+
+  aimAt(player) {
+    this.aim = Math.atan2(player.cy - this.pivotY, player.cx - this.pivotX);
+    this.facing = Math.cos(this.aim) >= 0 ? 1 : -1;
+  }
+
+  update(dt, player, game) {
+    const C = this.cfg;
+    const dx = player.cx - this.cx, dy = player.cy - this.cy;
+    const sees = !player.dead && Math.abs(dx) < C.aggroRange && Math.abs(dy) < C.aggroHeight &&
+      lineOfSight(this.pivotX, this.pivotY, player.cx, player.cy);
+    this.t += dt;
+    switch (this.state) {
+      case 'idle':
+        this.walk(0, 0, C.accel, dt);
+        if (sees) { this.setState('engage'); this.cool = C.firstDelay; }
+        break;
+      case 'engage': {
+        if (player.dead) { this.setState('idle'); break; }
+        this.aimAt(player);
+        const dist = Math.abs(dx);
+        let dir = 0;
+        if (dist < C.keepMin) dir = -Math.sign(dx);
+        else if (dist > C.keepMax) dir = Math.sign(dx);
+        this.walk(dir, C.speed, C.accel, dt);
+        this.cool -= dt;
+        if (this.cool <= 0 && sees) {
+          this.setState('windup');
+          this.nextParryable = Math.random() >= C.unparryableChance;
+        }
+        break;
+      }
+      case 'windup':
+        this.walk(0, 0, C.accel * 2, dt);
+        if (this.t < C.telegraph - C.aimLock && !player.dead) this.aimAt(player);
+        if (this.t >= C.telegraph) {
+          game.bullets.push(new Bullet(this.muzzleX, this.muzzleY, this.aim, CONFIG.bullet.speed, this.nextParryable));
+          Particles.burst(this.muzzleX, this.muzzleY, 4, this.nextParryable ? CONFIG.colors.attack : CONFIG.colors.unparryable,
+            70, { angle: this.aim, spread: 0.5, life: 0.12, glow: true });
+          this.vx -= Math.cos(this.aim) * 40; // 반동
+          this.cool = C.cooldown;
+          this.setState('engage');
+        }
+        break;
+    }
+    this.physics(dt);
+  }
+
+  muzzleHot() {
+    return this.state === 'windup' &&
+      (Math.floor(this.t / this.cfg.blinkRate) % 2 === 0 || this.t > this.cfg.telegraph - 0.08);
+  }
+
+  draw(g) {
+    const Col = CONFIG.colors;
+    const fx = Math.round(this.cx), fy = Math.round(this.y + this.h);
+    const atkCol = this.nextParryable ? Col.attack : Col.unparryable;
+    // 조준선 (예고 중, 옅게)
+    if (this.state === 'windup') {
+      g.save();
+      g.globalAlpha = this.t > this.cfg.telegraph - this.cfg.aimLock ? 0.5 : 0.2;
+      g.strokeStyle = atkCol; g.lineWidth = 1;
+      g.setLineDash([2, 3]);
+      g.beginPath();
+      g.moveTo(this.muzzleX, this.muzzleY);
+      g.lineTo(this.muzzleX + Math.cos(this.aim) * 70, this.muzzleY + Math.sin(this.aim) * 70);
+      g.stroke();
+      g.restore();
+    }
+    g.save();
+    g.translate(fx, fy);
+    g.scale(this.facing, 1);
+    drawRimmed(g, (g, c) => {
+      g.fillStyle = c;
+      g.fillRect(-3, -8, 2, 8);
+      g.fillRect(1, -8, 2, 8);
+      poly(g, [-3, -16, 3, -16, 3, -6, -5, -5]);   // 뒤로 날리는 긴 코트
+      g.fillRect(-2, -20, 4, 4);                   // 머리
+      g.fillRect(-4, -20, 8, 1);                   // 모자 챙
+      g.fillRect(-2, -23, 4, 3);                   // 모자
+    }, Col.enemyBody, Col.enemyRim);
+    // 팔 + 총 (조준 각도로 회전)
+    const local = this.facing > 0 ? this.aim : Math.PI - this.aim;
+    g.translate(1, -14);
+    g.rotate(local);
+    drawRimmed(g, (g, c) => {
+      g.fillStyle = c;
+      g.fillRect(0, -1, 5, 2);
+      g.fillRect(4, -2, 8, 3);
+      g.fillRect(5, 1, 2, 2);   // 손잡이
+      g.fillRect(12, -1, 3, 1); // 총열
+    }, Col.enemyBody, Col.enemyRim);
+    if (this.muzzleHot()) {
+      g.shadowColor = atkCol; g.shadowBlur = 8;
+      g.fillStyle = atkCol;
+      g.fillRect(11, -2, 5, 3);
+    }
+    g.restore();
+  }
+}
+
+const ENEMY_TYPES = { melee: Melee, gunner: Gunner };
 
 // -------------------------------------------------------------
 //  게임 상태
@@ -605,6 +837,7 @@ const Game = {
   state: 'play',          // play | dead | clear
   player: null,
   enemies: [],
+  bullets: [],
   cam: { x: 0, y: 0 },
   fade: 0,
 
@@ -612,6 +845,7 @@ const Game = {
     this.state = 'play';
     this.player = new Player(ROOM.spawn.x, ROOM.spawn.y);
     this.enemies = ROOM.enemies.map((d) => new ENEMY_TYPES[d.type](d));
+    this.bullets = [];
     Particles.reset();
     this.cam.x = this.camTarget();
     this.fade = CONFIG.restartFade;
@@ -633,9 +867,11 @@ const Game = {
       const m = this.mouseWorld();
       p.update(dt, m.x, m.y);
     }
-    for (const e of this.enemies) e.update(dt, p);
+    for (const e of this.enemies) e.update(dt, p, this);
+    for (const b of this.bullets) b.update(dt);
     this.resolveCombat();
     this.enemies = this.enemies.filter((e) => !e.dead);
+    this.bullets = this.bullets.filter((b) => !b.dead);
     Particles.update(dt);
     if (this.state === 'play' && this.enemies.length === 0) this.state = 'clear';
     this.cam.x = lerp(this.cam.x, this.camTarget(), CONFIG.camera.lerp);
@@ -643,15 +879,47 @@ const Game = {
 
   resolveCombat() {
     const p = this.player;
-    if (p.dead) return;
-    const S = CONFIG.slash;
-    // 1) 플레이어의 칼이 적 몸통에 닿음 → 즉사
-    if (S.directKill && p.slashing && p.slashT < S.hitTime) {
+    const S = CONFIG.slash, P = CONFIG.parry;
+
+    if (!p.dead && p.inParryWindow) {
+      // 1) 패링: 총알 → 마우스 방향으로 반사
+      for (const b of this.bullets) {
+        if (b.dead || b.owner !== 'enemy' || !b.parryable) continue;
+        if (p.slashHits(b.x, b.y, b.r + P.bulletLeniency)) this.parryBullet(b);
+      }
+      // 2) 패링: 근접 공격 → 적 즉사
+      for (const e of this.enemies) {
+        if (e.dead || !e.parryVulnerable || !e.parryVulnerable()) continue;
+        if (p.slashHitsRect(e.threatBox()) || p.slashHitsRect(e)) this.parryMelee(e);
+      }
+    }
+
+    // 3) 칼이 적 몸통에 직접 닿음 → 즉사
+    if (!p.dead && S.directKill && p.slashing && p.slashT < S.hitTime) {
       for (const e of this.enemies) {
         if (!e.dead && p.slashHitsRect(e)) this.killEnemy(e, p.slashAngle);
       }
     }
-    // 2) 적 공격이 플레이어에 닿음 → 즉사
+
+    // 4) 총알 명중
+    for (const b of this.bullets) {
+      if (b.dead) continue;
+      if (b.owner === 'player') {
+        for (const e of this.enemies) {
+          if (!e.dead && circleRect(b.x, b.y, b.r, e)) {
+            this.killEnemy(e, Math.atan2(b.vy, b.vx), true);
+            b.dead = true;
+            break;
+          }
+        }
+      } else if (!p.dead && circleRect(b.x, b.y, b.r - 1, p)) {
+        b.dead = true;
+        this.killPlayer(Math.atan2(b.vy, b.vx));
+      }
+    }
+
+    // 5) 근접 공격 명중
+    if (p.dead) return;
     for (const e of this.enemies) {
       if (e.dead) continue;
       const box = e.attackBox();
@@ -659,7 +927,19 @@ const Game = {
     }
   },
 
-  killEnemy(e, angle) {
+  parryBullet(b) {
+    const m = this.mouseWorld(), p = this.player;
+    b.reflect(Math.atan2(m.y - p.cy, m.x - p.cx));
+    Particles.burst(b.x, b.y, 10, CONFIG.colors.parry, 160, { life: 0.3, glow: true });
+  },
+
+  parryMelee(e) {
+    Particles.burst(this.player.tipX, this.player.tipY, 12, CONFIG.colors.parry, 180, { life: 0.3, glow: true });
+    this.killEnemy(e, this.player.slashAngle, true);
+  },
+
+  killEnemy(e, angle, byParry = false) {
+    if (e.dead) return;
     e.dead = true;
     Particles.burst(e.cx, e.cy, 18, CONFIG.colors.enemyRim, 160, { angle, spread: 1.0, life: 0.5, grav: 400, size: 2 });
     Particles.burst(e.cx, e.cy, 10, CONFIG.colors.player, 220, { angle, spread: 0.5, life: 0.25, glow: true });
@@ -682,6 +962,7 @@ const Game = {
     drawTerrain(ctx);
     for (const e of this.enemies) e.draw(ctx);
     this.player.draw(ctx);
+    for (const b of this.bullets) b.draw(ctx);
     Particles.draw(ctx);
     ctx.restore();
 
