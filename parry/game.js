@@ -91,8 +91,7 @@ const CONFIG = {
     AIM_SNAP_RANGE: 300,              // 후보 최대 거리 (px)
     HOMING_TURN_RATE: 90,             // 반사 총알이 대상 쪽으로 도는 최대 속도 (°/초)
     REFLECT_HITBOX_SCALE: 1.8,        // 반사 총알의 적 피격 판정 배율 (그래픽은 그대로)
-    REFLECT_SLOW_DURATION: 0.15,      // 반사 히트스톱 직후 슬로우 길이 (실제 초)
-    REFLECT_SLOW_SCALE: 0.4,          // 슬로우 중 게임 속도
+    // (반사 직후 슬로우는 parrySeq 로 대체됨)
     MELEE_PARRY_RANGE_BONUS: 0.2,     // 근접 패링 판정 거리 +20%
   },
 
@@ -132,8 +131,22 @@ const CONFIG = {
     SLOW_SCALE: 0.1,                  // 7) F3 슬로우 모드 게임 속도
   },
 
+  // 총알 패링 성공 시퀀스 (실제 시간 기준)
+  //  0초                parry_chang + 히트스톱 6f + 섬광 / slowmo_in, 시간 속도 1.0 → 0.1 (SLOWMO_IN 동안)
+  //  SLOWMO_IN           slowmo_loop 반복 시작
+  //  + SLOWMO_HOLD       time_return 재생, slowmo 소리 LOOP_FADE 동안 줄이며 정지,
+  //                      시간 속도 0.1 → 1.0 (ease-in) — 길이는 time_return.wav 의 실제 길이
+  //  + time_return 길이   반사탄 명중 → kill_sound + 16프레임 킬 연출
+  parrySeq: {
+    SLOWMO_IN: 0.15,                  // 슬로우 진입 시간 (초)
+    SLOWMO_HOLD: 0.45,                // 슬로우 유지 시간 (초)
+    SLOWMO_SCALE: 0.1,                // 슬로우 중 시간 속도
+    LOOP_FADE: 0.2,                   // 복귀 시작 시 slowmo_in/loop 페이드아웃 시간 (초)
+    RETURN_FALLBACK: 0.9,             // time_return.wav 를 못 읽었을 때만 쓰는 복귀 길이 (초)
+  },
+
   juice: {
-    HITSTOP_PARRY: 0.18,              //    패링 성공 히트스톱 (초) — 흔들림/섬광은 히트스톱 중에도 재생
+    HITSTOP_PARRY_FRAMES: 6,          //    패링 성공 히트스톱 (프레임) — 흔들림/섬광은 히트스톱 중에도 재생
     ENEMY_FLASH_FRAMES: 2,            // 2) 맞은 적 실루엣을 완전 흰색으로 보이는 프레임 수
     KILL_KNOCKBACK: 400,              // 3) 처치된 적(두 조각)이 공격 방향으로 튕겨 나가는 속도
     KNOCKBACK_LIFT: 140,              //    위로 띄우는 속도
@@ -188,7 +201,15 @@ const CONFIG = {
   hintTime: 7,                        // 시작 후 조작법 안내 표시 시간
 
   audio: {
-    enabled: true, volume: 0.7,       // M 키로 음소거 토글
+    enabled: true, volume: 0.7,       // 합성음 마스터 볼륨. M 키로 전체 음소거 토글
+    // 효과음 파일 (sounds/*.wav). 모두 실제 시간으로 재생 — 슬로우모션 영향 없음
+    samples: {
+      dir: 'sounds/',
+      SFX_GUN: 0.8, SFX_PARRY: 1.0, SFX_SLOWMO_IN: 0.8, SFX_SLOWMO_LOOP: 0.5, SFX_TIME_RETURN: 1.0, SFX_KILL: 1.0,
+      GUN_PITCH: [0.95, 1.05],        // 적 발사음 피치 랜덤 범위
+      KILL_PITCH: [0.92, 1.08],       // 처치음 피치 랜덤 범위
+    },
+    // 아래는 파일이 없는 소리(휘두르기/사망/클리어)와, 파일을 못 읽었을 때의 대체 합성음
     // 휘두르기: 짧은 바람 소리 '쉭' — 걸러낸 잡음의 대역이 낮→높→낮으로 휩쓸림
     swing: { dur: 0.16, vol: 0.9, sweep: [650, 2900, 850], q: 1.3, pitchJitter: 0.12 },
     // 처치: 날카로운 고음 '칭' + 묵직한 저음 '쿵' 두 겹
@@ -676,8 +697,43 @@ const Pieces = {
 // -------------------------------------------------------------
 //  효과음 (WebAudio 로 즉석 합성, 파일 없음)
 // -------------------------------------------------------------
+// -------------------------------------------------------------
+//  효과음 파일: http(s) 로 열면 Web Audio 로 디코딩해 정확하게 재생,
+//  index.html 을 직접 연 경우(file://)는 브라우저가 파일 읽기를 막으므로 <audio> 요소로 재생
+// -------------------------------------------------------------
+const Samples = {
+  names: ['gun_fire', 'parry_chang', 'slowmo_in', 'slowmo_loop', 'time_return', 'kill_sound'],
+  map: {},
+  load() {
+    for (const n of this.names) {
+      const url = CONFIG.audio.samples.dir + n + '.wav';
+      const smp = this.map[n] = { buffer: null, el: null, duration: NaN };
+      const useElement = () => {
+        const el = new Audio();
+        el.preload = 'auto';
+        el.addEventListener('loadedmetadata', () => { if (!smp.buffer) smp.duration = el.duration; });
+        el.src = url;
+        smp.el = el;
+      };
+      const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+      if (location.protocol === 'file:' || !window.fetch || !OAC) { useElement(); continue; }
+      fetch(url)
+        .then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+        .then((ab) => new OAC(2, 1, 48000).decodeAudioData(ab))
+        .then((buf) => { smp.buffer = buf; smp.duration = buf.duration; })
+        .catch(() => useElement());
+    }
+  },
+  ready(n) { const m = this.map[n]; return !!m && (!!m.buffer || !!m.el); },
+  // 실제 재생 길이 (초). 아직 못 읽었으면 NaN
+  duration(n) { const m = this.map[n]; return m && m.duration > 0 ? m.duration : NaN; },
+};
+Samples.load();
+
 const Sfx = {
   ac: null, master: null, noiseBuf: null, shaper: null,
+  sampleBus: null,          // 효과음 파일 전용 출력 (클리핑만 막는 리미터 경유)
+  handles: [],              // <audio> 로 재생 중인 소리 (페이드 처리용)
   muted: false,
 
   // 오디오 그래프 준비: 마스터 볼륨 → 컴프레서(여러 겹이 동시에 나도 찢어지지 않게) → 출력
@@ -689,8 +745,15 @@ const Sfx = {
     comp.attack.value = 0.002; comp.release.value = 0.12;
     comp.connect(dest);
     this.master = ac.createGain();
-    this.master.gain.value = CONFIG.audio.volume;
+    this.master.gain.value = this.muted ? 0 : CONFIG.audio.volume;
     this.master.connect(comp);
+    const lim = ac.createDynamicsCompressor();
+    lim.threshold.value = -2; lim.knee.value = 0; lim.ratio.value = 20;
+    lim.attack.value = 0.001; lim.release.value = 0.08;
+    lim.connect(dest);
+    this.sampleBus = ac.createGain();
+    this.sampleBus.gain.value = this.muted ? 0 : 1;
+    this.sampleBus.connect(lim);
     const n = Math.floor(ac.sampleRate * 0.6);
     this.noiseBuf = ac.createBuffer(1, n, ac.sampleRate);
     const d = this.noiseBuf.getChannelData(0);
@@ -714,7 +777,69 @@ const Sfx = {
     if (this.ac.state === 'suspended') this.ac.resume();
     return !this.muted;
   },
-  toggleMute() { this.muted = !this.muted; },
+  toggleMute() {
+    this.muted = !this.muted;
+    if (this.master) this.master.gain.value = this.muted ? 0 : CONFIG.audio.volume;
+    if (this.sampleBus) this.sampleBus.gain.value = this.muted ? 0 : 1;
+  },
+
+  // 효과음 파일 재생. 반환값 = { stop(), fadeOut(초) } (재생 못 하면 null)
+  // 피치(rate)는 재생 속도로 바꾸며, 게임의 시간 속도와는 무관하게 실제 시간으로 재생됨
+  playSample(name, { vol = 1, rate = 1, loop = false } = {}) {
+    if (!juiceOn.sound || !CONFIG.audio.enabled || this.muted) return null;
+    const smp = Samples.map[name];
+    if (!smp) return null;
+    this.ensure();
+    if (smp.buffer && this.ac) {
+      const ac = this.ac, src = ac.createBufferSource(), gn = ac.createGain();
+      src.buffer = smp.buffer; src.loop = loop; src.playbackRate.value = rate;
+      gn.gain.value = vol;
+      src.connect(gn).connect(this.sampleBus);
+      src.start();
+      return {
+        stop() { try { src.stop(); } catch (e) { /* 이미 멈춤 */ } },
+        fadeOut(sec) {
+          const t = ac.currentTime;
+          gn.gain.cancelScheduledValues(t);
+          gn.gain.setValueAtTime(gn.gain.value, t);
+          gn.gain.linearRampToValueAtTime(0, t + sec);
+          try { src.stop(t + sec + 0.02); } catch (e) { /* 이미 멈춤 */ }
+        },
+      };
+    }
+    if (!smp.el) return null;
+    const el = smp.el.cloneNode();
+    el.preservesPitch = false; el.mozPreservesPitch = false; el.webkitPreservesPitch = false;
+    el.playbackRate = rate;
+    el.loop = loop;
+    el.volume = clamp(vol, 0, 1);
+    const h = {
+      el, vol: clamp(vol, 0, 1), fade: null, done: false,
+      stop() { el.pause(); h.done = true; },
+      fadeOut(sec) { h.fade = { t: 0, time: sec, from: h.vol }; },
+    };
+    el.addEventListener('ended', () => { h.done = true; });
+    el.play().catch(() => { h.done = true; });
+    this.handles.push(h);
+    return h;
+  },
+  // <audio> 재생분의 페이드/음소거 (실제 경과 시간으로 매 화면 프레임 호출)
+  updateElements(dt) {
+    for (const h of this.handles) {
+      if (h.fade) {
+        h.fade.t += dt;
+        h.vol = h.fade.from * Math.max(0, 1 - h.fade.t / h.fade.time);
+        if (h.fade.t >= h.fade.time) h.stop();
+      }
+      h.el.volume = this.muted ? 0 : h.vol;
+    }
+    this.handles = this.handles.filter((h) => !h.done);
+  },
+  // 옵션 메뉴 등으로 게임이 멈출 때 소리도 같이 멈춤
+  pauseAll(paused) {
+    if (this.ac) { if (paused) this.ac.suspend(); else this.ac.resume(); }
+    for (const h of this.handles) { if (paused) h.el.pause(); else h.el.play().catch(() => {}); }
+  },
 
   // 볼륨 엔벨로프: 0 → (attack) vol → (지수 감쇠) 0
   env(param, t, vol, attack, dur) {
@@ -753,8 +878,20 @@ const Sfx = {
 
   play(name) {
     if (!juiceOn.sound) return;
+    // 파일이 있는 소리는 파일로 (피치 랜덤)
+    const S = CONFIG.audio.samples;
+    const FILES = {
+      shot: ['gun_fire', S.SFX_GUN, S.GUN_PITCH],
+      kill: ['kill_sound', S.SFX_KILL, S.KILL_PITCH],
+      parry: ['parry_chang', S.SFX_PARRY, null],
+    };
+    const f = FILES[name];
+    if (f && Samples.ready(f[0])) {
+      this.playSample(f[0], { vol: f[1], rate: f[2] ? rand(f[2][0], f[2][1]) : 1 });
+      return;
+    }
     if (!this.ensure()) return;
-    this.synth(name);
+    this.synth(name);   // 파일이 없거나 못 읽었을 때만 합성음
   },
 
   synth(name) {
@@ -795,7 +932,6 @@ const Sfx = {
         this.noise({ type: 'lowpass', sweep: [3000, 300], dur: 0.1, vol: 0.5 });
         this.osc({ type: 'square', f: [220, 60], dur: 0.08, vol: 0.12 });
         break;
-      case 'charge': this.osc({ f: [900, 1400], dur: 0.3, vol: 0.05, attack: 0.05 }); break;
       case 'death':
         this.noise({ type: 'lowpass', sweep: [1200, 60], dur: 0.4, vol: 0.7 });
         this.osc({ type: 'sawtooth', f: [200, 40], dur: 0.4, vol: 0.18 });
@@ -941,6 +1077,96 @@ const KillTrail = {
 };
 
 // -------------------------------------------------------------
+//  총알 패링 성공 시퀀스 (CONFIG.parrySeq 참고). 실제 시간 = 게임 틱(60fps) 기준으로 진행.
+//  k = 패링한 틱부터 센 실제 틱 수. scale = 지금 틱의 월드 시간 속도.
+// -------------------------------------------------------------
+const ParrySeq = {
+  active: false, k: 0, scale: 1,
+  bullet: null, target: null,
+  inTick: 0, returnTick: 0, killTick: 0, returnDur: 0,
+  future: null,             // future[k] = k 틱 이후 killTick 까지 월드가 쓸 게임 시간 합
+  hIn: null, hLoop: null,   // slowmo_in / slowmo_loop 재생 핸들
+
+  start(bullet, target, hitstopFrames) {
+    const P = CONFIG.parrySeq, S = CONFIG.audio.samples, fps = CONFIG.fps;
+    this.cancel();
+    // 복귀 구간 길이 = time_return.wav 의 실제 재생 길이
+    const d = Samples.duration('time_return');
+    this.returnDur = isFinite(d) ? d : P.RETURN_FALLBACK;
+    this.inTick = Math.round(P.SLOWMO_IN * fps);
+    this.returnTick = Math.round((P.SLOWMO_IN + P.SLOWMO_HOLD) * fps);
+    this.killTick = this.returnTick + Math.round(this.returnDur * fps);
+    this.k = 0;
+    this.active = true;
+    this.scale = this.scaleAt(0);
+    // 반사탄이 정확히 killTick 에 닿도록, 앞으로 월드가 실제로 흘려보낼 게임 시간을 미리 계산
+    // (히트스톱 틱에는 월드가 멈춰 있으므로 0)
+    this.future = new Float64Array(this.killTick + 1);
+    for (let j = this.killTick; j >= 1; j--) {
+      this.future[j - 1] = this.future[j] + (j > hitstopFrames ? this.scaleAt(j) * STEP : 0);
+    }
+    this.bullet = bullet;
+    this.target = target;
+    if (bullet && target) bullet.scripted = true;
+    // 0초: slowmo_in (parry_chang 은 parryFx 에서)
+    this.hIn = Sfx.playSample('slowmo_in', { vol: S.SFX_SLOWMO_IN });
+    this.hLoop = null;
+  },
+
+  // k 번째 틱의 시간 속도
+  scaleAt(k) {
+    const P = CONFIG.parrySeq, lo = P.SLOWMO_SCALE;
+    if (k < this.inTick) {
+      const u = k / this.inTick;
+      return 1 - (1 - lo) * (1 - (1 - u) * (1 - u));        // 1.0 → 0.1 (빠르게 감속)
+    }
+    if (k < this.returnTick) return lo;                       // 유지
+    if (k < this.killTick) {
+      const u = (k - this.returnTick) / (this.killTick - this.returnTick);
+      return lo + (1 - lo) * u * u;                           // 0.1 → 1.0 (ease-in, 끝으로 갈수록 빠르게)
+    }
+    return 1;
+  },
+
+  // 실제 시간 한 틱 (히트스톱/킬스톱 중에도 Game.update 에서 매 틱 호출)
+  tick() {
+    if (!this.active) { this.scale = 1; return; }
+    const P = CONFIG.parrySeq, S = CONFIG.audio.samples;
+    const k = ++this.k;
+    if (k === this.inTick) {
+      this.hLoop = Sfx.playSample('slowmo_loop', { vol: S.SFX_SLOWMO_LOOP, loop: true });
+    }
+    if (k === this.returnTick) {
+      Sfx.playSample('time_return', { vol: S.SFX_TIME_RETURN });
+      if (this.hIn) this.hIn.fadeOut(P.LOOP_FADE);
+      if (this.hLoop) this.hLoop.fadeOut(P.LOOP_FADE);
+      this.hIn = this.hLoop = null;
+    }
+    // time_return 이 끝나는 틱: 반사탄을 대상에 붙임 (월드가 멈춰 있던 경우에도 반드시 명중)
+    const b = this.bullet, t = this.target;
+    if (k === this.killTick && b && b.scripted && !b.dead && t && !t.dead) {
+      b.x = t.cx; b.y = t.cy; b.arrived = true;
+    }
+    this.scale = this.scaleAt(k);
+    if (k >= this.killTick) { this.active = false; this.bullet = this.target = null; }
+  },
+
+  // 지금 틱 이후 killTick 까지 남은 게임 시간
+  futureGame() { return this.active && this.future ? this.future[this.k] : 0; },
+
+  // 재시작/사망/새 시퀀스: 소리 정리하고 정상 속도로
+  cancel() {
+    if (this.hIn) this.hIn.fadeOut(0.08);
+    if (this.hLoop) this.hLoop.fadeOut(0.08);
+    this.hIn = this.hLoop = null;
+    if (this.bullet) this.bullet.scripted = false;
+    this.bullet = this.target = null;
+    this.active = false;
+    this.scale = 1;
+  },
+};
+
+// -------------------------------------------------------------
 //  총알
 // -------------------------------------------------------------
 class Bullet {
@@ -956,17 +1182,20 @@ class Bullet {
     this.reflectT = 0;        // 반사 후 경과 시간 (색 전환용)
     this.shooter = null;      // 쏜 적
     this.target = null;       // 반사 후 유도 대상
+    this.scripted = false;    // 패링 시퀀스가 도착 프레임을 정한 반사탄
+    this.arrived = false;     //   그 반사탄이 도착 틱에 대상 중심에 닿았는가 (그 전엔 명중 판정 안 함)
   }
   update(dt) {
     this.life -= dt;
     if (this.life <= 0) { this.dead = true; return; }
     if (this.owner === 'player') {
       this.reflectT += dt;
-      this.home(dt);
+      if (!this.scripted) this.home(dt);
     }
     this.trail.unshift(this.x, this.y);
     const maxTrail = (this.owner === 'player' ? CONFIG.fx.trailLength : 3) * 2;
     if (this.trail.length > maxTrail) this.trail.length = maxTrail;
+    if (this.scripted) { this.flyScripted(dt); return; }
     // 빠른 총알이 벽을 뚫지 않도록 나눠서 이동. 일방향 발판은 통과.
     const n = Math.max(1, Math.ceil(Math.hypot(this.vx, this.vy) * dt / 3));
     for (let i = 0; i < n; i++) {
@@ -983,6 +1212,22 @@ class Bullet {
     if (this.owner === 'player') return mixColor(C.attack, C.parry, this.reflectT / CONFIG.fx.reflectColorTime);
     return this.parryable ? C.attack : C.unparryable;
   }
+  // 패링 시퀀스 반사탄: 남은 게임 시간 동안 대상까지 남은 거리를 고르게 나눠 이동
+  // → time_return 이 끝나는 바로 그 틱에 대상 중심에 도착. 대상이 죽으면 그 방향으로 직진.
+  flyScripted(dt) {
+    const t = this.target;
+    if (!t || t.dead) { this.scripted = false; return; }
+    const dx = t.cx - this.x, dy = t.cy - this.y, d = Math.hypot(dx, dy);
+    const fut = ParrySeq.bullet === this ? ParrySeq.futureGame() : 0;
+    const f = dt <= 0 ? 0 : dt / (dt + fut);
+    this.x += dx * f; this.y += dy * f;
+    if (f >= 1) this.arrived = true;
+    if (d > 0.01 && dt > 0) {
+      const sp = Math.max(60, d * f / dt);           // 방향(처치 각도)·직진 전환용 속도
+      this.vx = dx / d * sp; this.vy = dy / d * sp;
+    }
+  }
+
   // 약한 유도: 대상 쪽으로 초당 HOMING_TURN_RATE° 까지만 회전. 대상이 죽으면 직진.
   home(dt) {
     if (!this.target) return;
@@ -1558,7 +1803,6 @@ class Gunner extends Enemy {
         if (this.cool <= 0 && sees) {
           this.setState('windup');
           this.nextParryable = Math.random() >= C.unparryableChance;
-          Sfx.play('charge');
         }
         break;
       }
@@ -1653,7 +1897,6 @@ const Game = {
   killFrame: -1,          // 마지막 처치 후 지난 프레임 (디버그 표시용)
   killShake: { f: 0, total: 0, angle: 0 },
   menu: false, menuDrag: false,
-  slowT: 0,               // 반사 직후 슬로우 남은 시간 (히트스톱이 끝난 뒤부터 흐름)
   debug: false,           // F1: 반사 보정 범위/대상 표시
   juicePanel: false,      // F2: 타격감 요소 토글 패널
   flash: 0, flashShown: false,
@@ -1674,7 +1917,7 @@ const Game = {
     this.killStop = 0;
     this.killFrame = -1;
     this.killShake.total = 0;
-    this.slowT = 0;
+    ParrySeq.cancel();
     this.flash = 0;
     this.shake.t = 0; this.shake.ox = this.shake.oy = 0;
     this.cam.x = this.camTarget();
@@ -1698,7 +1941,7 @@ const Game = {
       return true;
     }
     this.playT += dt;
-    if (Input.hit('Escape')) { this.menu = !this.menu; this.menuDrag = false; Settings.save(); }
+    if (Input.hit('Escape')) { this.menu = !this.menu; this.menuDrag = false; Settings.save(); Sfx.pauseAll(this.menu); }
     if (this.menu) {
       // 옵션 메뉴: 게임 정지, 흔들림만 미리보기로 재생
       this.handleMenu();
@@ -1717,6 +1960,7 @@ const Game = {
     this.updateShake(dt);
     Pieces.tickRealtime();
     if (this.killFrame >= 0) this.killFrame++;
+    ParrySeq.tick();                   // 패링 시퀀스는 실제 시간으로 진행 (히트스톱/킬스톱 중에도)
 
     // 킬 타임스톱: 플레이어·맞은 적(조각)은 베는 자세로 정지. 빛줄기·피·먼지·궤적만 움직임
     if (this.killStop > 0) {
@@ -1736,12 +1980,9 @@ const Game = {
 
     // 히트스톱(패링/사망): 월드 전체 정지
     if (this.hitstop > 0) { this.hitstop -= dt; return false; }
-    // 반사 직후 슬로우: 월드 시간만 느리게 (실제 시간 기준으로 지속)
+    // 패링 시퀀스 슬로우모션: 월드 시간만 느리게 (소리·흔들림·섬광은 실제 시간)
     const realDt = dt;
-    if (this.slowT > 0) {
-      this.slowT -= realDt;
-      dt *= CONFIG.aimAssist.REFLECT_SLOW_SCALE;
-    }
+    dt *= ParrySeq.scale;
 
     const p = this.player;
     if (!p.dead) {
@@ -1797,6 +2038,7 @@ const Game = {
     if (Input.hit('KeyZ')) Sfx.play('slash');
     if (Input.hit('KeyX')) Sfx.play('kill');
     if (Input.hit('KeyC')) Sfx.play('parry');
+    if (Input.hit('KeyV')) Sfx.play('shot');
   },
 
   // 방향성 흔들림 엔벨로프: 공격 방향으로 확 밀렸다가 (1-k)² 로 되돌아옴. 끝에 반대쪽으로 살짝 넘어감.
@@ -1843,11 +2085,13 @@ const Game = {
   addHitstop(t) {
     if (juiceOn.hitstop) this.hitstop = Math.max(this.hitstop, t);
   },
+  // 프레임 단위 히트스톱 (부동소수 오차로 한 프레임 더 멈추지 않게 살짝 덜어냄)
+  addHitstopFrames(n) { this.addHitstop(n * STEP - 1e-6); },
 
   // 패링 성공 공통 연출 (x, y = 칼에 맞부딪힌 지점)
   parryFx(x, y, angle) {
     const F = CONFIG.fx, C = CONFIG.colors, J = CONFIG.juice;
-    this.addHitstop(J.HITSTOP_PARRY);                            // 1) 히트스톱
+    this.addHitstopFrames(J.HITSTOP_PARRY_FRAMES);               // 1) 히트스톱 6프레임
     if (juiceOn.screenFlash) { this.flash = F.flashTime; this.flashShown = false; } // 2) 흰 섬광
     Rings.spawn(x, y, F.ringRadius, F.ringTime, F.ringWidth, C.parry);            // 3) 충격파 링
     Rings.spawn(x, y, F.ringRadius * 0.55, F.ringTime * 0.7, F.ringWidth - 1, C.parryHot);
@@ -1899,6 +2143,7 @@ const Game = {
       if (b.dead) continue;
       if (b.owner === 'player') {
         for (const e of this.enemies) {
+          if (b.scripted && (e !== b.target || !b.arrived)) continue;   // 시퀀스 반사탄은 도착 틱에 정해진 대상만
           if (!e.dead && circleRect(b.x, b.y, b.r * CONFIG.aimAssist.REFLECT_HITBOX_SCALE, e)) {
             this.killEnemy(e, Math.atan2(b.vy, b.vx), 'reflect');
             b.dead = true;
@@ -1950,7 +2195,8 @@ const Game = {
     const a = Math.atan2(b.y - p.cy, b.x - p.cx), r = CONFIG.slash.radius * 0.8;
     b.reflect(out, target);                                        // 4) 반사 (색/꼬리/유도는 Bullet 에서)
     this.parryFx(p.cx + Math.cos(a) * r, p.cy + Math.sin(a) * r, out);
-    this.slowT = CONFIG.aimAssist.REFLECT_SLOW_DURATION;           // 히트스톱이 끝나면 슬로우 시작
+    // 슬로우모션 시퀀스: 대상이 있으면 time_return 이 끝나는 프레임에 명중하도록 반사탄 비행을 맞춤
+    ParrySeq.start(b, target, juiceOn.hitstop ? CONFIG.juice.HITSTOP_PARRY_FRAMES : 0);
   },
 
   parryMelee(e) {
@@ -2013,6 +2259,7 @@ const Game = {
   killPlayer(angle) {
     const p = this.player, F = CONFIG.fx, C = CONFIG.colors;
     p.dead = true;
+    ParrySeq.cancel();
     this.state = 'dead';
     Pieces.split((g) => Player.drawBody(g, { ...p.pose(), slashing: false }, C.player, 1), p.cx, p.cy, angle, C.attack, 1.1);
     Particles.burst(p.cx, p.cy, 16, C.player, 180, { angle, spread: 1.0, life: 0.6, grav: 400, size: 1 });
@@ -2154,6 +2401,7 @@ const Game = {
     const mode = Debug.step ? 'F4 프레임 진행 (F4 다음 · Enter 해제)' : `F3 슬로우 ${Math.round(CONFIG.debug.SLOW_SCALE * 100)}%`;
     const kf = this.killFrame;
     const parts = [mode, `#${Debug.frame}`];
+    if (ParrySeq.active) parts.push(`패링 시퀀스 ${ParrySeq.k}/${ParrySeq.killTick}f ×${ParrySeq.scale.toFixed(2)}`);
     if (kf >= 0 && kf < 40) {
       parts.push(`킬 +${kf}f`);
       parts.push(this.killStop > 0 ? `타임스톱 ${K.KILL_HITSTOP_FRAMES - this.killStop}/${K.KILL_HITSTOP_FRAMES}` : '조작 가능');
@@ -2211,7 +2459,7 @@ const Game = {
     g.save();
     g.globalAlpha = 0.7;
     g.fillStyle = '#000';
-    g.fillRect(x - 4, y0 - 8, 128, lh * (JUICE.length + 3) + 4);
+    g.fillRect(x - 4, y0 - 8, 148, lh * (JUICE.length + 3) + 4);
     g.globalAlpha = 1;
     g.fillStyle = CONFIG.colors.ui;
     g.font = 'bold 10px sans-serif';
@@ -2224,7 +2472,7 @@ const Game = {
     });
     g.globalAlpha = 0.7;
     g.fillText('-  전부 켜기/끄기', x, y0 + lh * (JUICE.length + 1));
-    g.fillText('Z 휘두르기 X 처치 C 패링 듣기', x, y0 + lh * (JUICE.length + 2));
+    g.fillText('듣기: Z 휘두르기 X 처치 C 패링 V 사격', x, y0 + lh * (JUICE.length + 2));
     g.restore();
   },
 
@@ -2373,6 +2621,7 @@ function tick() {
 function frame(now) {
   const elapsed = Math.min(0.25, (now - last) / 1000);
   last = now;
+  Sfx.updateElements(elapsed);
   if (Debug.step) {
     // F4: 누를 때마다 정확히 한 프레임
     acc = 0;
