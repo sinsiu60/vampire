@@ -19,3 +19,8 @@
 - `js/utils.js` — 오브젝트 풀, 공간 분할 해시 그리드, 곡선 보간
 - `js/main.js` — 게임 루프/상태/카메라
 - `js/player.js`, `js/enemy.js`, `js/weapon.js`, `js/pickup.js`, `js/upgrade.js`, `js/effects.js`, `js/ui.js`, `js/input.js`
+
+---
+
+# PARRY (패링 액션 프로토타입)
+같은 저장소의 `parry/` 폴더에 별도 게임이 있습니다. `parry/index.html` 을 열어 실행하세요. 자세한 내용은 [`parry/README.md`](parry/README.md).

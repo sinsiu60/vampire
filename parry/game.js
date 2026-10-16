@@ -44,7 +44,7 @@ const CONFIG = {
   },
 
   melee: {                            // 근접 적: 크고 각진 실루엣
-    w: 14, h: 22,
+    w: 16, h: 26,
     speed: 62, accel: 700,
     aggroRange: 210, aggroHeight: 70, // 이 범위 안에 들어오면 추적 시작
     attackRange: 20,                  // 몸 사이 간격이 이 이하면 공격 시작
@@ -54,7 +54,7 @@ const CONFIG = {
     active: 0.13,                     // 공격 판정 지속
     lunge: 170,                       // 공격 순간 앞으로 내딛는 속도
     recover: 0.6,                     // 공격 후 경직
-    hitbox: { w: 24, h: 24 },         // 몸 앞쪽 공격 판정
+    hitbox: { w: 26, h: 28 },         // 몸 앞쪽 공격 판정
     unparryableChance: 0,             // 패링 불가(보라) 공격 확률 — 프로토타입에선 0 (구조만)
   },
 
@@ -100,14 +100,39 @@ const CONFIG = {
     deathHitstop: 0.06, deathShake: 3.5,
   },
 
+  anim: {
+    leanMax: 0.2,                     // 달릴 때 몸 기울기 (라디안)
+    jumpStretch: 0.32,                // 점프 순간 세로로 늘어남
+    landSquash: 0.38,                 // 착지 순간 납작해짐 (낙하 속도에 비례)
+    dashStretch: 0.3,
+    springBack: 0.22,                 // 원래 모양으로 돌아오는 속도 (0~1)
+    ghostTime: 0.16,                  // 잔상 유지 시간
+    ghostEveryRun: 4,                 // 전력 질주 시 몇 틱마다 잔상
+    scarfNodes: 7, scarfSeg: 2.3,     // 머플러 마디 수 / 마디 길이
+    scarfDrag: 0.86, scarfGravity: 9, scarfWave: 26,
+    scarfTrail: 22,                   // 가만히 있어도 등 뒤로 살짝 흩날리는 힘
+  },
+
+  logo: { text: '시우 공방', fadeIn: 0.6, hold: 0.8, fadeOut: 0.6 }, // 합계 2초
+
+  scanline: { alpha: 0.2 },           // 은은한 스캔라인
+
+  hintTime: 7,                        // 시작 후 조작법 안내 표시 시간
+
   audio: { enabled: true, volume: 0.35 }, // M 키로 음소거 토글
 
   restartFade: 0.18,                  // 재시작 직후 화면이 밝아지는 짧은 페이드 (입력은 즉시 받음)
 
   colors: {
+    // ── 색 규칙 (게임 전체 고정) ──
+    // 검정/짙은 남색: 배경·지형 | 흰색: 플레이어·칼 궤적·머플러 | 빨강: 패링 가능한 적 공격·예고·총알
+    // 보라: 패링 불가 공격 | 노랑/주황: 패링 성공·반사된 공격 | 하늘색: UI
     bg: '#05060d',
+    skyTop: '#020309', skyBottom: '#0d1330',
+    farCity: '#0a1029', nearCity: '#050812', window: '#141d3d', star: '#1f2a52',
     terrain: '#000000',
     terrainEdge: '#1b2547',
+    terrainLine: '#0a0f22',
     player: '#ffffff',
     enemyBody: '#10121c',
     enemyRim: '#4a5170',
@@ -130,6 +155,15 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
 const approach = (v, target, d) => (v < target ? Math.min(v + d, target) : Math.max(v - d, target));
 const rand = (a, b) => a + Math.random() * (b - a);
+// 시드 고정 난수 (배경이 매번 같은 모양이 되도록)
+function seeded(seed) {
+  return () => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 const angDiff = (a, b) => { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
 const hexRgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const mixColor = (a, b, t) => {
@@ -175,6 +209,10 @@ const Input = {
   mouse: { x: W / 2, y: H / 2, down: false, clicked: false },
 
   init() {
+    // 브라우저 정책상 오디오는 사용자 입력 이벤트 안에서 시작해야 함
+    const unlock = () => Sfx.ensure();
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space') e.preventDefault();
       if (!this.down.has(e.code)) this.pressed.add(e.code);
@@ -358,7 +396,7 @@ const Pieces = {
 
   // drawFn(g) 이 그리는 실루엣을 (cx, cy) 중심, angle 방향으로 절단
   split(drawFn, cx, cy, angle, color, power = 1) {
-    const S = 48;
+    const S = 64;
     const img = document.createElement('canvas');
     img.width = S; img.height = S;
     const g = img.getContext('2d');
@@ -609,6 +647,17 @@ class Player {
     this.dashT = 0;
     this.airUpUsed = false;
     this.dead = false;
+    // 애니메이션
+    this.lean = 0;
+    this.sx = 1; this.sy = 1;  // squash & stretch
+    this.runPhase = 0;
+    this.ghosts = [];
+    this.tick = 0;
+    this.scarf = [];
+    for (let i = 0; i < CONFIG.anim.scarfNodes; i++) {
+      const n = { x: this.cx, y: this.y + 4 + i };
+      this.scarf.push({ x: n.x, y: n.y, px: n.x, py: n.y });
+    }
   }
   get cx() { return this.x + this.w / 2; }
   get cy() { return this.y + this.h / 2; }
@@ -658,6 +707,71 @@ class Player {
   }
 
   update(dt, aimX, aimY) {
+    const wasGround = this.onGround, vyBefore = this.vy, slashBefore = this.slashT;
+    this.move(dt, aimX, aimY);
+    this.animate(dt, wasGround, vyBefore, slashBefore);
+  }
+
+  animate(dt, wasGround, vyBefore, slashBefore) {
+    const A = CONFIG.anim, c = CONFIG.player;
+    this.tick++;
+    // 기울이기: 속도 방향으로
+    const targetLean = this.dashT > 0 ? 0 : clamp(this.vx / c.runSpeed, -1, 1) * A.leanMax;
+    this.lean = lerp(this.lean, targetLean, 0.25);
+    // 늘이고 줄이기
+    if (this.jumping && wasGround) { this.sy = 1 + A.jumpStretch; this.sx = 1 - A.jumpStretch * 0.6; }
+    if (this.onGround && !wasGround && vyBefore > 60) {
+      const k = clamp(vyBefore / c.maxFall, 0.3, 1) * A.landSquash;
+      this.sy = 1 - k; this.sx = 1 + k;
+    }
+    if (this.slashT === 0 && slashBefore < 0) { this.sx = 1 + A.dashStretch; this.sy = 1 - A.dashStretch * 0.5; }
+    this.sx = lerp(this.sx, 1, A.springBack);
+    this.sy = lerp(this.sy, 1, A.springBack);
+    // 달리기 다리 주기
+    if (this.onGround) this.runPhase += Math.abs(this.vx) * dt * 0.28;
+    // 잔상
+    const sp = Math.hypot(this.vx, this.vy);
+    const dashing = this.dashT > 0 || sp > c.runSpeed * 1.4;
+    if (dashing || (this.onGround && Math.abs(this.vx) > c.runSpeed * 0.9 && this.tick % A.ghostEveryRun === 0)) {
+      this.ghosts.push({ ...this.pose(), t: 0, strong: dashing });
+    }
+    for (const gh of this.ghosts) gh.t += dt;
+    this.ghosts = this.ghosts.filter((gh) => gh.t < A.ghostTime);
+    // 머플러 (verlet 로프): 목에 고정, 나머지는 관성+중력+펄럭임
+    const nk = this.neck();
+    const sc = this.scarf;
+    sc[0].x = nk.x; sc[0].y = nk.y;
+    const moving = Math.max(0.2, Math.min(1, sp / c.runSpeed)); // 서 있어도 살짝 펄럭임
+    for (let i = 1; i < sc.length; i++) {
+      const n = sc[i];
+      const vx = (n.x - n.px) * A.scarfDrag, vy = (n.y - n.py) * A.scarfDrag;
+      n.px = n.x; n.py = n.y;
+      n.x += vx - this.facing * A.scarfTrail * dt * dt * 60;
+      n.y += vy + A.scarfGravity * dt * dt * 60 + Math.sin(this.tick * 0.35 + i * 0.9) * A.scarfWave * moving * dt * dt * 60 * (i / sc.length);
+    }
+    for (let k = 0; k < 3; k++) {
+      for (let i = 1; i < sc.length; i++) {
+        const a = sc[i - 1], b = sc[i];
+        const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
+        const diff = (d - A.scarfSeg) / d;
+        if (i === 1) { b.x -= dx * diff; b.y -= dy * diff; }
+        else { a.x += dx * diff * 0.5; a.y += dy * diff * 0.5; b.x -= dx * diff * 0.5; b.y -= dy * diff * 0.5; }
+      }
+    }
+  }
+
+  neck() {
+    return { x: this.cx - this.facing * 1 + Math.sin(this.lean) * 12, y: this.y + this.h - 12 * this.sy };
+  }
+
+  pose() {
+    return {
+      x: this.cx, y: this.y + this.h, lean: this.lean, sx: this.sx, sy: this.sy, facing: this.facing,
+      phase: this.runPhase, air: !this.onGround, vy: this.vy, slashing: this.slashing,
+    };
+  }
+
+  move(dt, aimX, aimY) {
     const c = CONFIG.player, S = CONFIG.slash;
     const ax = (Input.held('KeyD') ? 1 : 0) - (Input.held('KeyA') ? 1 : 0);
 
@@ -715,9 +829,62 @@ class Player {
 
   draw(g) {
     if (this.dead) return;
-    g.fillStyle = CONFIG.colors.player;
-    g.fillRect(Math.round(this.x), Math.round(this.y), this.w, this.h);
+    // 잔상 (흰 실루엣이 옅게 남음)
+    for (const gh of this.ghosts) {
+      const k = 1 - gh.t / CONFIG.anim.ghostTime;
+      Player.drawBody(g, gh, CONFIG.colors.player, k * (gh.strong ? 0.45 : 0.22));
+    }
+    this.drawScarf(g);
+    Player.drawBody(g, this.pose(), CONFIG.colors.player, 1);
     this.drawSlash(g);
+  }
+
+  drawScarf(g) {
+    const sc = this.scarf;
+    g.save();
+    g.strokeStyle = CONFIG.colors.player;
+    g.lineCap = 'round';
+    for (let i = 1; i < sc.length; i++) {
+      g.lineWidth = i < sc.length * 0.5 ? 2 : 1;
+      g.beginPath();
+      g.moveTo(sc[i - 1].x, sc[i - 1].y);
+      g.lineTo(sc[i].x, sc[i].y);
+      g.stroke();
+    }
+    g.restore();
+  }
+
+  // 흰 실루엣 본체. 발 위치 기준으로 기울이고 늘리고 줄임
+  static drawBody(g, P, color, alpha) {
+    g.save();
+    g.globalAlpha = alpha;
+    g.translate(Math.round(P.x), Math.round(P.y));
+    g.rotate(P.lean);
+    g.scale(P.facing * P.sx, P.sy);
+    g.fillStyle = color;
+    // 다리
+    if (P.air) {
+      const tuck = P.vy < 0 ? 1 : 0;
+      g.fillRect(-3, -6, 2, 5 - tuck);
+      g.fillRect(1, -6, 2, 4);
+      g.fillRect(2, -3, 2, 1);
+    } else {
+      const s1 = Math.sin(P.phase), s2 = Math.sin(P.phase + Math.PI);
+      g.fillRect(-2 + Math.round(s1 * 2.5) - 1, -6, 2, 6 - Math.max(0, Math.round(-Math.cos(P.phase) * 1.5)));
+      g.fillRect(-1 + Math.round(s2 * 2.5) + 1, -6, 2, 6 - Math.max(0, Math.round(Math.cos(P.phase) * 1.5)));
+    }
+    // 몸통 + 머리 + 머리끈 뒷머리
+    poly(g, [-3, -13, 3, -13, 3, -6, -3, -6]);
+    g.fillRect(-2, -17, 5, 4);
+    g.fillRect(-4, -17, 2, 2);
+    // 칼집 (베지 않을 때 등 뒤에 비스듬히)
+    if (!P.slashing) {
+      g.fillRect(-4, -11, 1, 1);
+      g.fillRect(-5, -10, 1, 1);
+      g.fillRect(-6, -9, 1, 1);
+      g.fillRect(-3, -12, 1, 1);
+    }
+    g.restore();
   }
 
   // 칼 궤적: 부채꼴을 따라 휘두르는 초승달. 가운데가 두껍고 양끝이 가늘다.
@@ -752,6 +919,15 @@ class Player {
     for (let i = inner.length - 2; i >= 0; i -= 2) g.lineTo(inner[i], inner[i + 1]);
     g.closePath();
     g.fill();
+    // 칼날 본체: 휘두르는 끝 각도 쪽으로 뻗은 선
+    const ab = a0 + span * u1;
+    g.globalAlpha = 1;
+    g.strokeStyle = CONFIG.colors.player;
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(cx + Math.cos(ab) * 4, cy + Math.sin(ab) * 4);
+    g.lineTo(cx + Math.cos(ab) * (R + 1), cy + Math.sin(ab) * (R + 1));
+    g.stroke();
     g.restore();
   }
 }
@@ -913,11 +1089,11 @@ class Melee extends Enemy {
     // 몸통 실루엣
     drawRimmed(g, (g, c) => {
       g.fillStyle = c;
-      g.fillRect(-6, -7, 5, 7);
-      g.fillRect(1, -7, 5, 7);
-      poly(g, [-8, -20 + crouch, 8, -20 + crouch, 7, -13, 5, -7, -5, -7, -7, -13]);
-      poly(g, [-3, -25 + crouch, 3, -25 + crouch, 4, -21 + crouch, -4, -21 + crouch]);
-      g.fillRect(-1, -21 + crouch, 2, 1);
+      g.fillRect(-7, -8, 6, 8);                                                  // 굵은 다리
+      g.fillRect(1, -8, 6, 8);
+      poly(g, [-10, -23 + crouch, 10, -23 + crouch, 9, -16, 6, -8, -6, -8, -9, -16]); // 역삼각 상체
+      poly(g, [-12, -25 + crouch, -5, -25 + crouch, -5, -20 + crouch, -11, -20 + crouch]); // 각진 어깨 갑옷
+      poly(g, [-3, -29 + crouch, 4, -29 + crouch, 5, -23 + crouch, -4, -23 + crouch]);     // 투구
     }, Col.enemyBody, Col.enemyRim);
     // 휘두른 궤적 (빨강)
     if (this.state === 'attack') {
@@ -926,18 +1102,18 @@ class Melee extends Enemy {
       g.fillStyle = atkCol;
       g.shadowColor = atkCol; g.shadowBlur = 8;
       g.beginPath();
-      g.arc(6, -15, 20, -2.4, wa);
-      g.arc(6, -15, 9, wa, -2.4, true);
+      g.arc(7, -17, 24, -2.4, wa);
+      g.arc(7, -17, 10, wa, -2.4, true);
       g.closePath(); g.fill();
       g.restore();
     }
     // 무기
-    g.translate(6, -15);
+    g.translate(7, -17);
     g.rotate(wa);
     const blade = (g, c) => {
       g.fillStyle = c;
-      g.fillRect(0, -1, 7, 2);
-      poly(g, [6, -3, 17, -4, 20, 0, 17, 3, 6, 3]);
+      g.fillRect(0, -1, 8, 2);
+      poly(g, [7, -3, 19, -5, 23, 0, 19, 4, 7, 4]);
     };
     if (hot) {
       g.shadowColor = atkCol; g.shadowBlur = 8;
@@ -1074,7 +1250,9 @@ const ENEMY_TYPES = { melee: Melee, gunner: Gunner };
 //  게임 상태
 // -------------------------------------------------------------
 const Game = {
-  state: 'play',          // play | dead | clear
+  state: 'logo',          // logo | play | dead | clear
+  logoT: 0,
+  playT: 0,               // 첫 판 시작 후 경과 (조작 안내 표시용)
   player: null,
   enemies: [],
   bullets: [],
@@ -1109,6 +1287,13 @@ const Game = {
 
   // 반환값: 이번 틱에 입력을 소비했는가 (히트스톱 중 누른 클릭은 다음 틱까지 보존)
   update(dt) {
+    if (this.state === 'logo') {
+      const L = CONFIG.logo;
+      this.logoT += dt;
+      if (this.logoT >= L.fadeIn + L.hold + L.fadeOut) this.reset();
+      return true;
+    }
+    this.playT += dt;
     if (Input.hit('KeyR')) { this.reset(); return true; }
     if (Input.hit('KeyM')) Sfx.toggleMute();
     this.fade = Math.max(0, this.fade - dt);
@@ -1249,7 +1434,7 @@ const Game = {
     const p = this.player, F = CONFIG.fx, C = CONFIG.colors;
     p.dead = true;
     this.state = 'dead';
-    Pieces.split((g) => { p.dead = false; p.slashT = -1; p.draw(g); p.dead = true; }, p.cx, p.cy, angle, C.attack, 1.1);
+    Pieces.split((g) => Player.drawBody(g, { ...p.pose(), slashing: false }, C.player, 1), p.cx, p.cy, angle, C.attack, 1.1);
     Particles.burst(p.cx, p.cy, 16, C.player, 180, { angle, spread: 1.0, life: 0.6, grav: 400, size: 1 });
     this.hitstop = Math.max(this.hitstop, F.deathHitstop);
     this.addShake(F.deathShake, 0.2, angle);
@@ -1257,12 +1442,12 @@ const Game = {
   },
 
   render() {
-    const C = CONFIG.colors;
-    ctx.fillStyle = C.bg;
-    ctx.fillRect(0, 0, W, H);
+    if (this.state === 'logo') { this.renderLogo(); return; }
+    const sx = this.shake.ox, sy = this.shake.oy;
+    Backdrop.draw(ctx, this.cam.x - sx);
 
     ctx.save();
-    ctx.translate(-Math.round(this.cam.x - this.shake.ox), -Math.round(this.cam.y - this.shake.oy));
+    ctx.translate(-Math.round(this.cam.x - sx), -Math.round(this.cam.y - sy));
     drawTerrain(ctx);
     Pieces.draw(ctx);
     for (const e of this.enemies) e.draw(ctx);
@@ -1287,30 +1472,130 @@ const Game = {
       ctx.fillRect(0, 0, W, H);
       ctx.globalAlpha = 1;
     }
+    this.present();
+  },
 
-    // 확대 출력
+  // 버퍼를 정수 배율로 확대 + 스캔라인
+  present() {
     sctx.drawImage(buf, 0, 0, W * scale, H * scale);
+    drawScanlines();
+  },
+
+  renderLogo() {
+    const L = CONFIG.logo, t = this.logoT;
+    let a = 1;
+    if (t < L.fadeIn) a = t / L.fadeIn;
+    else if (t > L.fadeIn + L.hold) a = 1 - (t - L.fadeIn - L.hold) / L.fadeOut;
+    a = clamp(a, 0, 1);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+    ctx.save();
+    ctx.globalAlpha = a * a * (3 - 2 * a);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = CONFIG.colors.ui;
+    ctx.shadowColor = CONFIG.colors.ui; ctx.shadowBlur = 10;
+    ctx.font = 'bold 26px sans-serif';
+    ctx.fillText(L.text, W / 2, H / 2 - 4);
+    // 글자 아래로 그어지는 한 줄
+    const k = clamp(t / (L.fadeIn + L.hold), 0, 1);
+    const lw = 90 * (1 - (1 - k) ** 3);
+    ctx.fillRect(Math.round(W / 2 - lw / 2), Math.round(H / 2 + 14), Math.round(lw), 1);
+    ctx.restore();
+    this.present();
   },
 
   drawUI(g) {
-    if (this.state === 'play') return;
+    const C = CONFIG.colors;
     g.save();
-    g.textAlign = 'center';
+    g.fillStyle = C.ui;
     g.textBaseline = 'middle';
-    g.fillStyle = CONFIG.colors.ui;
-    g.shadowColor = CONFIG.colors.ui; g.shadowBlur = 6;
+    // 남은 적 수
+    g.font = 'bold 10px monospace';
+    g.textAlign = 'left';
+    g.globalAlpha = 0.85;
+    g.fillText('남은 적 ' + this.enemies.length, 8, 10);
+    if (Sfx.muted) { g.textAlign = 'right'; g.fillText('MUTE', W - 8, 10); }
+    // 조작 안내 (첫 판 몇 초)
+    if (this.playT < CONFIG.hintTime) {
+      g.globalAlpha = 0.75 * clamp(CONFIG.hintTime - this.playT, 0, 1);
+      g.textAlign = 'center';
+      g.font = '10px sans-serif';
+      g.fillText('A/D 이동 · Space 점프 · 클릭 베기 — 빨간 공격이 닿는 순간 베면 패링', W / 2, H - 10);
+    }
+    g.globalAlpha = 1;
+    g.textAlign = 'center';
+    g.shadowColor = C.ui; g.shadowBlur = 6;
     if (this.state === 'clear') {
       g.font = 'bold 28px monospace';
       g.fillText('CLEAR', W / 2, H / 2 - 18);
       g.font = 'bold 12px sans-serif';
       g.fillText('방의 적을 모두 처치했다  ·  R 다시 하기', W / 2, H / 2 + 10);
-    } else {
+    } else if (this.state === 'dead') {
       g.font = 'bold 12px sans-serif';
       g.fillText('R  —  재시작', W / 2, H / 2);
     }
+    // 조준점
+    g.shadowBlur = 0;
+    const mx = Math.round(Input.mouse.x), my = Math.round(Input.mouse.y);
+    g.fillRect(mx - 4, my, 3, 1); g.fillRect(mx + 2, my, 3, 1);
+    g.fillRect(mx, my - 4, 1, 3); g.fillRect(mx, my + 2, 1, 3);
     g.restore();
   },
 };
+
+// -------------------------------------------------------------
+//  배경: 하늘 + 2겹 도시 실루엣 시차 스크롤 (한 번만 미리 그려둠)
+// -------------------------------------------------------------
+const Backdrop = {
+  layers: [],
+  build() {
+    const C = CONFIG.colors, rng = seeded(1337);
+    const r = (a, b) => a + rng() * (b - a);
+    // 0) 하늘 (고정): 위가 더 어두운 남색 그라디언트 + 희미한 별
+    const sky = document.createElement('canvas');
+    sky.width = W; sky.height = H;
+    let g = sky.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, C.skyTop);
+    grad.addColorStop(0.85, C.skyBottom);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = C.star;
+    for (let i = 0; i < 60; i++) g.fillRect(Math.floor(r(0, W)), Math.floor(r(0, H * 0.55)), 1, 1);
+    this.layers = [{ img: sky, factor: 0 }];
+    // 1) 먼 도시 / 2) 가까운 도시 (창문 몇 개)
+    const city = (factor, color, minH, maxH, minW, maxW, windows) => {
+      const cw = Math.ceil(W + (CONFIG.room.w - W) * factor) + 16;
+      const c = document.createElement('canvas');
+      c.width = cw; c.height = H;
+      g = c.getContext('2d');
+      const base = 240;
+      let x = -4;
+      while (x < cw) {
+        const bw = Math.floor(r(minW, maxW)), bh = Math.floor(r(minH, maxH));
+        g.fillStyle = color;
+        g.fillRect(x, base - bh, bw, bh + 40);
+        if (rng() < 0.4) g.fillRect(x + Math.floor(bw * 0.25), base - bh - 4, Math.floor(bw * 0.5), 4); // 계단식 옥상
+        if (rng() < 0.3) g.fillRect(x + Math.floor(r(2, bw - 2)), base - bh - Math.floor(r(6, 16)), 1, 16); // 안테나
+        if (windows) {
+          g.fillStyle = C.window;
+          for (let wy = base - bh + 4; wy < base - 4; wy += 5) {
+            for (let wx = x + 3; wx < x + bw - 3; wx += 4) if (rng() < 0.1) g.fillRect(wx, wy, 2, 1);
+          }
+        }
+        x += bw + Math.floor(r(0, 6));
+      }
+      return { img: c, factor };
+    };
+    this.layers.push(city(0.15, C.farCity, 50, 150, 16, 40, false));
+    this.layers.push(city(0.45, C.nearCity, 30, 110, 22, 56, true));
+  },
+  draw(g, camX) {
+    for (const L of this.layers) g.drawImage(L.img, -Math.round(camX * L.factor), 0);
+  },
+};
+Backdrop.build();
 
 function drawTerrain(g) {
   const C = CONFIG.colors;
@@ -1319,7 +1604,35 @@ function drawTerrain(g) {
     g.fillRect(s.x, s.y, s.w, s.h);
     g.fillStyle = C.terrainEdge;
     g.fillRect(s.x, s.y, s.w, 1);
+    if (s.oneWay) {
+      // 발판: 아래 지지대
+      g.fillStyle = C.terrainLine;
+      for (let x = s.x + 6; x < s.x + s.w - 4; x += 18) g.fillRect(x, s.y + s.h, 1, 4);
+    } else if (s.h > 12) {
+      // 바닥/엄폐물: 희미한 벽돌 줄눈
+      g.fillStyle = C.terrainLine;
+      for (let y = s.y + 6, row = 0; y < s.y + s.h; y += 6, row++) {
+        g.fillRect(s.x, y, s.w, 1);
+        for (let x = s.x + (row % 2) * 12; x < s.x + s.w; x += 24) g.fillRect(x, y - 5, 1, 5);
+      }
+    }
   }
+}
+
+// 은은한 스캔라인: 확대된 화면에서 픽셀 한 줄마다 아래쪽을 살짝 어둡게
+let scanPattern = null, scanScale = 0;
+function drawScanlines() {
+  if (scanScale !== scale) {
+    const c = document.createElement('canvas');
+    c.width = 1; c.height = Math.max(2, scale);
+    const g = c.getContext('2d');
+    g.fillStyle = `rgba(0,0,0,${CONFIG.scanline.alpha})`;
+    g.fillRect(0, c.height - Math.max(1, Math.floor(scale / 3)), 1, Math.max(1, Math.floor(scale / 3)));
+    scanPattern = sctx.createPattern(c, 'repeat');
+    scanScale = scale;
+  }
+  sctx.fillStyle = scanPattern;
+  sctx.fillRect(0, 0, screen.width, screen.height);
 }
 
 // -------------------------------------------------------------
@@ -1337,6 +1650,5 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-Game.reset();
 window.__game = Game; // 디버그용
 requestAnimationFrame(frame);
