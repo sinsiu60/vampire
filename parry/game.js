@@ -97,8 +97,42 @@ const CONFIG = {
   },
 
   // 타격감: 처치/패링 순간 아래 요소가 '동시에' 터진다. F2 패널에서 하나씩 끄고 켜며 비교 가능.
+  // 킬 연출 타임라인 (60fps 프레임 기준, 카타나 제로 실측)
+  //  0f      처치 → 타임스톱 시작: 플레이어·적은 베는 자세로 정지, 빛줄기/피/먼지/흔들림/궤적만 움직임
+  //  0~10f   빛줄기가 화면 밖 → 화면 밖으로 쓸고 지나감
+  //  16f     해제: 적 두 조각이 공격 방향으로 날아감, 3겹 궤적 사라짐, 조작 재개
+  //  16~22f  흔들림 꼬리가 0 으로
+  kill: {
+    KILL_HITSTOP_FRAMES: 16,          // 1) 타임스톱 길이
+    FREEZE_OTHERS: true,              //    다른 적·총알도 함께 정지 (false 면 계속 움직이되 그동안 플레이어는 무적)
+    BEAM_FRAMES: 11,                  // 2) 빛줄기가 쓸고 지나가는 프레임 수
+    BEAM_WIDTH: 2,                    //    빛줄기 두께 (내부 해상도 px)
+    BEAM_GLOW: 6,
+    BEAM_MARGIN: 12,                  //    화면 밖 시작/끝 여유 (px)
+    DUST_COUNT: 12,                   //    빛줄기가 바닥을 지나는 지점의 흙먼지 개수
+    DUST_SPEED: 70,
+    TRAIL_RADIUS: 34,                 // 3) 3겹 궤적 반지름
+    TRAIL_ARC: 80,                    //    반각 (°)
+    TRAIL_SWEEP_FRAMES: 3,            //    궤적이 휘둘러지는 프레임 수 (타임스톱 중 재생)
+    TRAIL_PINK_LAG: 1.5,              //    분홍 잔상이 늦게 따라오는 프레임 수
+    TRAIL_MIN_FRAMES: 4,              //    타임스톱을 끈 경우에도 최소한 보이는 프레임 수
+    BLOOD_MIN: 30, BLOOD_MAX: 40,     // 4) 피 덩어리 개수
+    BLOOD_CONE: 28,                   //    원뿔 반각 (°)
+    BLOOD_SPEED_MIN: 60, BLOOD_SPEED_MAX: 330,
+    BLOOD_STOP_SPEED: 0.12,           //    타임스톱 중 퍼지는 속도 배율 (천천히)
+    BLOOD_GRAVITY: 700,
+    BLOOD_LIFE: 1.6,
+    SHAKE_START: 8,                   // 5) 처치 흔들림 시작 강도 (px)
+    SHAKE_TAIL_FRAMES: 6,             //    해제 후 이 프레임 안에 0
+    SHAKE_CURVE: 2.5,                 //    감쇠 곡선 지수 (클수록 초반에 몰림)
+    SHAKE_BIAS: 0.55,                 //    공격 방향 쪽 치우침 (0 = 완전 랜덤, 1 = 공격 방향으로만)
+  },
+
+  debug: {
+    SLOW_SCALE: 0.1,                  // 7) F3 슬로우 모드 게임 속도
+  },
+
   juice: {
-    HITSTOP_KILL: 0.12,               // 1) 적 처치 히트스톱 (초)
     HITSTOP_PARRY: 0.18,              //    패링 성공 히트스톱 (초) — 흔들림/섬광은 히트스톱 중에도 재생
     ENEMY_FLASH_FRAMES: 2,            // 2) 맞은 적 실루엣을 완전 흰색으로 보이는 프레임 수
     KILL_KNOCKBACK: 400,              // 3) 처치된 적(두 조각)이 공격 방향으로 튕겨 나가는 속도
@@ -110,20 +144,12 @@ const CONFIG = {
     PIECE_MIN_BOUNCE: 90,             //    이 낙하 속도 미만이면 튕기지 않고 미끄러짐
     PIECE_FRICTION: 650,              //    바닥 미끄럼 감속 (px/s²)
     PIECE_WALL_BOUNCE: 0.5,
-    GORE_MIN: 15, GORE_MAX: 25,       // 4) 공격 방향 원뿔로 뿜는 파편 수
-    GORE_CONE: 26,                    //    원뿔 반각 (°)
-    GORE_SPEED_MIN: 140, GORE_SPEED_MAX: 430,
-    GORE_GRAVITY: 750,
-    GORE_LIFE: 1.2,                   //    이 시간 안에 지형에 닿은 파편은 자국으로 남음 (재시작 전까지)
     SLASH_TRAIL_RADIUS: 32,           // 5) 반달 베기 궤적 반지름
     SLASH_TRAIL_ARC: 80,              //    궤적 반각 (°)
     SLASH_TRAIL_THICK: 0.5,           //    가장 두꺼운 곳 두께 (반지름 비율)
     SLASH_TRAIL_HOLD: 3,              //    꽉 찬 상태로 보이는 프레임 수
     SLASH_TRAIL_FADE: 0.09,           //    그 뒤 사라지는 시간
-    SLASH_HIT_SCALE: 1.2,             //    적을 맞췄을 때 궤적 크기 배율
-    SLASH_HIT_GLOW: 18,               //    적을 맞췄을 때 발광 세기
-    SHAKE_KILL: 6,                    // 6) 방향성 흔들림: 처치 강도 (px)
-    SHAKE_PARRY: 10,                  //    패링 강도 (px)
+    SHAKE_PARRY: 10,                  // 6) 방향성 흔들림: 패링 강도 (px) (처치는 kill.SHAKE_*)
     SHAKE_TIME: 0.15,                 //    감쇠 시간
     SHAKE_OVERSHOOT: 1,               //    되돌아올 때 반대쪽으로 살짝 넘어가는 정도 (0 = 안 넘어감)
     RECOIL_SPEED: 150,                // 7) 적을 벤 순간 플레이어가 반대 방향으로 밀리는 속도
@@ -187,7 +213,11 @@ const CONFIG = {
     enemyBody: '#10121c',
     enemyRim: '#4a5170',
     enemyWeapon: '#2c3350',
-    gore: '#3a4363', goreLight: '#646d93', // 적 파편/자국 (빨강은 적 공격 전용이라 쓰지 않음)
+    // 킬 연출 전용 색 (요청에 따라 원래 색 규칙의 예외)
+    blood: ['#d0102a', '#9a0c20', '#ff3a45'],
+    beamCore: '#ffffff', beamEdge: '#5fd8ff',
+    trailOuter: '#5fd8ff', trailMid: '#ff6fcf', trailCore: '#ffd23a',
+    dust: ['#9a8f78', '#6e6656', '#b8ae96'],
     attack: '#ff2b3d',
     unparryable: '#b14dff',
     parry: '#ffd23a',
@@ -196,18 +226,31 @@ const CONFIG = {
   },
 };
 
-// F2 패널에서 켜고 끄는 타격감 요소 (키 1~9, 0 = 전부 토글)
+// F2 패널에서 켜고 끄는 타격감 요소 (키 1~9, 0 = 10번째, - = 전부 토글)
 const JUICE = [
-  { key: 'hitstop', label: '히트스톱' },
+  { key: 'hitstop', label: '타임스톱/히트스톱' },
   { key: 'enemyFlash', label: '피격 흰 섬광' },
   { key: 'knockback', label: '적 날아가기' },
-  { key: 'gore', label: '파편 + 자국' },
-  { key: 'slashTrail', label: '반달 베기 궤적' },
-  { key: 'shake', label: '방향성 흔들림' },
+  { key: 'gore', label: '피 + 자국' },
+  { key: 'slashTrail', label: '베기 궤적(반달/3겹)' },
+  { key: 'shake', label: '화면 흔들림' },
   { key: 'recoil', label: '플레이어 반동' },
   { key: 'sound', label: '사운드' },
   { key: 'screenFlash', label: '화면 섬광(패링)' },
+  { key: 'beam', label: '빛줄기 + 흙먼지' },
 ];
+const JUICE_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0'];
+
+// 옵션 (ESC 메뉴). 브라우저에 저장 — 못 쓰는 환경이면 기본값으로
+const Settings = {
+  shake: 1,                           // 화면 흔들림 강도 배율 0 ~ 1.5
+  load() { try { const v = parseFloat(localStorage.getItem('parry.shake')); if (v >= 0 && v <= 1.5) this.shake = v; } catch (e) { /* 저장소 없음 */ } },
+  save() { try { localStorage.setItem('parry.shake', String(this.shake)); } catch (e) { /* 저장소 없음 */ } },
+};
+Settings.load();
+
+// F3 슬로우 / F4 프레임 단위 진행
+const Debug = { slow: false, step: false, stepQueue: 0, frame: 0 };
 const juiceOn = Object.fromEntries(JUICE.map((j) => [j.key, true]));
 
 // -------------------------------------------------------------
@@ -279,7 +322,13 @@ const Input = {
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Space' || e.code === 'F1' || e.code === 'F2') e.preventDefault(); // F1: 브라우저 도움말 막기
+      if (['Space', 'F1', 'F2', 'F3', 'F4', 'Escape'].includes(e.code)) e.preventDefault(); // 브라우저 기본 동작(도움말/찾기 등) 막기
+      // 디버그 시간 조작은 게임 루프 밖에서 처리 (정지 중에도 받아야 함)
+      if (!e.repeat) {
+        if (e.code === 'F3') { Debug.slow = !Debug.slow; Debug.step = false; }
+        if (e.code === 'F4') { Debug.step = true; Debug.stepQueue++; }
+        if (e.code === 'Enter') Debug.step = false;
+      }
       if (!this.down.has(e.code)) this.pressed.add(e.code);
       this.down.add(e.code);
     });
@@ -389,10 +438,16 @@ const Particles = {
         color, opts.size ?? 1, opts.grav ?? 0, opts.glow ?? false, opts.streak ?? false);
     }
   },
-  update(dt) {
+  // stopped = 킬 타임스톱 중. 피(slowInStop)는 중력 없이 천천히 퍼지기만 함
+  update(dt, stopped = false) {
     const L = this.list;
     for (let i = L.length - 1; i >= 0; i--) {
       const p = L[i];
+      if (stopped && p.slowInStop) {
+        const k = CONFIG.kill.BLOOD_STOP_SPEED;
+        p.x += p.vx * dt * k; p.y += p.vy * dt * k;
+        continue;
+      }
       p.life -= dt;
       if (p.life <= 0) { L[i] = L[L.length - 1]; L.pop(); continue; }
       p.vy += p.grav * dt;
@@ -747,6 +802,141 @@ const Sfx = {
         break;
       case 'clear': [523, 659, 784, 1046].forEach((fr, i) => this.osc({ type: 'triangle', f: [fr], dur: 0.25, vol: 0.15, attack: 0.005, delay: i * 0.08 })); break;
     }
+  },
+};
+
+// -------------------------------------------------------------
+//  초승달/반달 궤적 그리기 공용 함수
+//  (cx, cy) 중심, 반지름 R, a0 에서 span 만큼. u0~u1 구간만 그림 (휘두르는 중간 모습)
+// -------------------------------------------------------------
+function drawCrescent(g, cx, cy, R, a0, span, u0, u1, thickMax, color, glow, alpha = 1) {
+  if (u1 - u0 < 0.01) return;
+  const N = 18, outer = [], inner = [];
+  for (let i = 0; i <= N; i++) {
+    const u = lerp(u0, u1, i / N), a = a0 + span * u;
+    const th = Math.sin(Math.PI * u) ** 0.8 * thickMax;
+    outer.push(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
+    inner.push(cx + Math.cos(a) * (R - th), cy + Math.sin(a) * (R - th));
+  }
+  g.save();
+  g.globalAlpha = alpha;
+  g.fillStyle = color;
+  g.shadowColor = color; g.shadowBlur = glow;
+  g.beginPath();
+  g.moveTo(outer[0], outer[1]);
+  for (let i = 2; i < outer.length; i += 2) g.lineTo(outer[i], outer[i + 1]);
+  for (let i = inner.length - 2; i >= 0; i -= 2) g.lineTo(inner[i], inner[i + 1]);
+  g.closePath();
+  g.fill();
+  g.restore();
+}
+
+// -------------------------------------------------------------
+//  빛줄기 (Slash Beam): 공격 방향을 따라 타격 지점을 지나는 얇고 긴 직선.
+//  플레이어 뒤쪽 화면 밖 → 적 너머 화면 밖. 머리가 먼저 빠르게, 꼬리가 따라오며 사라짐.
+// -------------------------------------------------------------
+const Beams = {
+  list: [],
+  reset() { this.list.length = 0; },
+  spawn(hx, hy, angle, view) {
+    const K = CONFIG.kill, dx = Math.cos(angle), dy = Math.sin(angle);
+    // 화면(+여유) 사각형을 나가기까지의 거리: 뒤쪽(back), 앞쪽(fwd)
+    const m = K.BEAM_MARGIN, x0 = view.x - m, x1 = view.x + W + m, y0 = view.y - m, y1 = view.y + H + m;
+    const exitDist = (sx, sy) => {
+      let t = Infinity;
+      if (sx > 0) t = Math.min(t, (x1 - hx) / sx); else if (sx < 0) t = Math.min(t, (x0 - hx) / sx);
+      if (sy > 0) t = Math.min(t, (y1 - hy) / sy); else if (sy < 0) t = Math.min(t, (y0 - hy) / sy);
+      return Math.max(0, t);
+    };
+    const back = exitDist(-dx, -dy), fwd = exitDist(dx, dy);
+    const ox = hx - dx * back, oy = hy - dy * back, len = back + fwd;
+    // 빛줄기가 지형 윗면(바닥·발판·엄폐물)과 만나는 지점 → 머리가 지나갈 때 흙먼지
+    const dust = [];
+    if (Math.abs(dy) > 0.05) {
+      for (const s of ROOM.solids) {
+        const t = (s.y - oy) / dy;
+        if (t < 0 || t > len) continue;
+        const ix = ox + dx * t;
+        if (ix >= s.x && ix <= s.x + s.w) dust.push({ t, x: ix, y: s.y, done: false });
+      }
+    }
+    this.list.push({ ox, oy, dx, dy, len, f: 0, dust, fresh: true });
+  },
+  // 머리/꼬리 위치 (시작점에서의 거리). 머리는 빨리 나가고(ease-out), 꼬리는 늦게 따라옴(ease-in)
+  span(b) {
+    const u = (b.f + 1) / (CONFIG.kill.BEAM_FRAMES + 1);
+    return { head: b.len * (1 - (1 - u) ** 3), tail: b.len * u * u * u };
+  },
+  update() {
+    const K = CONFIG.kill, C = CONFIG.colors;
+    for (const b of this.list) {
+      const { head } = this.span(b);
+      for (const d of b.dust) {
+        if (d.done || d.t > head) continue;
+        d.done = true;
+        // 흙먼지: 바닥에서 위로 뭉게뭉게, 빛줄기 진행 방향으로 살짝 끌려감
+        for (let i = 0; i < K.DUST_COUNT; i++) {
+          const a = -Math.PI / 2 + rand(-1.1, 1.1);
+          const v = K.DUST_SPEED * rand(0.3, 1);
+          Particles.spawn(d.x + rand(-3, 3), d.y - 1, Math.cos(a) * v + b.dx * 40, Math.sin(a) * v,
+            rand(0.35, 0.7), C.dust[i % C.dust.length], Math.random() < 0.5 ? 2 : 3, 60);
+        }
+      }
+      // 생긴 틱에는 프레임을 넘기지 않음 → 첫 프레임(f=0)부터 BEAM_FRAMES 장이 모두 그려짐
+      if (b.fresh) b.fresh = false; else b.f++;
+    }
+    this.list = this.list.filter((b) => b.f < K.BEAM_FRAMES);
+  },
+  draw(g) {
+    const K = CONFIG.kill, C = CONFIG.colors;
+    for (const b of this.list) {
+      const { head, tail } = this.span(b);
+      if (head - tail < 0.5) continue;
+      const x0 = b.ox + b.dx * tail, y0 = b.oy + b.dy * tail, x1 = b.ox + b.dx * head, y1 = b.oy + b.dy * head;
+      g.save();
+      g.lineCap = 'butt';
+      // 하늘색 테두리 + 글로우
+      g.strokeStyle = C.beamEdge; g.shadowColor = C.beamEdge; g.shadowBlur = K.BEAM_GLOW;
+      g.lineWidth = K.BEAM_WIDTH + 2;
+      g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+      // 흰색 중심
+      g.shadowBlur = 0;
+      g.strokeStyle = C.beamCore; g.lineWidth = K.BEAM_WIDTH;
+      g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+      g.restore();
+    }
+  },
+};
+
+// -------------------------------------------------------------
+//  3겹 킬 궤적: 바깥 하늘색 / 중간 분홍 잔상(늦게 따라옴) / 중심 노랑.
+//  타임스톱 동안 화면에 남아 있다가 해제 시 사라짐
+// -------------------------------------------------------------
+const KillTrail = {
+  t: null,
+  reset() { this.t = null; },
+  spawn(cx, cy, angle, flip) { this.t = { cx, cy, angle, flip, f: 0, released: false, fresh: true }; },
+  update() {
+    const t = this.t;
+    if (t) { if (t.fresh) t.fresh = false; else t.f++; }
+  },
+  release() { if (this.t) this.t.released = true; },
+  // 해제됐고 최소 표시 프레임도 지났으면 제거
+  prune() {
+    const t = this.t;
+    if (t && t.released && t.f >= CONFIG.kill.TRAIL_MIN_FRAMES) this.t = null;
+  },
+  draw(g) {
+    const t = this.t;
+    if (!t) return;
+    const K = CONFIG.kill, C = CONFIG.colors, R = K.TRAIL_RADIUS;
+    const half = K.TRAIL_ARC * Math.PI / 180;
+    const a0 = t.angle - half * t.flip, span = half * 2 * t.flip;
+    const sweep = (lag) => clamp((t.f + 1 - lag) / K.TRAIL_SWEEP_FRAMES, 0, 1);
+    const u = sweep(0), up = sweep(K.TRAIL_PINK_LAG);
+    drawCrescent(g, t.cx, t.cy, R * 1.12, a0, span, 0, u, R * 0.62, C.trailOuter, 10, 0.9); // 바깥: 하늘색
+    drawCrescent(g, t.cx, t.cy, R, a0, span, 0, up, R * 0.46, C.trailMid, 6, 0.95);         // 중간: 분홍 잔상
+    drawCrescent(g, t.cx, t.cy, R * 0.97, a0, span, 0, u, R * 0.22, C.trailCore, 8, 1);       // 중심: 노랑
   },
 };
 
@@ -1112,15 +1302,8 @@ class Player {
     g.restore();
   }
 
-  // 적을 맞혔을 때: 궤적을 더 크고 밝게, 꽉 찬 상태를 다시 보여줌
-  boostTrail() {
-    if (!this.trail) return;
-    this.trail.hit = true;
-    this.trail.ticks = 0;
-  }
-
   // 반달 베기 궤적: SLASH_TRAIL_HOLD 프레임 동안 꽉 찬 채로 보인 뒤 빠르게 가늘어지며 사라짐.
-  // 가운데가 두껍고 양끝이 가는 반달. F2 에서 끄면 작고 얇은 기본 궤적.
+  // 가운데가 두껍고 양끝이 가는 반달. F2 에서 끄면 작고 얇은 기본 궤적. (적을 베면 3겹 KillTrail 로 바뀜)
   drawSlash(g) {
     const tr = this.trail;
     if (!tr) return;
@@ -1129,34 +1312,11 @@ class Player {
     const fadeTicks = J.SLASH_TRAIL_FADE * CONFIG.fps;
     const k = tr.ticks <= J.SLASH_TRAIL_HOLD ? 0 : (tr.ticks - J.SLASH_TRAIL_HOLD) / fadeTicks; // 0 → 1 사라짐
     if (k >= 1) return;
-    const hit = big && tr.hit;
-    let R = big ? J.SLASH_TRAIL_RADIUS : S.radius;
-    if (hit) R *= J.SLASH_HIT_SCALE;
-    R += k * 4;                                         // 사라지며 살짝 퍼짐
-    const thickMax = R * (big ? J.SLASH_TRAIL_THICK : 0.3) * (1 - k);
-    const half = (big ? J.SLASH_TRAIL_ARC * Math.PI / 180 : S.arcHalf);
-    const a0 = tr.angle - half * tr.flip, span = half * 2 * tr.flip;
-    const cx = this.cx, cy = this.cy, N = 18;
-    const outer = [], inner = [];
-    for (let i = 0; i <= N; i++) {
-      const u = i / N, a = a0 + span * u;
-      const th = Math.sin(Math.PI * u) ** 0.8 * thickMax;
-      outer.push(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
-      inner.push(cx + Math.cos(a) * (R - th), cy + Math.sin(a) * (R - th));
-    }
-    g.save();
-    g.globalAlpha = 1 - k * k;
-    g.fillStyle = CONFIG.colors.player;
-    g.shadowColor = CONFIG.colors.player;
-    g.shadowBlur = hit ? J.SLASH_HIT_GLOW : big ? 8 : 4;
-    g.beginPath();
-    g.moveTo(outer[0], outer[1]);
-    for (let i = 2; i < outer.length; i += 2) g.lineTo(outer[i], outer[i + 1]);
-    for (let i = inner.length - 2; i >= 0; i -= 2) g.lineTo(inner[i], inner[i + 1]);
-    g.closePath();
-    g.fill();
-    if (hit) g.fill(); // 한 번 더 칠해 발광을 진하게
-    g.restore();
+    const R = (big ? J.SLASH_TRAIL_RADIUS : S.radius) + k * 4;   // 사라지며 살짝 퍼짐
+    const thick = R * (big ? J.SLASH_TRAIL_THICK : 0.3) * (1 - k);
+    const half = big ? J.SLASH_TRAIL_ARC * Math.PI / 180 : S.arcHalf;
+    drawCrescent(g, this.cx, this.cy, R, tr.angle - half * tr.flip, half * 2 * tr.flip, 0, 1,
+      thick, CONFIG.colors.player, big ? 8 : 4, 1 - k * k);
   }
 }
 
@@ -1488,7 +1648,11 @@ const Game = {
   bullets: [],
   cam: { x: 0, y: 0 },
   fade: 0,
-  hitstop: 0,             // 남은 정지 시간
+  hitstop: 0,             // 남은 정지 시간 (패링/사망)
+  killStop: 0,            // 킬 타임스톱 남은 프레임
+  killFrame: -1,          // 마지막 처치 후 지난 프레임 (디버그 표시용)
+  killShake: { f: 0, total: 0, angle: 0 },
+  menu: false, menuDrag: false,
   slowT: 0,               // 반사 직후 슬로우 남은 시간 (히트스톱이 끝난 뒤부터 흐름)
   debug: false,           // F1: 반사 보정 범위/대상 표시
   juicePanel: false,      // F2: 타격감 요소 토글 패널
@@ -1504,7 +1668,12 @@ const Game = {
     Rings.reset();
     Pieces.reset();
     Stains.reset();
+    Beams.reset();
+    KillTrail.reset();
     this.hitstop = 0;
+    this.killStop = 0;
+    this.killFrame = -1;
+    this.killShake.total = 0;
     this.slowT = 0;
     this.flash = 0;
     this.shake.t = 0; this.shake.ox = this.shake.oy = 0;
@@ -1529,6 +1698,13 @@ const Game = {
       return true;
     }
     this.playT += dt;
+    if (Input.hit('Escape')) { this.menu = !this.menu; this.menuDrag = false; Settings.save(); }
+    if (this.menu) {
+      // 옵션 메뉴: 게임 정지, 흔들림만 미리보기로 재생
+      this.handleMenu();
+      this.updateShake(dt);
+      return true;
+    }
     if (Input.hit('KeyR')) { this.reset(); return true; }
     if (Input.hit('KeyM')) Sfx.toggleMute();
     if (Input.hit('F1')) this.debug = !this.debug;
@@ -1540,8 +1716,25 @@ const Game = {
     if (this.flash > 0 && this.flashShown) this.flash -= dt;
     this.updateShake(dt);
     Pieces.tickRealtime();
+    if (this.killFrame >= 0) this.killFrame++;
 
-    // 히트스톱: 월드 전체 정지
+    // 킬 타임스톱: 플레이어·맞은 적(조각)은 베는 자세로 정지. 빛줄기·피·먼지·궤적만 움직임
+    if (this.killStop > 0) {
+      this.killStop--;
+      this.hitstop = Math.max(0, this.hitstop - dt);
+      if (!CONFIG.kill.FREEZE_OTHERS) {
+        for (const e of this.enemies) e.update(dt, this.player, this);
+        for (const b of this.bullets) b.update(dt);
+        this.resolveCombat(true);
+        this.enemies = this.enemies.filter((e) => !e.dead);
+        this.bullets = this.bullets.filter((b) => !b.dead);
+      }
+      this.updateFx(dt, true);
+      if (this.killStop === 0) KillTrail.release();   // 해제: 조각이 날아가고 조작 재개 (다음 틱부터)
+      return false;
+    }
+
+    // 히트스톱(패링/사망): 월드 전체 정지
     if (this.hitstop > 0) { this.hitstop -= dt; return false; }
     // 반사 직후 슬로우: 월드 시간만 느리게 (실제 시간 기준으로 지속)
     const realDt = dt;
@@ -1560,8 +1753,7 @@ const Game = {
     this.resolveCombat();
     this.enemies = this.enemies.filter((e) => !e.dead);
     this.bullets = this.bullets.filter((b) => !b.dead);
-    Particles.update(dt);
-    Rings.update(dt);
+    this.updateFx(dt, false);
     Pieces.update(dt);
     dt = realDt;
     if (this.state === 'play' && this.enemies.length === 0) { this.state = 'clear'; Sfx.play('clear'); }
@@ -1569,11 +1761,35 @@ const Game = {
     return true;
   },
 
+  // 연출 레이어 갱신 (타임스톱 중에도 호출됨)
+  updateFx(dt, stopped) {
+    Particles.update(dt, stopped);
+    Rings.update(dt);
+    Beams.update();
+    KillTrail.update();
+    KillTrail.prune();
+  },
+
+  // ESC 옵션 메뉴: 흔들림 강도 슬라이더
+  menuSlider() { return { x: W / 2 - 80, y: H / 2 + 2, w: 160, h: 8 }; },
+  handleMenu() {
+    const sl = this.menuSlider(), m = Input.mouse;
+    const before = Settings.shake;
+    if (Input.hit('ArrowLeft') || Input.hit('KeyA')) Settings.shake -= 0.1;
+    if (Input.hit('ArrowRight') || Input.hit('KeyD')) Settings.shake += 0.1;
+    if (m.clicked && m.x >= sl.x - 6 && m.x <= sl.x + sl.w + 6 && m.y >= sl.y - 8 && m.y <= sl.y + sl.h + 8) this.menuDrag = true;
+    if (!m.down) this.menuDrag = false;
+    if (this.menuDrag) Settings.shake = (m.x - sl.x) / sl.w * 1.5;
+    Settings.shake = Math.round(clamp(Settings.shake, 0, 1.5) * 20) / 20;   // 5% 단위
+    // 값이 바뀌면 그 강도로 흔들림을 미리 보여줌
+    if (Settings.shake !== before && !this.menuDrag) this.startKillShake(rand(0, Math.PI * 2), 10);
+  },
+
   handleJuiceKeys() {
     for (let i = 0; i < JUICE.length; i++) {
-      if (Input.hit('Digit' + (i + 1))) juiceOn[JUICE[i].key] = !juiceOn[JUICE[i].key];
+      if (Input.hit(JUICE_KEYS[i])) juiceOn[JUICE[i].key] = !juiceOn[JUICE[i].key];
     }
-    if (Input.hit('Digit0')) {
+    if (Input.hit('Minus')) {
       const all = JUICE.every((j) => juiceOn[j.key]);
       for (const j of JUICE) juiceOn[j.key] = !all;
     }
@@ -1587,21 +1803,42 @@ const Game = {
   shakeEnvelope(k) {
     return (1 - k) ** 2 * Math.cos(k * Math.PI * CONFIG.juice.SHAKE_OVERSHOOT);
   },
+  // 화면 흔들림 = 방향성 흔들림(패링/사망) + 킬 흔들림. 옵션의 강도 배율 적용
   updateShake(dt) {
     const sh = this.shake;
+    let ox = 0, oy = 0;
     if (sh.t > 0) {
       sh.t = Math.max(0, sh.t - dt);
       const e = sh.amp * this.shakeEnvelope(1 - sh.t / sh.time);
-      sh.ox = Math.cos(sh.angle) * e;
-      sh.oy = Math.sin(sh.angle) * e;
-    } else { sh.ox = sh.oy = 0; }
+      ox += Math.cos(sh.angle) * e;
+      oy += Math.sin(sh.angle) * e;
+    }
+    // 킬 흔들림: 매 프레임 랜덤 방향이되 공격 방향으로 치우침. 타임스톱 16f 동안 감쇠, 해제 후 6f 안에 0
+    const ks = this.killShake;
+    if (ks.f < ks.total) {
+      const K = CONFIG.kill;
+      const amp = K.SHAKE_START * (1 - ks.f / ks.total) ** K.SHAKE_CURVE;
+      const r = rand(0, Math.PI * 2);
+      const vx = Math.cos(ks.angle) * K.SHAKE_BIAS + Math.cos(r) * (1 - K.SHAKE_BIAS);
+      const vy = Math.sin(ks.angle) * K.SHAKE_BIAS + Math.sin(r) * (1 - K.SHAKE_BIAS);
+      const n = Math.hypot(vx, vy) || 1, a = amp * rand(0.6, 1);
+      ox += vx / n * a; oy += vy / n * a;
+      ks.f++;
+    }
+    sh.ox = ox * Settings.shake;
+    sh.oy = oy * Settings.shake;
+  },
+  startKillShake(angle, stopFrames) {
+    const ks = this.killShake;
+    ks.f = 0; ks.total = stopFrames + CONFIG.kill.SHAKE_TAIL_FRAMES; ks.angle = angle;
+    this.updateShake(0);   // 처치 프레임부터 바로 흔들림
   },
   addShake(amp, time, angle = rand(0, Math.PI * 2)) {
     if (!juiceOn.shake) return;
     const sh = this.shake;
     if (sh.t > 0 && sh.amp * this.shakeEnvelope(1 - sh.t / sh.time) > amp) return; // 더 센 흔들림 유지
     sh.amp = amp; sh.time = time; sh.t = time; sh.angle = angle;
-    sh.ox = Math.cos(angle) * amp; sh.oy = Math.sin(angle) * amp; // 첫 프레임에 바로 밀림
+    sh.ox = Math.cos(angle) * amp * Settings.shake; sh.oy = Math.sin(angle) * amp * Settings.shake; // 첫 프레임에 바로 밀림
   },
   addHitstop(t) {
     if (juiceOn.hitstop) this.hitstop = Math.max(this.hitstop, t);
@@ -1620,8 +1857,20 @@ const Game = {
     Sfx.play('parry');
   },
 
-  resolveCombat() {
+  // duringStop: 타임스톱 중 (FREEZE_OTHERS=false 일 때) — 플레이어는 공격하지도 맞지도 않음
+  resolveCombat(duringStop = false) {
     const p = this.player;
+    if (duringStop) {
+      for (const b of this.bullets) {
+        if (b.dead || b.owner !== 'player') continue;
+        for (const e of this.enemies) {
+          if (!e.dead && circleRect(b.x, b.y, b.r * CONFIG.aimAssist.REFLECT_HITBOX_SCALE, e)) {
+            this.killEnemy(e, Math.atan2(b.vy, b.vx), 'reflect'); b.dead = true; break;
+          }
+        }
+      }
+      return;
+    }
     const S = CONFIG.slash, P = CONFIG.parry;
 
     if (!p.dead && p.inParryWindow) {
@@ -1710,41 +1959,54 @@ const Game = {
     this.killEnemy(e, p.slashAngle, 'parry');
   },
 
-  // 적 처치: 아래가 같은 프레임에 '동시에' 터진다
-  //  히트스톱 · 피격 흰 섬광 · 두 조각 날아가기 · 원뿔 파편 · 궤적 강화 · 방향성 흔들림 · 반동 · 두 겹 사운드
+  // 적 처치: 킬 연출 타임라인 시작 (CONFIG.kill 참고)
+  //  타임스톱 · 빛줄기+흙먼지 · 3겹 궤적 · 피 구름 · 킬 흔들림 · 피격 흰 섬광 · 두 조각(해제 후 날아감) · 반동 · 사운드
   //  cause: 'slash'(직접 베기) | 'parry'(근접 패링) | 'reflect'(반사 총알)
   killEnemy(e, angle, cause = 'slash') {
     if (e.dead) return;
     e.dead = true;
-    const C = CONFIG.colors, J = CONFIG.juice;
+    const C = CONFIG.colors, J = CONFIG.juice, K = CONFIG.kill;
+    const p = this.player;
     const byParry = cause !== 'slash';
     e.setState('dead');                // 무기 발광을 끄고 시체 자세로
+    // 두 조각: 속도는 지금 정해지지만 타임스톱이 끝나야 움직이기 시작
     Pieces.split((g) => e.draw(g), e.cx, e.cy, angle, byParry ? C.parry : C.player, 1, juiceOn.knockback);
-    // 공격 방향 원뿔 파편 (지형에 닿으면 자국)
-    if (juiceOn.gore) {
-      const n = J.GORE_MIN + Math.floor(Math.random() * (J.GORE_MAX - J.GORE_MIN + 1));
-      const cone = J.GORE_CONE * Math.PI / 180;
-      for (let i = 0; i < n; i++) {
-        const a = angle + rand(-1, 1) * cone * (Math.random() < 0.7 ? 0.6 : 1); // 가운데에 몰리게
-        const v = rand(J.GORE_SPEED_MIN, J.GORE_SPEED_MAX);
-        Particles.spawn(e.cx + rand(-2, 2), e.cy + rand(-3, 3), Math.cos(a) * v, Math.sin(a) * v - 40,
-          J.GORE_LIFE * rand(0.7, 1), Math.random() < 0.6 ? C.gore : C.goreLight,
-          Math.random() < 0.3 ? 2 : 1, J.GORE_GRAVITY, false, false, true);
-      }
-    }
-    Particles.burst(e.cx, e.cy, 8, byParry ? C.parry : C.player, 260, { angle, spread: 0.35, life: 0.18, glow: true, streak: true });
-    // 궤적 강화 + 반동 (칼로 벤 경우)
-    const p = this.player;
+    // 1) 타임스톱
+    const stop = juiceOn.hitstop ? K.KILL_HITSTOP_FRAMES : 0;
+    this.killStop = Math.max(this.killStop, stop);
+    this.killFrame = 0;
+    // 2) 빛줄기: 타격 지점(적 중심)을 지나 화면 밖에서 화면 밖으로
+    if (juiceOn.beam) Beams.spawn(e.cx, e.cy, angle, this.cam);
+    // 3) 3겹 궤적 (칼로 벤 경우) + 반동
     if (cause !== 'reflect' && !p.dead) {
-      p.boostTrail();
+      if (juiceOn.slashTrail) {
+        KillTrail.spawn(p.cx, p.cy, p.trail ? p.trail.angle : angle, p.trail ? p.trail.flip : 1);
+        if (!stop) KillTrail.release();
+        p.trail = null;                // 흰 반달 대신 3겹 궤적
+      }
+      // 반동: 지금 속도만 정해 두면 타임스톱이 끝난 뒤부터 적용됨
       if (juiceOn.recoil) {
         p.dashT = 0;
         p.vx = -Math.cos(angle) * J.RECOIL_SPEED;
         if (!p.onGround) p.vy = -Math.sin(angle) * J.RECOIL_SPEED * 0.5 - J.RECOIL_LIFT;
       }
     }
-    this.addHitstop(J.HITSTOP_KILL);
-    this.addShake(J.SHAKE_KILL, J.SHAKE_TIME, angle);
+    // 4) 피: 공격 방향 앞쪽 원뿔로 빨간 덩어리 구름 (타임스톱 중엔 천천히 퍼짐 → 해제 후 떨어져 자국)
+    if (juiceOn.gore) {
+      const n = K.BLOOD_MIN + Math.floor(Math.random() * (K.BLOOD_MAX - K.BLOOD_MIN + 1));
+      const cone = K.BLOOD_CONE * Math.PI / 180;
+      for (let i = 0; i < n; i++) {
+        const a = angle + rand(-1, 1) * cone * (Math.random() < 0.65 ? 0.55 : 1); // 가운데가 짙은 구름
+        const v = rand(K.BLOOD_SPEED_MIN, K.BLOOD_SPEED_MAX);
+        Particles.spawn(e.cx + rand(-3, 3), e.cy + rand(-4, 4), Math.cos(a) * v, Math.sin(a) * v - 30,
+          K.BLOOD_LIFE * rand(0.75, 1), C.blood[i % C.blood.length],
+          Math.random() < 0.45 ? 3 : 2, K.BLOOD_GRAVITY, false, false, true);
+        Particles.list[Particles.list.length - 1].slowInStop = true;
+      }
+    }
+    Particles.burst(e.cx, e.cy, 8, byParry ? C.parry : C.player, 260, { angle, spread: 0.35, life: 0.18, glow: true, streak: true });
+    // 5) 킬 흔들림
+    if (juiceOn.shake) this.startKillShake(angle, stop);
     Sfx.play('kill');
   },
 
@@ -1769,11 +2031,13 @@ const Game = {
     drawTerrain(ctx);
     Stains.draw(ctx);
     if (!this.player.dead) this.player.drawSlash(ctx);
+    KillTrail.draw(ctx);
     Pieces.draw(ctx);
     for (const e of this.enemies) e.draw(ctx);
     this.player.draw(ctx);
     for (const b of this.bullets) b.draw(ctx);
     Particles.draw(ctx);
+    Beams.draw(ctx);
     Rings.draw(ctx);
     if (this.debug) this.drawAimDebug(ctx);
     ctx.restore();
@@ -1884,13 +2148,70 @@ const Game = {
     g.restore();
   },
 
+  // F3/F4: 시간 조작 상태 + 킬 연출 타임라인 위치
+  drawTimeDebug(g) {
+    const K = CONFIG.kill;
+    const mode = Debug.step ? 'F4 프레임 진행 (F4 다음 · Enter 해제)' : `F3 슬로우 ${Math.round(CONFIG.debug.SLOW_SCALE * 100)}%`;
+    const kf = this.killFrame;
+    const parts = [mode, `#${Debug.frame}`];
+    if (kf >= 0 && kf < 40) {
+      parts.push(`킬 +${kf}f`);
+      parts.push(this.killStop > 0 ? `타임스톱 ${K.KILL_HITSTOP_FRAMES - this.killStop}/${K.KILL_HITSTOP_FRAMES}` : '조작 가능');
+      if (Beams.list.length) parts.push(`빛줄기 ${Beams.list[0].f}/${K.BEAM_FRAMES}`);
+      parts.push(`흔들림 ${Math.hypot(this.shake.ox, this.shake.oy).toFixed(1)}px`);
+    }
+    g.save();
+    g.textAlign = 'center';
+    g.font = 'bold 10px sans-serif';
+    g.fillStyle = '#000'; g.globalAlpha = 0.6;
+    g.fillRect(0, 18, W, 13);
+    g.globalAlpha = 1; g.fillStyle = CONFIG.colors.ui;
+    g.fillText(parts.join('  ·  '), W / 2, 25);
+    g.restore();
+  },
+
+  // ESC 옵션 메뉴
+  drawMenu(g) {
+    const C = CONFIG.colors, sl = this.menuSlider();
+    g.save();
+    g.shadowBlur = 0;
+    g.globalAlpha = 0.75; g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+    g.globalAlpha = 1;
+    g.fillStyle = C.ui; g.strokeStyle = C.ui;
+    g.textAlign = 'center';
+    g.font = 'bold 16px sans-serif';
+    g.fillText('옵션', W / 2, H / 2 - 40);
+    g.font = '11px sans-serif';
+    g.textAlign = 'left';
+    g.fillText('화면 흔들림', sl.x, sl.y - 10);
+    g.textAlign = 'right';
+    g.fillText(Math.round(Settings.shake * 100) + '%', sl.x + sl.w, sl.y - 10);
+    // 슬라이더 (0 ~ 150%, 100% 위치에 눈금)
+    g.lineWidth = 1;
+    g.strokeRect(sl.x + 0.5, sl.y + 0.5, sl.w - 1, sl.h - 1);
+    const fx = Math.round(sl.x + sl.w * Settings.shake / 1.5);
+    g.globalAlpha = 0.5; g.fillRect(sl.x + 1, sl.y + 1, Math.max(0, fx - sl.x - 1), sl.h - 2);
+    g.globalAlpha = 1;
+    const tick100 = Math.round(sl.x + sl.w / 1.5);
+    g.fillRect(tick100, sl.y + sl.h + 1, 1, 3);
+    g.fillRect(fx - 2, sl.y - 2, 4, sl.h + 4);
+    g.font = '9px sans-serif'; g.textAlign = 'center';
+    g.fillText('0', sl.x, sl.y + sl.h + 10);
+    g.fillText('100', tick100, sl.y + sl.h + 10);
+    g.fillText('150', sl.x + sl.w, sl.y + sl.h + 10);
+    g.font = '10px sans-serif';
+    g.globalAlpha = 0.8;
+    g.fillText('드래그 또는 ← → / A D 로 조절  ·  ESC 닫기', W / 2, H / 2 + 40);
+    g.restore();
+  },
+
   // F2: 타격감 요소 토글 패널
   drawJuicePanel(g) {
     const x = 8, y0 = 24, lh = 11;
     g.save();
     g.globalAlpha = 0.7;
     g.fillStyle = '#000';
-    g.fillRect(x - 4, y0 - 8, 118, lh * (JUICE.length + 3) + 4);
+    g.fillRect(x - 4, y0 - 8, 128, lh * (JUICE.length + 3) + 4);
     g.globalAlpha = 1;
     g.fillStyle = CONFIG.colors.ui;
     g.font = 'bold 10px sans-serif';
@@ -1899,10 +2220,10 @@ const Game = {
     g.font = '10px sans-serif';
     JUICE.forEach((j, i) => {
       g.globalAlpha = juiceOn[j.key] ? 1 : 0.4;
-      g.fillText(`${i + 1} ${juiceOn[j.key] ? '■' : '□'} ${j.label}`, x, y0 + lh * (i + 1));
+      g.fillText(`${(i + 1) % 10} ${juiceOn[j.key] ? '■' : '□'} ${j.label}`, x, y0 + lh * (i + 1));
     });
     g.globalAlpha = 0.7;
-    g.fillText('0  전부 켜기/끄기', x, y0 + lh * (JUICE.length + 1));
+    g.fillText('-  전부 켜기/끄기', x, y0 + lh * (JUICE.length + 1));
     g.fillText('Z 휘두르기 X 처치 C 패링 듣기', x, y0 + lh * (JUICE.length + 2));
     g.restore();
   },
@@ -1920,6 +2241,7 @@ const Game = {
     g.textAlign = 'right';
     g.fillText([this.debug ? 'AIM DEBUG' : '', Sfx.muted ? 'MUTE' : ''].filter(Boolean).join('  '), W - 8, 10);
     if (this.juicePanel) this.drawJuicePanel(g);
+    if (Debug.slow || Debug.step) this.drawTimeDebug(g);
     // 조작 안내 (첫 판 몇 초)
     if (this.playT < CONFIG.hintTime) {
       g.globalAlpha = 0.75 * clamp(CONFIG.hintTime - this.playT, 0, 1);
@@ -1939,6 +2261,7 @@ const Game = {
       g.font = 'bold 12px sans-serif';
       g.fillText('R  —  재시작', W / 2, H / 2);
     }
+    if (this.menu) this.drawMenu(g);
     // 조준점
     g.shadowBlur = 0;
     const mx = Math.round(Input.mouse.x), my = Math.round(Input.mouse.y);
@@ -2043,12 +2366,22 @@ function drawScanlines() {
 //  고정 60fps 루프
 // -------------------------------------------------------------
 let acc = 0, last = performance.now();
+function tick() {
+  if (Game.update(STEP)) Input.endTick();
+  Debug.frame++;
+}
 function frame(now) {
-  acc += Math.min(0.25, (now - last) / 1000);
+  const elapsed = Math.min(0.25, (now - last) / 1000);
   last = now;
-  while (acc >= STEP) {
-    if (Game.update(STEP)) Input.endTick();
-    acc -= STEP;
+  if (Debug.step) {
+    // F4: 누를 때마다 정확히 한 프레임
+    acc = 0;
+    while (Debug.stepQueue > 0) { Debug.stepQueue--; tick(); }
+  } else {
+    Debug.stepQueue = 0;
+    // F3: 실제 흐르는 시간 자체를 줄여 모든 프레임 단위 연출이 같은 비율로 느려짐
+    acc += elapsed * (Debug.slow ? CONFIG.debug.SLOW_SCALE : 1);
+    while (acc >= STEP) { tick(); acc -= STEP; }
   }
   Game.render();
   requestAnimationFrame(frame);
