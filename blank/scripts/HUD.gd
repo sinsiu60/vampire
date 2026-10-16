@@ -64,9 +64,48 @@ func _draw() -> void:
 		_glow_text("%s  ·  R 처음부터" % GameState.chapter_name(), Vector2(W / 2.0, H / 2.0 + 10), 12, false)
 	elif main.game_state == "dead":
 		_glow_text("R  —  재시작", Vector2(W / 2.0, H / 2.0), 12, false)
+	_draw_radio()
 	# 디버그 모드: 지금 장 · 방
 	if Debug.debug_mode():
 		Fonts.text(self, GameState.label(), Vector2(8, H - 22), 9, Color(ui, 0.7), "left", false, true)
+
+
+## 보스방 문이 열리는 동안: 화면 아래 잡음 섞인 무전 한 줄 (글자가 한 자씩 들어오고, 잡음 글자 · 지직 줄 · 흔들림)
+const NOISE_GLYPHS := "░▒▓#%/\\=-"
+const RADIO_CPS := 16.0          # 초당 글자 수
+
+
+func _draw_radio() -> void:
+	var d: Door = main.room.exit_door() if main.room != null else null
+	if d == null:
+		return
+	var r: Dictionary = d.radio_state()
+	if r.is_empty():
+		return
+	var W: float = Config.view.w
+	var H: float = Config.view.h
+	var ui: Color = Config.colors.ui
+	var a: float = r.alpha * clampf(r.t / 0.15, 0.0, 1.0)
+	var y := H - 36.0
+	draw_rect(Rect2(0, y - 8, W, 16), Color(0, 0, 0, 0.55 * a))
+	# 지직거리는 잡음 줄
+	for i in 6:
+		var x := randf() * W
+		draw_rect(Rect2(roundf(x), roundf(y - 8 + randf() * 16), roundf(randf_range(3, 24)), 1), Color(ui, randf_range(0.05, 0.25) * a))
+	var full: String = r.text
+	var n := clampi(int((r.t - 0.1) * RADIO_CPS), 0, full.length())
+	var noise := clampf(0.35 - r.t * 0.12, 0.06, 0.35)        # 처음엔 잡음이 많고 점점 또렷해짐
+	var shown := ""
+	for i in n:
+		var ch := full[i]
+		if ch != " " and randf() < noise:
+			ch = NOISE_GLYPHS[randi() % NOISE_GLYPHS.length()]
+		shown += ch
+	if n < full.length():
+		shown += NOISE_GLYPHS[randi() % NOISE_GLYPHS.length()]
+	var jx := roundf(randf_range(-1, 1)) if randf() < 0.15 else 0.0
+	Fonts.text(self, "◂ 무전 ▸", Vector2(10, y), 9, Color(ui, 0.6 * a), "left", false, true)
+	Fonts.text(self, shown, Vector2(W / 2.0 + jx, y), 11, Color(ui, a), "center", false, true)
 
 
 func _glow_text(s: String, p: Vector2, size: int, mono: bool) -> void:

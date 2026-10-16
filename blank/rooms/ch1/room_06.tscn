@@ -16,12 +16,13 @@ tile_map_data = PackedByteArray("AAAAAB4AAAABAAAAAAAAAB8AAAABAAAAAAAAACAAAAABAAA
 tile_set = ExtResource("2_443lv")
 
 [node name="Entrance" type="Node2D" parent="." instance=ExtResource("3_x2gfj")]
-position = Vector2(20, 240)
+position = Vector2(26, 240)
 script = ExtResource("4_nf00t")
 kind = "entrance"
+door_type = "boss"
 
 [node name="PlayerSpawn" type="Marker2D" parent="."]
-position = Vector2(40, 240)
+position = Vector2(56, 240)
 
 [node name="Exit" type="Node2D" parent="." instance=ExtResource("3_x2gfj")]
 position = Vector2(492, 240)

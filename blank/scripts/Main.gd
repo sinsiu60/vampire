@@ -27,6 +27,8 @@ var gore: Gore
 var entering := false             # Boot 가 검은 전환으로 들여보냄 → 자체 재시작 페이드 생략
 var transitioning := false        # 출구로 나가는 중 (입력 잠금)
 var open_msg_t := -1.0            # "출구가 열렸다" 표시 경과 (실제 시간, -1 = 없음)
+var _exit_pending := false        # 방 클리어 → 마지막 적의 킬 연출이 끝나면 출구 보안 잠금 해제
+var _rumble := 0.0                # 이번 틱 미세 진동 (보스방 문 증기 구간) — 흔들림 갱신 때 쓰고 0 으로
 var kill_frame := -1              # 마지막 처치 후 실제 틱 수 (F3/F4 표시, 처치 없으면 -1)
 # F5 패링 입력 오차 표시: { text, ok, t } — 성공은 월드 시간, 실패 원인은 실제 시간 클릭 기준
 var timing_msg := {}
@@ -132,6 +134,7 @@ func _physics_process(_delta: float) -> void:
 		_late_watch = {}
 	if open_msg_t >= 0.0:
 		open_msg_t += TimeManager.real_delta()
+	_try_open_exit()
 	if TimeManager.frozen:
 		return
 	_resolve_shots()
@@ -143,15 +146,23 @@ func _physics_process(_delta: float) -> void:
 
 # ================================================================ 방 진행
 ## 방의 적을 모두 처치: 클리어 기록 + 출구 문 열림 (출구가 없는 옛 테스트 방은 CLEAR 글자 + 클리어음)
+## 하운드 경비원이 전부 쓰러지면 보안 잠금이 풀림 — 문은 마지막 적의 16프레임 킬 연출이 끝난 직후 열기 시작
 func _on_room_cleared() -> void:
 	game_state = "clear"
 	GameState.mark_cleared()
-	var d := room.exit_door()
-	if d != null:
-		d.open()
-		open_msg_t = 0.0
+	if room.exit_door() != null:
+		_exit_pending = true
+		_try_open_exit()
 	else:
 		Audio.clear()
+
+
+func _try_open_exit() -> void:
+	if not _exit_pending or TimeManager.frozen or TimeManager.kill_stop_left() > 0:
+		return
+	_exit_pending = false
+	room.exit_door().open()
+	open_msg_t = 0.0
 
 
 ## 열린 출구에 닿으면 다음 방으로 (마지막 방이면 장 끝)
@@ -159,7 +170,7 @@ func _check_exit() -> void:
 	if game_state != "clear" or transitioning or player.dead:
 		return
 	var d := room.exit_door()
-	if d == null or not d.touches(player.body_rect()):
+	if d == null or not d.player_entered(player):
 		return
 	transitioning = true
 	player.input_locked = true
@@ -264,7 +275,16 @@ func _update_shake(dt: float) -> void:
 			v = Vector2.RIGHT
 		o += v.normalized() * amp * randf_range(0.6, 1.0)
 		ks.f += 1
+	# 미세 진동 (보스방 문): 매 틱 아무 방향으로 amp px
+	if _rumble > 0.0 and Settings.on("shake"):
+		o += Vector2.from_angle(randf() * TAU) * _rumble
+	_rumble = 0.0
 	camera.offset = o * Settings.shake
+
+
+## 이번 틱 미세 진동 (문 등 연출 노드가 매 틱 부름)
+func rumble(amp: float) -> void:
+	_rumble = maxf(_rumble, amp)
 
 
 ## 킬 흔들림 시작 (처치한 프레임부터 바로 흔들림)

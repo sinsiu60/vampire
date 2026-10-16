@@ -1,13 +1,13 @@
 extends Node
 ## 효과음 (오토로드).
-## - sounds/*.wav 6종 + 파일이 없는 소리(휘두르기·사망·클리어)는 시작할 때 합성 (Synth.gd).
+## - sounds/*.wav 8종 + 파일이 없는 소리(휘두르기·사망·클리어)는 시작할 때 합성 (Synth.gd).
 ## - Godot 오디오는 Engine.time_scale 의 영향을 받지 않음 → 슬로우모션·히트스톱 중에도 실제 시간으로 재생.
 ## - 페이드도 실제 시간 (Tween.set_ignore_time_scale).
 
 # 오토로드는 프로젝트의 class_name 목록보다 먼저 해석될 수 있어 Synth 를 이름 대신 경로로 불러옴
 const SynthLib := preload("res://scripts/audio/Synth.gd")
 
-const FILES := ["gun_fire", "parry_chang", "slowmo_in", "slowmo_loop", "time_return", "kill_sound"]
+const FILES := ["gun_fire", "parry_chang", "slowmo_in", "slowmo_loop", "time_return", "kill_sound", "door_open", "door_boss"]
 const POOL_SIZE := 16
 
 var streams := {}                 # 이름 → AudioStream
@@ -26,7 +26,6 @@ func _ready() -> void:
 	streams["swing"] = SynthLib.swing()
 	streams["death"] = SynthLib.death()
 	streams["clear"] = SynthLib.clear()
-	streams["door"] = SynthLib.door()
 	for i in POOL_SIZE:
 		var p := AudioStreamPlayer.new()
 		p.process_mode = Node.PROCESS_MODE_ALWAYS
@@ -99,8 +98,11 @@ func death() -> void:
 func clear() -> void:
 	play("clear")
 
-func door() -> void:
-	play("door", Config.audio.SFX_DOOR)
+## 출구 문 열림 (sounds/door_open.wav · door_boss.wav — 파일이 없으면 무음)
+func door(boss := false) -> AudioStreamPlayer:
+	if boss:
+		return play("door_boss", Config.audio.SFX_DOOR_BOSS)
+	return play("door_open", Config.audio.SFX_DOOR)
 
 
 func _free_player() -> AudioStreamPlayer:

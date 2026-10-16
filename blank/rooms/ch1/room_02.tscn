@@ -21,7 +21,7 @@ script = ExtResource("4_i1i4t")
 kind = "entrance"
 
 [node name="PlayerSpawn" type="Marker2D" parent="."]
-position = Vector2(40, 240)
+position = Vector2(44, 240)
 
 [node name="Exit" type="Node2D" parent="." instance=ExtResource("3_vby04")]
 position = Vector2(620, 240)

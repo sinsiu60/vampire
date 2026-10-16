@@ -180,11 +180,50 @@ var debug := { "SLOW_SCALE": 0.1 }
 # ---------------------------------------------------------------- 방 진행 (1장 버티컬 슬라이스)
 var rooms := {
 	"TRANSITION_TIME": 0.3,           # 출구 → 다음 방: 검게 전환 (반은 어두워지고 반은 밝아짐)
-	"DOOR_W": 14.0, "DOOR_H": 30.0,   # 문 크기 (발 기준 가운데)
-	"DOOR_OPEN_TIME": 0.2,            # 출구 문판이 올라가는 시간 (실제 시간)
-	"DOOR_LIGHT_TIME": 0.4,           # 문이 열릴 때 빛 기둥이 사라지는 시간
-	"DOOR_LIGHT_H": 70.0,             # 빛 기둥 높이
 	"OPEN_MSG_TIME": 2.0,             # "출구가 열렸다" 표시 시간
+}
+
+# ---------------------------------------------------------------- 출구 문 (하운드 보안 셔터)
+# 방의 하운드 경비원이 전부 쓰러지면 보안 잠금이 풀려 열림. 시간은 모두 실제 시간(초) — 효과음과 맞춤.
+# 출구 표시는 하늘색(colors.ui)만. 빨강·노랑·보라는 쓰지 않음.
+var door := {
+	# 셔터문 (shutter): 문틀 24×40, 금속 테두리 2px, 셔터 가로줄 2px 간격
+	"W": 24.0, "H": 40.0, "FRAME": 2.0, "SLAT_GAP": 2.0,
+	"LAMP_W": 4.0, "LAMP_H": 2.0,                  # 문 위 가운데 상태등
+	"DRUM_H": 3.0,                                 # 셔터가 말려 들어가는 위쪽 통
+	"FRAME_COLOR": Color("#2a2f3c"), "FRAME_EDGE": Color("#454b5c"),   # 어두운 회색 금속
+	"SLAT_COLOR": Color("#121a33"), "SLAT_LINE": Color("#2b3142"),     # 짙은 남색 + 회색
+	"MARK_COLOR": Color("#4a5170"),                # 하운드 마크 (삼각형)
+	"LAMP_OFF": Color("#3a3f4c"), "LAMP_DIM": Color("#5a6070"),       # 잠김: 회색 (깜빡일 때 조금 밝게)
+	"SIGN_OFF": Color("#1c2130"),                  # 꺼진 네온관
+	# 잠김
+	"LOCK_BLINK_PERIOD": 2.0, "LOCK_BLINK_TIME": 0.12,
+	# 열리는 중 (마지막 적의 킬 연출이 끝난 직후 시작)
+	"DOOR_OPEN_TIME": 0.64,                        # 셔터가 다 올라가는 시간 (소리 속 두 번째 덜컹)
+	"DOOR_STUTTER_TIME": 0.50,                     # 2프레임 멈칫 (소리 속 첫 덜컹)
+	"STUTTER_FRAMES": 2,
+	"SIGN_FLICKERS": [[0.04, 0.08], [0.15, 0.19], [0.27, 0.30]],   # 간판 지지직 (켜짐 구간)
+	"SIGN_ON_AT": 0.38,                            # 이때부터 계속 켜짐
+	"OPEN_SHAKE": 2.0, "SHAKE_TIME": 0.15,         # 완전히 열릴 때 화면 흔들림 (px)
+	"DUST_COUNT": 14, "DUST_SPEED": 60.0,
+	# 열림
+	"SIGN_FLOW_SPEED": 3.0,                        # 간판 >>> 가 흐르는 속도 (칸/초)
+	"GLOW_W": 40.0, "GLOW_H": 7.0, "GLOW_ALPHA": 0.22,   # 문 앞 바닥 빛 번짐 (반투명 타원)
+	"RAIN_RATE": 7.0, "RAIN_SPEED": 260.0, "RAIN_LEN": 5.0, "RAIN_FALL": 46.0,   # 빛 속을 지나는 빗방울
+	"SPARKLE_TIME": 0.12,                          # 빗방울이 빛에 닿아 반짝이는 시간
+	# 철망 덮개 (vent): 벽·천장 — 열리면 덮개가 떨어져 나감, 점프해서 들어감
+	"VENT_W": 20.0, "VENT_H": 14.0,
+	# 맨홀 (manhole): 바닥 — 열리면 덮개가 옆으로 밀려남, 떨어지면 이동. 아래 지형은 자동으로 뚫림
+	"MANHOLE_W": 16.0, "MANHOLE_COVER_W": 20.0, "MANHOLE_FALL": 6.0,
+	# 보스방 문 (boss): 1.5배, 두꺼운 이중 셔터
+	"BOSS_SCALE": 1.5, "BOSS_FRAME": 3.0,
+	"BOSS_DOOR_UNLOCK": 0.35, "BOSS_UNLOCK_SHAKE": 3.0,    # 잠금 해제 "쿵"
+	"BOSS_STEAM_START": 0.4, "BOSS_STEAM_END": 2.1,        # 문 틈새 증기 + 미세 진동
+	"BOSS_RUMBLE": 1.0, "BOSS_STEAM_RATE": 26.0,
+	"BOSS_DOOR_OPEN": 2.18, "BOSS_OPEN_TIME": 0.2,         # 이중 셔터가 위아래로 갈라짐
+	"BOSS_OPEN_SHAKE": 6.0, "BOSS_SHAKE_TIME": 0.3,
+	"BOSS_LAMP_SPIN": 7.0,                                  # 상태등 회전 (라디안/초)
+	"RADIO_HOLD": 1.5,                                      # 다 열린 뒤 무전 글자가 남는 시간
 }
 
 # 옵션(흔들림 강도·발사 타이밍 원)과 F2 타격감 토글은 Settings 오토로드
@@ -199,7 +238,8 @@ var audio := {
 	"dir": "res://sounds/",
 	"SFX_GUN": 0.8, "SFX_PARRY": 1.0, "SFX_SLOWMO_IN": 0.8, "SFX_SLOWMO_LOOP": 0.5,
 	"SFX_TIME_RETURN": 1.0, "SFX_KILL": 1.0,
-	"SFX_DOOR": 0.9,                  # 출구 문 열림 (합성)
+	"SFX_DOOR": 0.7,                  # door_open.wav (셔터 · 철망 · 맨홀)
+	"SFX_DOOR_BOSS": 0.9,             # door_boss.wav (보스방 문)
 	"GUN_PITCH": Vector2(0.95, 1.05),
 	"KILL_PITCH": Vector2(0.92, 1.08),
 }

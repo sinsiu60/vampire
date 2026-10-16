@@ -21,11 +21,12 @@ script = ExtResource("4_oa1kk")
 kind = "entrance"
 
 [node name="PlayerSpawn" type="Marker2D" parent="."]
-position = Vector2(40, 240)
+position = Vector2(44, 240)
 
 [node name="Exit" type="Node2D" parent="." instance=ExtResource("3_sto05")]
-position = Vector2(780, 240)
+position = Vector2(752, 240)
 script = ExtResource("4_oa1kk")
+door_type = "manhole"
 
 [node name="Enemies" type="Node2D" parent="."]
 
