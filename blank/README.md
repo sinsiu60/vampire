@@ -44,11 +44,14 @@ blank/
   scripts/Main.gd              배치·카메라, 레이캐스트·히트스캔, 사격 타이밍 패링·반사, 전투 판정(근접 패링·직접 베기·피격), 사망·CLEAR·R 재시작
   scripts/Effects.gd           월드 연출 레이어: 탄 궤적·총구 섬광(실제 시간), 불꽃(월드 시간), 발사 타이밍 원
   scripts/OffscreenIndicators.gd  화면 밖에서 조준 중인 총잡이 → 가장자리에 작은 원 + 화살표 (HUD)
+  scripts/ParrySeq.gd          사격 패링 시퀀스: 시간 속도 곡선·효과음 타이밍·반사 궤적, time_return 이 끝나는 틱에 명중
+  scripts/ScreenFX.gd          화면 효과 셰이더 값 (채도·비네트 = 시퀀스 진행도, 흰 섬광 = 실제 시간 1프레임)
+  shaders/screen_fx.gdshader   화면 복사 텍스처로 채도 감소 → 비네트 → 섬광 (CanvasLayer "ScreenFX", 월드 위 · HUD 아래)
   scripts/Player.gd            이동·가변 점프·코요테·버퍼, 마우스 방향 베기·돌진·헛스윙 잠금, 칼 판정, 흰 실루엣·반달 궤적
   scripts/Room.gd              TileMapLayer 방, 시작 위치
   scripts/DrawUtil.gd          공용 그리기 (초승달/반달 궤적)
   scripts/Crosshair.gd         하늘색 조준점 (OS 커서 숨김)
-  scenes/Main.tscn  Player.tscn  Room.tscn  EnemyMelee.tscn  EnemyGunner.tscn  Effects.tscn   (적 배치는 Room.tscn 의 Enemies 아래)
+  scenes/Main.tscn (Room · Player · Effects · ParrySeq · ScreenFX · HUD)  Player.tscn  Room.tscn  EnemyMelee.tscn  EnemyGunner.tscn  Effects.tscn   (적 배치는 Room.tscn 의 Enemies 아래)
   tiles/terrain.tres           TileSet: (0,0) 지형 윗면, (1,0) 지형 속 = 물리 레이어 0 (지형, 비트 1)
                                (2,0) 일방향 발판 = 물리 레이어 1 (발판, 비트 16) — 몸은 올라서지만 총알·시야는 통과
   art/tiles.png                8×8 타일 3장
@@ -66,7 +69,7 @@ blank/
 | 2 | 마우스 방향 베기 + 돌진 + 헛스윙 잠금, 반달 베기 궤적, 조준점 | ✅ |
 | 3 | TimeManager(히트스톱·슬로우, 실제 시간 타이머) + Audio + 근접 적 + 근접 패링 + 원히트 사망 + CLEAR | ✅ |
 | 4 | 히트스캔 총잡이 (조준선 + 줄어드는 원 + 판정 창 띠 + 발사 간격) + 타이밍 패링 | ✅ |
-| 5 | 패링 슬로우 시퀀스 (time_return 길이에 맞춘 처치) + 화면 효과 셰이더 (채도·비네트·섬광) | |
+| 5 | 패링 슬로우 시퀀스 (time_return 길이에 맞춘 처치) + 화면 효과 셰이더 (채도·비네트·섬광) | ✅ |
 | 6 | 16프레임 킬 연출, 빛줄기, 화면 흔들림, 피·파편·자국, 두 조각 | |
 | 7 | 배경 시차, 스캔라인 셰이더, 머플러·잔상, "시우 공방" 로고, 옵션 메뉴, 디버그 키 | |
 
@@ -137,3 +140,33 @@ blank/
   (슬로우 중에도 같은 비율). 플레이어 → 적 → Main 순으로 물리 틱이 돌아서(`process_physics_priority`) 같은 틱 안에서 판정이 끝난다.
 - 반사 대상: 쏜 적이 마우스 방향 ±50° 안이면 최우선, 아니면 ±35° 안에서 가장 가까운 각도의 적 (거리 300, 벽에 가리면 제외).
 - 다음에 쏠 총잡이의 원만 100%, 나머지는 50%.
+
+### 5단계 확인
+k = 패링한 틱부터 센 실제 틱 (60fps). `time_return.wav` 0.935초 → 56틱.
+
+| k | 일어나는 일 | 결과 |
+|---|---|---|
+| 0 | parry_chang · slowmo_in · 흰 섬광(렌더 1프레임) · 노랑/주황 충격파 링 · 노란 불꽃 · 흔들림 10px(탄이 날아온 반대쪽) | 같음 |
+| 1 ~ 6 | 히트스톱 (월드 시간 0) | 정확히 6틱 |
+| 0 ~ 9 | 시간 속도 1.0 → 0.1 (빠르게 감속), 채도 감소 0 → 40% · 비네트 0 → 60% | 7틱 0.144 · 8틱 0.111 · 9틱 0.1 |
+| 9 | slowmo_loop 반복 시작, 노란 반사 궤적이 게임 시간에 맞춰 대상 쪽으로 뻗어감 | 같음 |
+| 9 ~ 36 | 시간 속도 0.1 유지 | 같음 |
+| 36 | time_return 재생, slowmo_in/loop 0.2초 동안 줄이며 정지 (48틱에 꺼짐) | 같음 |
+| 36 ~ 92 | 시간 속도 0.1 → 1.0 (ease-in), 채도·비네트 복구, 줌 1.0 → 1.06 | 60틱 0.265 · 91틱 0.968 · 줌 최대 1.058 |
+| 92 | time_return 이 끝나는 틱: 반사탄 명중 → 처치음 + 쏜 적 처치, 입력 잠금 해제 | 92틱 |
+| 92 ~ 108 | 줌 16틱 동안 원상복구 | 20틱 뒤 1.0 |
+
+| 항목 | 결과 |
+|---|---|
+| 패링 → 명중 사이 월드 시간 | 0.4318초 (프로토타입 계산값 0.4318) |
+| 틱마다 시간 속도 | 기대값과 차이 < 0.000001 (렌더가 밀리지 않을 때) |
+| 입력 잠금 | 시퀀스 중 클릭·이동 무시, 명중 다음 틱부터 다시 움직임 |
+| 다른 총잡이 | 시퀀스 중엔 조준 고정 직전에서 기다리고, 끝난 뒤 발사 |
+| 시퀀스 중 사망/재시작 | 시퀀스 취소, time_scale 1.0, 슬로우 소리 정리 |
+| 근접 패링 | 같은 패링 연출 (섬광 1프레임 · 링 2겹 · 흔들림 10px), 시퀀스 없이 바로 처치 |
+
+- 시간 속도는 `Engine.time_scale` (= `TimeManager.set_slow`). 다음 틱부터 적용되므로 ParrySeq 가 틱 k 에 `scale_at(k + 1)` 을 넣는다.
+  ParrySeq 는 TimeManager 다음, 플레이어·적보다 먼저 틱을 받아 명중이 그 틱의 월드 갱신 전에 일어난다.
+- Godot 는 한 렌더 프레임에 물리 틱이 여러 번 돌면 그 틱들에 같은 time_scale 을 쓴다. 렌더가 60fps 아래로 밀리면
+  속도 곡선이 한 틱 밀릴 수 있다 (전체 길이·명중 틱·히트스톱 틱 수는 그대로).
+- 흔들림·줌은 카메라 `offset` / `zoom`. 흔들림 강도는 `Config.settings.shake` (7단계 옵션 메뉴).

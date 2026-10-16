@@ -9,6 +9,7 @@ signal whiffed                   ## 헛스윙 (패링·처치 없이 끝난 베�
 
 var facing := 1                  # 1 = 오른쪽, -1 = 왼쪽
 var dead := false
+var input_locked := false        ## 패링 시퀀스 중 입력 잠금 (Main 이 켜고 끔). 그동안 근접 공격에 맞지도 않음
 
 # ---- 베기
 var slash_t := -1.0              ## 베기 시작 후 경과 시간 (-1 = 베는 중 아님)
@@ -50,6 +51,11 @@ func _ready() -> void:
 ## 몸 중심 (베기·조준 기준점, 전역 좌표)
 func center() -> Vector2:
 	return global_position + _center_local()
+
+
+## 칼 끝 (베는 방향 radius × 0.8) — 근접 패링 불꽃·링 위치
+func tip() -> Vector2:
+	return center() + Vector2.from_angle(slash_angle) * float(Config.slash.radius) * 0.8
 
 
 func _center_local() -> Vector2:
@@ -109,10 +115,11 @@ func _physics_process(delta: float) -> void:
 	var c: Dictionary = Config.player
 	var S: Dictionary = Config.slash
 	# 히트스톱 중: 아무것도 하지 않고 입력만 모아 둠 (프로토타입처럼 멈춘 동안 누른 클릭도 살림)
+	var ctl := not input_locked
 	if TimeManager.frozen:
-		if Input.is_action_just_pressed("slash"):
+		if ctl and Input.is_action_just_pressed("slash"):
 			_queued_slash = true
-		if Input.is_action_just_pressed("jump"):
+		if ctl and Input.is_action_just_pressed("jump"):
 			_jump_buf = c.jump_buffer
 		return
 	var was_on_floor := is_on_floor()
@@ -129,12 +136,12 @@ func _physics_process(delta: float) -> void:
 				whiffed.emit()
 		if slash_t >= S.duration:
 			slash_t = -1.0
-	if (Input.is_action_just_pressed("slash") or _queued_slash) and _slash_cd <= 0.0:
+	if ctl and (Input.is_action_just_pressed("slash") or _queued_slash) and _slash_cd <= 0.0:
 		_start_slash(get_global_mouse_position())
 	_queued_slash = false
 
 	# ---- 점프 입력 타이머 (돌진 중에도 계속 셈)
-	if Input.is_action_just_pressed("jump"):
+	if ctl and Input.is_action_just_pressed("jump"):
 		_jump_buf = c.jump_buffer
 	else:
 		_jump_buf = maxf(0.0, _jump_buf - delta)
@@ -156,7 +163,7 @@ func _physics_process(delta: float) -> void:
 		return
 
 	# ---- 수평 이동: 목표 속도로 가속/감속, 방향 전환은 더 빠릿하게
-	var ax := int(Input.is_action_pressed("move_right")) - int(Input.is_action_pressed("move_left"))
+	var ax := int(Input.is_action_pressed("move_right")) - int(Input.is_action_pressed("move_left")) if ctl else 0
 	if ax != 0 and not is_slashing():
 		facing = ax
 	var accel: float

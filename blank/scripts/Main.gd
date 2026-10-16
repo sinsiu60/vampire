@@ -2,17 +2,23 @@ extends Node2D
 ## 메인: 방·플레이어 배치, 카메라, 전투 판정, 사격(히트스캔)·타이밍 패링, 사망·클리어·즉시 재시작.
 ## 이 노드는 플레이어·적보다 늦게 물리 틱을 받는다 (process_physics_priority) → 모두 움직인 뒤 판정.
 ## 총잡이는 group "game" 으로 이 노드를 찾아 raycast_wall / should_hold_aim / fire_shot 을 부른다.
+## 화면 흔들림·줌·섬광은 실제 시간 (히트스톱·슬로우 중에도 재생).
 
 @onready var room: Room = $Room
 @onready var player: Player = $Player
 @onready var camera: Camera2D = $Player/Camera
 @onready var effects: Effects = $Effects
+@onready var seq: ParrySeq = $ParrySeq
+@onready var screen_fx: ScreenFX = $ScreenFX/Rect
 @onready var state_label: Label = $HUD/State
 @onready var fade: ColorRect = $HUD/Fade
 
 var game_state := "play"          # play | dead | clear
 var pending_shots: Array = []     # 플레이어에 닿아 패링 입력을 기다리는 탄 { shooter, muzzle, fire_t, angle, parryable, done }
-var seq_active := false           # 패링 슬로우 시퀀스 중 (5단계) — 그동안 총잡이는 발사를 미룸
+var seq_active: bool:             # 패링 슬로우 시퀀스 중 — 그동안 총잡이는 발사를 미루고, 플레이어는 입력 잠금
+	get: return seq.active
+var zoom := 1.0                   # 시간 복귀 동안 살짝 줌인 → 명중 후 ZOOM_OUT_FRAMES 동안 원상복구
+var _shake := { "amp": 0.0, "time": 0.0, "t": 0.0, "angle": 0.0 }   # 방향성 흔들림 (패링·사망)
 
 
 func _ready() -> void:
@@ -21,6 +27,8 @@ func _ready() -> void:
 	TimeManager.reset()
 	player.global_position = room.spawn_position()
 	player.died.connect(_on_player_died)
+	seq.finished.connect(_on_seq_finished)
+	screen_fx.seq = seq
 	var size := room.size_px()
 	camera.limit_left = 0
 	camera.limit_top = 0
@@ -52,6 +60,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	_update_shake(1.0 / Config.fps)
+	_update_zoom()
 	if TimeManager.frozen:
 		return
 	_resolve_shots()
@@ -60,6 +70,42 @@ func _physics_process(_delta: float) -> void:
 		game_state = "clear"
 		Audio.clear()
 		state_label.text = "CLEAR\n방의 적을 모두 처치했다 · R 다시 하기"
+
+
+# ================================================================ 흔들림 · 줌 (실제 시간)
+## 방향성 흔들림 엔벨로프: 공격 방향으로 확 밀렸다가 (1-k)² 로 되돌아옴. 끝에 반대쪽으로 살짝 넘어감
+func _shake_envelope(k: float) -> float:
+	return pow(1.0 - k, 2.0) * cos(k * PI * Config.juice.SHAKE_OVERSHOOT)
+
+
+## 방향성 흔들림 (이미 더 센 흔들림이 진행 중이면 그대로)
+func add_shake(amp: float, time: float, angle: float) -> void:
+	var sh := _shake
+	if sh.t > 0.0 and sh.amp * _shake_envelope(1.0 - sh.t / sh.time) > amp:
+		return
+	sh.amp = amp
+	sh.time = time
+	sh.t = time
+	sh.angle = angle
+	camera.offset = Vector2.from_angle(angle) * amp * float(Config.settings.shake)   # 첫 프레임에 바로 밀림
+
+
+func _update_shake(dt: float) -> void:
+	var sh := _shake
+	var o := Vector2.ZERO
+	if sh.t > 0.0:
+		sh.t = maxf(0.0, sh.t - dt)
+		o = Vector2.from_angle(sh.angle) * sh.amp * _shake_envelope(1.0 - sh.t / sh.time)
+	camera.offset = o * float(Config.settings.shake)
+
+
+func _update_zoom() -> void:
+	var P: Dictionary = Config.parry_seq
+	if seq.active:
+		zoom = 1.0 + P.ZOOM * pow(seq.return_u(), 2.0)
+	else:
+		zoom = move_toward(zoom, 1.0, P.ZOOM / P.ZOOM_OUT_FRAMES)
+	camera.zoom = Vector2(zoom, zoom)
 
 
 # ================================================================ 레이캐스트
@@ -217,19 +263,43 @@ func pick_reflect_target(origin: Vector2, aim_angle: float, shooter: Enemy) -> E
 	return best
 
 
-## 사격 패링 성공. (4단계: 바로 반사 — 5단계에서 슬로우 시퀀스 + time_return 길이에 맞춘 명중으로 바뀜)
+## 패링 성공 공통 연출 (pos = 칼에 맞부딪힌 지점, angle = 불꽃·흔들림 방향)
+##  히트스톱 6틱 · 흰 섬광 · 칼 끝 노란 충격파 링 2겹 · 방향성 흔들림 · 노란/주황 불꽃 · parry_chang
+func parry_fx(pos: Vector2, angle: float) -> void:
+	var F: Dictionary = Config.fx
+	var C: Dictionary = Config.colors
+	var J: Dictionary = Config.juice
+	TimeManager.hitstop(J.HITSTOP_PARRY_FRAMES)
+	screen_fx.flash()
+	effects.ring(pos, F.ring_radius, F.ring_time, F.ring_width, C.parry)
+	effects.ring(pos, F.ring_radius * 0.55, F.ring_time * 0.7, F.ring_width - 1.0, C.parry_hot)
+	add_shake(J.SHAKE_PARRY, J.SHAKE_TIME, angle)
+	effects.burst(pos, 14, C.parry, 260.0, angle, 1.3, 0.28)
+	effects.burst(pos, 6, C.parry_hot, 120.0, 0.0, PI, 0.35)
+	Audio.parry()
+
+
+## 사격 패링 성공: 반사 대상을 정하고 슬로우 시퀀스 시작. 명중은 time_return 이 끝나는 틱 (_on_seq_finished)
 func _parry_shot(s: Dictionary) -> void:
 	var p := player
 	var aim := (get_global_mouse_position() - p.center()).angle()
+	# 쏜 적 우선 → 가려져 있으면 조준 스냅 → 없으면 마우스 방향
 	var target := pick_reflect_target(p.center(), aim, s.shooter)
+	var ray_end := raycast_wall(p.center(), aim, Config.shot.RANGE)
 	# 노란 불꽃은 탄이 날아온 쪽 칼날 위에서
 	var back: float = s.angle + PI
 	var spark: Vector2 = p.center() + Vector2.from_angle(back) * float(Config.slash.radius) * 0.6
-	effects.burst(spark, 14, Config.colors.parry, 260.0, back, 1.3, 0.28)
+	parry_fx(spark, back)
 	effects.approach_success(s.muzzle)    # 원이 노랗게 바뀌며 바깥으로 퍼짐
-	Audio.parry()
-	TimeManager.hitstop(Config.juice.HITSTOP_PARRY_FRAMES)
-	_reflect_hit(target, aim)
+	seq.start(target, aim, p.center().distance_to(ray_end), Config.juice.HITSTOP_PARRY_FRAMES)
+	p.input_locked = Config.parry_seq.LOCK_INPUT_DURING_SLOWMO
+
+
+## 시퀀스 끝 틱 (월드 갱신 전): 입력 잠금 풀고 반사탄 명중
+func _on_seq_finished(target: Enemy, dir: float) -> void:
+	player.input_locked = false
+	if not player.dead:
+		_reflect_hit(target, dir)
 
 
 ## 반사탄(히트스캔): 대상이 있으면 그 적에 반드시 명중, 없으면 마우스 방향으로
@@ -273,7 +343,9 @@ func _resolve_combat() -> void:
 			if p.slash_hits_rect(e.body_rect()):
 				p.slash_used = true
 				_kill_enemy(e, p.slash_angle)
-	# 3) 근접 공격 명중 → 플레이어 즉사
+	# 3) 근접 공격 명중 → 플레이어 즉사 (패링 시퀀스로 입력이 잠긴 동안은 맞지 않음)
+	if p.input_locked:
+		return
 	for e in enemies():
 		var box: Rect2 = e.attack_box()
 		if box.has_area() and box.intersects(p.body_rect()):
@@ -283,8 +355,7 @@ func _resolve_combat() -> void:
 
 func _parry_melee(e: Enemy) -> void:
 	player.slash_used = true
-	Audio.parry()
-	TimeManager.hitstop(Config.juice.HITSTOP_PARRY_FRAMES)
+	parry_fx(player.tip(), player.slash_angle)
 	_kill_enemy(e, player.slash_angle)
 
 
@@ -298,6 +369,9 @@ func _kill_enemy(e: Enemy, angle: float) -> void:
 
 func _kill_player(angle: float) -> void:
 	pending_shots.clear()
+	seq.cancel()
+	player.input_locked = false
+	add_shake(Config.fx.death_shake, 0.2, angle)
 	player.die(angle)
 
 

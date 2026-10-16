@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/Main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://scenes/Room.tscn" id="2_room"]
@@ -6,6 +6,8 @@
 [ext_resource type="Script" path="res://scripts/Crosshair.gd" id="4_cross"]
 [ext_resource type="PackedScene" path="res://scenes/Effects.tscn" id="5_fx"]
 [ext_resource type="Script" path="res://scripts/OffscreenIndicators.gd" id="6_off"]
+[ext_resource type="Script" path="res://scripts/ParrySeq.gd" id="7_seq"]
+[ext_resource type="Script" path="res://scripts/ScreenFX.gd" id="8_sfx"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
@@ -16,7 +18,24 @@ script = ExtResource("1_main")
 
 [node name="Effects" parent="." instance=ExtResource("5_fx")]
 
+[node name="ParrySeq" type="Node2D" parent="."]
+z_index = 11
+script = ExtResource("7_seq")
+
+[node name="ScreenFX" type="CanvasLayer" parent="."]
+
+[node name="Rect" type="ColorRect" parent="ScreenFX"]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("8_sfx")
+
 [node name="HUD" type="CanvasLayer" parent="."]
+layer = 2
 
 [node name="Offscreen" type="Control" parent="HUD"]
 layout_mode = 3
@@ -35,7 +54,7 @@ offset_right = 472.0
 offset_bottom = 20.0
 theme_override_colors/font_color = Color(0.372549, 0.847059, 1, 1)
 theme_override_font_sizes/font_size = 8
-text = "4단계 — 클릭 베기 · 칼이 닿는 순간 / 원이 띠 안에 들어올 때(총을 쏘는 순간) 베면 패링 · R 재시작"
+text = "5단계 — 원이 띠 안에 들어올 때(총을 쏘는 순간) 베면 패링 → 슬로우 → 반사 · 칼이 닿는 순간 베면 근접 패링 · R 재시작"
 
 [node name="Crosshair" type="Control" parent="HUD"]
 layout_mode = 3

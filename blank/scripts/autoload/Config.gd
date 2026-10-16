@@ -177,6 +177,12 @@ var anim := {
 
 var debug := { "SLOW_SCALE": 0.1 }
 
+# 플레이어 설정 (7단계 옵션 메뉴에서 바꿈)
+var settings := {
+	"shake": 1.0,                     # 화면 흔들림 강도 0 ~ 1.5
+	"approach_circle": true,          # 발사 타이밍 원 표시
+}
+
 # ---------------------------------------------------------------- 연출 · UI
 var logo := { "text": "시우 공방", "fade_in": 0.6, "hold": 0.8, "fade_out": 0.6 }  # 합계 2초
 var scanline := { "alpha": 0.2 }

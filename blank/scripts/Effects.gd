@@ -4,11 +4,13 @@ class_name Effects
 ## - 탄 궤적·총구 섬광: 실제 시간 프레임 수만큼 (히트스톱 중에도 보임)
 ## - 불꽃 파티클: 월드 시간 (히트스톱이면 멈춤)
 ## - 발사 타이밍 원 (Approach Circle): 조준 중인 총잡이마다 총구에 그림 + 발사 번쩍 / 패링 성공 퍼짐
-## (빛줄기·피·조각·충격파 링 등 킬 연출은 6단계에서 여기에 추가)
+## - 충격파 링: 월드 시간 (패링 칼 끝)
+## (빛줄기·피·조각 등 킬 연출은 6단계에서 여기에 추가)
 
 var _tracers: Array = []         # { a, b, width, color, frames, f, muzzle }
 var _sparks: Array = []          # { pos, vel, life, max, color }
 var _approach_fx: Array = []     # { kind: "flash" | "success", pos, f }
+var _rings: Array = []           # { pos, radius, time, t, width, color }
 
 
 func _ready() -> void:
@@ -27,6 +29,11 @@ func burst(pos: Vector2, n: int, color: Color, speed: float, angle := 0.0, sprea
 		var v := speed * randf_range(0.35, 1.0)
 		var l := life * randf_range(0.6, 1.0)
 		_sparks.append({ "pos": pos, "vel": Vector2.from_angle(a) * v, "life": l, "max": l, "color": color })
+
+
+## 처음에 확 퍼지고 감속하는 원 (3 → radius)
+func ring(pos: Vector2, radius: float, time: float, width: float, color: Color) -> void:
+	_rings.append({ "pos": pos, "radius": radius, "time": time, "t": 0.0, "width": width, "color": color })
 
 
 func approach_flash(pos: Vector2) -> void:
@@ -54,6 +61,9 @@ func _physics_process(delta: float) -> void:
 			s.vel *= 0.96
 			s.pos += s.vel * delta
 		_sparks = _sparks.filter(func(s): return s.life > 0.0)
+		for r in _rings:
+			r.t += delta
+		_rings = _rings.filter(func(r): return r.t < r.time)
 	queue_redraw()
 
 
@@ -117,6 +127,16 @@ func _draw() -> void:
 		var c: Color = s.color
 		c.a = minf(1.0, s.life / s.max * 1.5)
 		draw_rect(Rect2(s.pos.round(), Vector2.ONE), c)
+	# 충격파 링
+	for r in _rings:
+		var u: float = r.t / r.time
+		var e := 1.0 - pow(1.0 - u, 3.0)
+		var rad: float = 3.0 + (r.radius - 3.0) * e
+		var w: float = maxf(1.0, r.width * (1.0 - u))
+		var c: Color = r.color
+		c.a = 1.0 - u * u
+		draw_arc(r.pos, rad, 0.0, TAU, 48, Color(c, c.a * 0.3), w + 3.0)   # 빛 번짐
+		draw_arc(r.pos, rad, 0.0, TAU, 48, c, w)
 	# 발사 타이밍 원: 화면 안의 조준 중인 총잡이 (다음 발사만 100%, 나머지 50%)
 	var next := next_shooter(get_tree())
 	for g in get_tree().get_nodes_in_group("gunners"):
