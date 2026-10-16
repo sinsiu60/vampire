@@ -84,6 +84,24 @@ const CONFIG = {
     meleeEarly: 0.1,                  // 근접 적 예고 마지막 이 시간 동안 베어도 '패링'으로 인정
   },
 
+  fx: {
+    // 패링 성공 연출
+    parryHitstop: 0.08,               // 1) 히트스톱: 화면 전체 정지
+    flashTime: 1 / 60,                // 2) 흰 섬광 (한 프레임)
+    flashAlpha: 0.85,
+    ringRadius: 38, ringTime: 0.3, ringWidth: 3,   // 3) 칼 끝 노란 충격파 링
+    reflectColorTime: 0.12,           // 4) 반사 총알 빨강 → 노랑 전환 시간
+    trailLength: 14,                  //    반사 총알 꼬리 길이 (프레임)
+    parryShake: 4.5, parryShakeTime: 0.18,          // 5) 짧고 강한 화면 흔들림
+    pieceSpeed: 90, pieceSpin: 9,     // 6) 두 조각으로 갈라지는 속도/회전
+    debris: 14,                       //    흩어지는 파편 수
+    // 일반 처치/사망
+    killHitstop: 0.035, killShake: 2, killShakeTime: 0.1,
+    deathHitstop: 0.06, deathShake: 3.5,
+  },
+
+  audio: { enabled: true, volume: 0.35 }, // M 키로 음소거 토글
+
   restartFade: 0.18,                  // 재시작 직후 화면이 밝아지는 짧은 페이드 (입력은 즉시 받음)
 
   colors: {
@@ -113,6 +131,11 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const approach = (v, target, d) => (v < target ? Math.min(v + d, target) : Math.max(v - d, target));
 const rand = (a, b) => a + Math.random() * (b - a);
 const angDiff = (a, b) => { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
+const hexRgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+const mixColor = (a, b, t) => {
+  const A = hexRgb(a), B = hexRgb(b);
+  return `rgb(${A.map((v, i) => Math.round(lerp(v, B[i], clamp(t, 0, 1)))).join(',')})`;
+};
 const circleRect = (cx, cy, r, b) => {
   const qx = clamp(cx, b.x, b.x + b.w), qy = clamp(cy, b.y, b.y + b.h);
   return (cx - qx) ** 2 + (cy - qy) ** 2 <= r * r;
@@ -252,15 +275,15 @@ function solidAt(x, y, includeOneWay = true) {
 const Particles = {
   list: [],
   reset() { this.list.length = 0; },
-  spawn(x, y, vx, vy, life, color, size = 1, grav = 0, glow = false) {
-    this.list.push({ x, y, vx, vy, life, max: life, color, size, grav, glow });
+  spawn(x, y, vx, vy, life, color, size = 1, grav = 0, glow = false, streak = false) {
+    this.list.push({ x, y, vx, vy, life, max: life, color, size, grav, glow, streak });
   },
   burst(x, y, n, color, speed, opts = {}) {
     for (let i = 0; i < n; i++) {
       const a = (opts.angle ?? 0) + rand(-1, 1) * (opts.spread ?? Math.PI);
       const v = speed * rand(0.35, 1);
       this.spawn(x, y, Math.cos(a) * v, Math.sin(a) * v, rand(0.6, 1) * (opts.life ?? 0.4),
-        color, opts.size ?? 1, opts.grav ?? 0, opts.glow ?? false);
+        color, opts.size ?? 1, opts.grav ?? 0, opts.glow ?? false, opts.streak ?? false);
     }
   },
   update(dt) {
@@ -279,10 +302,208 @@ const Particles = {
       g.globalAlpha = Math.min(1, p.life / p.max * 1.5);
       g.fillStyle = p.color;
       if (p.glow) { g.shadowColor = p.color; g.shadowBlur = 4; }
-      g.fillRect(Math.round(p.x - p.size / 2), Math.round(p.y - p.size / 2), p.size, p.size);
+      if (p.streak) {
+        // 속도 방향으로 늘어진 불꽃 선
+        g.strokeStyle = p.color; g.lineWidth = p.size;
+        g.beginPath();
+        g.moveTo(p.x, p.y);
+        g.lineTo(p.x - p.vx * 0.035, p.y - p.vy * 0.035);
+        g.stroke();
+      } else {
+        g.fillRect(Math.round(p.x - p.size / 2), Math.round(p.y - p.size / 2), p.size, p.size);
+      }
       if (p.glow) g.shadowBlur = 0;
     }
     g.globalAlpha = 1;
+  },
+};
+
+// -------------------------------------------------------------
+//  충격파 링
+// -------------------------------------------------------------
+const Rings = {
+  list: [],
+  reset() { this.list.length = 0; },
+  spawn(x, y, radius, time, width, color) {
+    this.list.push({ x, y, radius, time, t: 0, width, color });
+  },
+  update(dt) {
+    for (const r of this.list) r.t += dt;
+    this.list = this.list.filter((r) => r.t < r.time);
+  },
+  draw(g) {
+    g.save();
+    for (const r of this.list) {
+      const k = r.t / r.time;
+      const e = 1 - (1 - k) ** 3;                 // 처음에 확 퍼지고 감속
+      g.globalAlpha = 1 - k * k;
+      g.strokeStyle = r.color;
+      g.shadowColor = r.color; g.shadowBlur = 8;
+      g.lineWidth = Math.max(1, r.width * (1 - k));
+      g.beginPath();
+      g.arc(r.x, r.y, 3 + (r.radius - 3) * e, 0, Math.PI * 2);
+      g.stroke();
+    }
+    g.restore();
+  },
+};
+
+// -------------------------------------------------------------
+//  시체 조각: 실루엣을 베인 방향의 직선으로 잘라 두 조각으로
+// -------------------------------------------------------------
+const Pieces = {
+  list: [],
+  slices: [],               // 잘린 순간 그어지는 빛나는 절단선
+  reset() { this.list.length = 0; this.slices.length = 0; },
+
+  // drawFn(g) 이 그리는 실루엣을 (cx, cy) 중심, angle 방향으로 절단
+  split(drawFn, cx, cy, angle, color, power = 1) {
+    const S = 48;
+    const img = document.createElement('canvas');
+    img.width = S; img.height = S;
+    const g = img.getContext('2d');
+    g.translate(S / 2 - Math.round(cx), S / 2 - Math.round(cy));
+    drawFn(g);
+    const F = CONFIG.fx;
+    const dx = Math.cos(angle), dy = Math.sin(angle);
+    for (const side of [1, -1]) {
+      const nx = -dy * side, ny = dx * side;   // 절단선의 법선 (이 조각이 날아갈 쪽)
+      const sp = F.pieceSpeed * power * rand(0.7, 1.2);
+      this.list.push({
+        img, side, angle,
+        x: cx + nx * 1.5, y: cy + ny * 1.5,
+        w: 6, h: 6,
+        vx: nx * sp * 0.6 + dx * sp * rand(0.6, 1.1),
+        vy: ny * sp * 0.6 + dy * sp * rand(0.6, 1.1) - 70 * power,
+        rot: 0, vrot: side * F.pieceSpin * rand(0.5, 1.2) * (dx >= 0 ? 1 : -1),
+        rest: false,
+      });
+    }
+    this.slices.push({ x: cx, y: cy, angle, t: 0, time: 0.14, color });
+  },
+
+  update(dt) {
+    for (const p of this.list) {
+      if (p.rest) continue;
+      p.vy = Math.min(p.vy + CONFIG.enemy.gravity * dt, CONFIG.enemy.maxFall);
+      // 몸체 좌표(x,y)는 조각 중심. moveBody 용 박스로 변환해 지형과 충돌
+      const box = { x: p.x - p.w / 2, y: p.y - p.h / 2, w: p.w, h: p.h, vx: p.vx, vy: p.vy };
+      const vyBefore = p.vy;
+      moveBody(box, dt);
+      p.x = box.x + p.w / 2; p.y = box.y + p.h / 2;
+      p.vx = box.vx; p.vy = box.vy;
+      if (box.hitWall) p.vx = -p.vx * 0.4;
+      p.rot += p.vrot * dt;
+      if (box.onGround) {
+        if (vyBefore > 80) p.vy = -vyBefore * 0.3;   // 튕김
+        p.vx *= 0.8; p.vrot *= 0.7;
+        if (Math.abs(p.vx) < 4 && Math.abs(p.vrot) < 0.3 && vyBefore < 80) p.rest = true;
+      }
+    }
+    for (const sl of this.slices) sl.t += dt;
+    this.slices = this.slices.filter((sl) => sl.t < sl.time);
+  },
+
+  draw(g) {
+    const L = 40;
+    for (const p of this.list) {
+      const dx = Math.cos(p.angle), dy = Math.sin(p.angle);
+      const nx = -dy * p.side, ny = dx * p.side;
+      g.save();
+      g.translate(Math.round(p.x), Math.round(p.y));
+      g.rotate(p.rot);
+      // 절단선 한쪽 반평면만 남기는 클립
+      g.beginPath();
+      g.moveTo(dx * L, dy * L);
+      g.lineTo(-dx * L, -dy * L);
+      g.lineTo(-dx * L + nx * L, -dy * L + ny * L);
+      g.lineTo(dx * L + nx * L, dy * L + ny * L);
+      g.closePath();
+      g.clip();
+      g.drawImage(p.img, -p.img.width / 2, -p.img.height / 2);
+      g.restore();
+    }
+    // 절단선 섬광
+    g.save();
+    for (const sl of this.slices) {
+      const k = sl.t / sl.time;
+      const len = 22 * (1 - k * 0.5);
+      g.globalAlpha = 1 - k;
+      g.strokeStyle = sl.color;
+      g.shadowColor = sl.color; g.shadowBlur = 8;
+      g.lineWidth = Math.max(1, 2 * (1 - k));
+      g.beginPath();
+      g.moveTo(sl.x - Math.cos(sl.angle) * len, sl.y - Math.sin(sl.angle) * len);
+      g.lineTo(sl.x + Math.cos(sl.angle) * len, sl.y + Math.sin(sl.angle) * len);
+      g.stroke();
+    }
+    g.restore();
+  },
+};
+
+// -------------------------------------------------------------
+//  효과음 (WebAudio 로 즉석 합성, 파일 없음)
+// -------------------------------------------------------------
+const Sfx = {
+  ac: null, master: null, noiseBuf: null,
+  muted: false,
+  ensure() {
+    if (!CONFIG.audio.enabled) return false;
+    if (!this.ac) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return false;
+      this.ac = new AC();
+      this.master = this.ac.createGain();
+      this.master.gain.value = CONFIG.audio.volume;
+      this.master.connect(this.ac.destination);
+      const n = this.ac.sampleRate * 0.5;
+      this.noiseBuf = this.ac.createBuffer(1, n, this.ac.sampleRate);
+      const d = this.noiseBuf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (this.ac.state === 'suspended') this.ac.resume();
+    return !this.muted;
+  },
+  toggleMute() { this.muted = !this.muted; },
+  tone(type, f0, f1, dur, vol, delay = 0) {
+    const ac = this.ac, t = ac.currentTime + delay;
+    const o = ac.createOscillator(), gn = ac.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+    gn.gain.setValueAtTime(vol, t);
+    gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(gn).connect(this.master);
+    o.start(t); o.stop(t + dur + 0.02);
+  },
+  noise(dur, vol, filterType, f0, f1, delay = 0) {
+    const ac = this.ac, t = ac.currentTime + delay;
+    const src = ac.createBufferSource(), flt = ac.createBiquadFilter(), gn = ac.createGain();
+    src.buffer = this.noiseBuf;
+    flt.type = filterType;
+    flt.frequency.setValueAtTime(f0, t);
+    flt.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+    gn.gain.setValueAtTime(vol, t);
+    gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(flt).connect(gn).connect(this.master);
+    src.start(t); src.stop(t + dur + 0.02);
+  },
+  play(name) {
+    if (!this.ensure()) return;
+    switch (name) {
+      case 'slash': this.noise(0.12, 0.5, 'bandpass', 2500, 700); break;
+      case 'parry': // 날카로운 금속 충돌음
+        this.tone('square', 1900, 1500, 0.25, 0.25);
+        this.tone('triangle', 3100, 2600, 0.35, 0.3);
+        this.tone('sine', 140, 50, 0.2, 0.6);
+        this.noise(0.08, 0.7, 'highpass', 3000, 6000);
+        break;
+      case 'shot': this.noise(0.1, 0.5, 'lowpass', 3000, 300); this.tone('square', 220, 60, 0.08, 0.15); break;
+      case 'charge': this.tone('sine', 900, 1400, 0.3, 0.06); break;
+      case 'kill': this.noise(0.18, 0.6, 'lowpass', 1800, 120); this.tone('sine', 120, 40, 0.2, 0.5); break;
+      case 'death': this.noise(0.4, 0.7, 'lowpass', 1200, 60); this.tone('sawtooth', 200, 40, 0.4, 0.2); break;
+      case 'clear': [523, 659, 784, 1046].forEach((f, i) => this.tone('triangle', f, f, 0.25, 0.15, i * 0.08)); break;
+    }
   },
 };
 
@@ -298,13 +519,16 @@ class Bullet {
     this.parryable = parryable;
     this.life = CONFIG.bullet.life;
     this.dead = false;
-    this.trail = [];
+    this.trail = [];          // 지난 위치 [x0,y0,x1,y1,...] (최신이 앞)
+    this.reflectT = 0;        // 반사 후 경과 시간 (색 전환용)
   }
   update(dt) {
     this.life -= dt;
     if (this.life <= 0) { this.dead = true; return; }
+    if (this.owner === 'player') this.reflectT += dt;
     this.trail.unshift(this.x, this.y);
-    if (this.trail.length > 24) this.trail.length = 24;
+    const maxTrail = (this.owner === 'player' ? CONFIG.fx.trailLength : 3) * 2;
+    if (this.trail.length > maxTrail) this.trail.length = maxTrail;
     // 빠른 총알이 벽을 뚫지 않도록 나눠서 이동. 일방향 발판은 통과.
     const n = Math.max(1, Math.ceil(Math.hypot(this.vx, this.vy) * dt / 3));
     for (let i = 0; i < n; i++) {
@@ -318,7 +542,7 @@ class Bullet {
   }
   get color() {
     const C = CONFIG.colors;
-    if (this.owner === 'player') return C.parry;
+    if (this.owner === 'player') return mixColor(C.attack, C.parry, this.reflectT / CONFIG.fx.reflectColorTime);
     return this.parryable ? C.attack : C.unparryable;
   }
   reflect(angle) {
@@ -326,17 +550,27 @@ class Bullet {
     this.vx = Math.cos(angle) * sp; this.vy = Math.sin(angle) * sp;
     this.owner = 'player';
     this.life = CONFIG.bullet.life;
+    this.reflectT = 0;
+    this.trail = [];
   }
   draw(g) {
     const col = this.color;
     g.save();
     g.shadowColor = col; g.shadowBlur = 6;
-    g.strokeStyle = col; g.lineWidth = 1;
-    g.beginPath();
-    g.moveTo(this.x, this.y);
-    const len = Math.min(this.trail.length, 6);
-    if (len >= 2) g.lineTo(this.trail[len - 2], this.trail[len - 1]);
-    g.stroke();
+    g.lineCap = 'round';
+    // 꼬리 궤적: 머리에서 멀어질수록 가늘고 옅게 (반사 총알은 주황으로 식어감)
+    const n = this.trail.length / 2;
+    let px = this.x, py = this.y;
+    for (let i = 0; i < n; i++) {
+      const k = i / n;
+      const tx = this.trail[i * 2], ty = this.trail[i * 2 + 1];
+      g.globalAlpha = 1 - k;
+      g.strokeStyle = this.owner === 'player' && k > 0.3 ? CONFIG.colors.parryHot : col;
+      g.lineWidth = Math.max(1, (this.owner === 'player' ? 3 : 2) * (1 - k));
+      g.beginPath(); g.moveTo(px, py); g.lineTo(tx, ty); g.stroke();
+      px = tx; py = ty;
+    }
+    g.globalAlpha = 1;
     g.fillStyle = col;
     g.beginPath(); g.arc(this.x, this.y, this.r, 0, Math.PI * 2); g.fill();
     g.restore();
@@ -420,6 +654,7 @@ class Player {
     this.vy = dy * S.dashSpeed;
     this.dashT = S.dashTime;
     this.jumping = false;
+    Sfx.play('slash');
   }
 
   update(dt, aimX, aimY) {
@@ -485,35 +720,38 @@ class Player {
     this.drawSlash(g);
   }
 
-  // 칼 궤적: 부채꼴을 따라 빠르게 휘두르는 초승달
+  // 칼 궤적: 부채꼴을 따라 휘두르는 초승달. 가운데가 두껍고 양끝이 가늘다.
   drawSlash(g) {
     if (!this.slashing) return;
     const S = CONFIG.slash;
     const p = this.slashT / S.duration;
-    const sweep = Math.min(1, this.slashT / (S.parryWindow * 0.8)); // 판정 창 안에 휘두름 완료
+    const sweep = Math.min(1, this.slashT / (S.parryWindow * 0.7)); // 판정 창 안에 휘두름 완료
+    const tail = Math.max(0, (this.slashT - S.parryWindow * 0.5) / (S.duration - S.parryWindow * 0.5)); // 꼬리부터 사라짐
+    const R = S.radius, cx = this.cx, cy = this.cy;
     const a0 = this.slashAngle - S.arcHalf * this.slashFlip;
-    const a1 = a0 + S.arcHalf * 2 * this.slashFlip * sweep;
-    const cx = this.cx, cy = this.cy, R = S.radius;
+    const span = S.arcHalf * 2 * this.slashFlip;
+    const N = 14;
+    const u0 = tail, u1 = Math.max(u0, sweep);
+    if (u1 - u0 < 0.01) return;
+    const outer = [], inner = [];
+    for (let i = 0; i <= N; i++) {
+      const u = lerp(u0, u1, i / N);
+      const a = a0 + span * u;
+      const thick = Math.sin(Math.PI * u) * R * 0.55;   // 가운데가 가장 두꺼움
+      outer.push(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
+      inner.push(cx + Math.cos(a) * (R - thick), cy + Math.sin(a) * (R - thick));
+    }
     g.save();
-    g.shadowColor = CONFIG.colors.player;
-    g.shadowBlur = 8;
-    g.globalAlpha = 1 - p * p;
+    g.globalAlpha = 1 - p * p * 0.6;
     g.fillStyle = CONFIG.colors.player;
+    g.shadowColor = CONFIG.colors.player;
+    g.shadowBlur = this.inParryWindow ? 10 : 5;
     g.beginPath();
-    g.arc(cx, cy, R, a0, a1, this.slashFlip < 0);
-    // 안쪽 호를 중심을 칼 방향으로 밀어 그려 초승달 모양
-    const ox = Math.cos(this.slashAngle) * -R * 0.5, oy = Math.sin(this.slashAngle) * -R * 0.5;
-    g.arc(cx + ox, cy + oy, R * 0.95, a1, a0, this.slashFlip > 0);
+    g.moveTo(outer[0], outer[1]);
+    for (let i = 2; i < outer.length; i += 2) g.lineTo(outer[i], outer[i + 1]);
+    for (let i = inner.length - 2; i >= 0; i -= 2) g.lineTo(inner[i], inner[i + 1]);
     g.closePath();
     g.fill();
-    // 판정 창 동안 칼날 끝선을 더 밝게
-    if (this.inParryWindow) {
-      g.lineWidth = 1;
-      g.strokeStyle = CONFIG.colors.player;
-      g.beginPath();
-      g.arc(cx, cy, R + 1, a0, a1, this.slashFlip < 0);
-      g.stroke();
-    }
     g.restore();
   }
 }
@@ -756,6 +994,7 @@ class Gunner extends Enemy {
         if (this.cool <= 0 && sees) {
           this.setState('windup');
           this.nextParryable = Math.random() >= C.unparryableChance;
+          Sfx.play('charge');
         }
         break;
       }
@@ -767,6 +1006,7 @@ class Gunner extends Enemy {
           Particles.burst(this.muzzleX, this.muzzleY, 4, this.nextParryable ? CONFIG.colors.attack : CONFIG.colors.unparryable,
             70, { angle: this.aim, spread: 0.5, life: 0.12, glow: true });
           this.vx -= Math.cos(this.aim) * 40; // 반동
+          Sfx.play('shot');
           this.cool = C.cooldown;
           this.setState('engage');
         }
@@ -840,6 +1080,9 @@ const Game = {
   bullets: [],
   cam: { x: 0, y: 0 },
   fade: 0,
+  hitstop: 0,             // 남은 정지 시간
+  flash: 0, flashShown: false,
+  shake: { t: 0, time: 1, amp: 0, angle: 0, ox: 0, oy: 0 },
 
   reset() {
     this.state = 'play';
@@ -847,6 +1090,11 @@ const Game = {
     this.enemies = ROOM.enemies.map((d) => new ENEMY_TYPES[d.type](d));
     this.bullets = [];
     Particles.reset();
+    Rings.reset();
+    Pieces.reset();
+    this.hitstop = 0;
+    this.flash = 0;
+    this.shake.t = 0; this.shake.ox = this.shake.oy = 0;
     this.cam.x = this.camTarget();
     this.fade = CONFIG.restartFade;
   },
@@ -859,9 +1107,16 @@ const Game = {
     return clamp(this.player.cx - W / 2, 0, CONFIG.room.w - W);
   },
 
+  // 반환값: 이번 틱에 입력을 소비했는가 (히트스톱 중 누른 클릭은 다음 틱까지 보존)
   update(dt) {
-    if (Input.hit('KeyR')) { this.reset(); return; }
+    if (Input.hit('KeyR')) { this.reset(); return true; }
+    if (Input.hit('KeyM')) Sfx.toggleMute();
     this.fade = Math.max(0, this.fade - dt);
+    if (this.flash > 0 && this.flashShown) this.flash -= dt;
+
+    // 히트스톱: 월드 전체 정지
+    if (this.hitstop > 0) { this.hitstop -= dt; return false; }
+
     const p = this.player;
     if (!p.dead) {
       const m = this.mouseWorld();
@@ -873,8 +1128,41 @@ const Game = {
     this.enemies = this.enemies.filter((e) => !e.dead);
     this.bullets = this.bullets.filter((b) => !b.dead);
     Particles.update(dt);
-    if (this.state === 'play' && this.enemies.length === 0) this.state = 'clear';
+    Rings.update(dt);
+    Pieces.update(dt);
+    if (this.state === 'play' && this.enemies.length === 0) { this.state = 'clear'; Sfx.play('clear'); }
     this.cam.x = lerp(this.cam.x, this.camTarget(), CONFIG.camera.lerp);
+
+    // 화면 흔들림: 흔들 방향 위주로, 제곱 감쇠
+    const sh = this.shake;
+    if (sh.t > 0) {
+      sh.t -= dt;
+      const k = Math.max(0, sh.t / sh.time) ** 2;
+      const along = rand(-1, 1) * sh.amp * k, side = rand(-1, 1) * sh.amp * k * 0.4;
+      sh.ox = Math.cos(sh.angle) * along - Math.sin(sh.angle) * side;
+      sh.oy = Math.sin(sh.angle) * along + Math.cos(sh.angle) * side;
+    } else { sh.ox = sh.oy = 0; }
+    return true;
+  },
+
+  addShake(amp, time, angle = rand(0, Math.PI * 2)) {
+    const sh = this.shake;
+    if (sh.t > 0 && sh.amp * (sh.t / sh.time) ** 2 > amp) return; // 더 센 흔들림 유지
+    sh.amp = amp; sh.time = time; sh.t = time; sh.angle = angle;
+    sh.ox = Math.cos(angle) * amp; sh.oy = Math.sin(angle) * amp; // 첫 프레임에 바로 튕김
+  },
+
+  // 패링 성공 공통 연출 (x, y = 칼에 맞부딪힌 지점)
+  parryFx(x, y, angle) {
+    const F = CONFIG.fx, C = CONFIG.colors;
+    this.hitstop = Math.max(this.hitstop, F.parryHitstop);       // 1) 히트스톱
+    this.flash = F.flashTime; this.flashShown = false;           // 2) 흰 섬광
+    Rings.spawn(x, y, F.ringRadius, F.ringTime, F.ringWidth, C.parry);            // 3) 충격파 링
+    Rings.spawn(x, y, F.ringRadius * 0.55, F.ringTime * 0.7, F.ringWidth - 1, C.parryHot);
+    this.addShake(F.parryShake, F.parryShakeTime, angle);         // 5) 화면 흔들림
+    Particles.burst(x, y, 14, C.parry, 260, { angle, spread: 1.3, life: 0.28, glow: true, streak: true });
+    Particles.burst(x, y, 6, C.parryHot, 120, { life: 0.35, glow: true });
+    Sfx.play('parry');
   },
 
   resolveCombat() {
@@ -929,27 +1217,43 @@ const Game = {
 
   parryBullet(b) {
     const m = this.mouseWorld(), p = this.player;
-    b.reflect(Math.atan2(m.y - p.cy, m.x - p.cx));
-    Particles.burst(b.x, b.y, 10, CONFIG.colors.parry, 160, { life: 0.3, glow: true });
+    const out = Math.atan2(m.y - p.cy, m.x - p.cx);
+    // 맞부딪힌 지점: 총알 방향의 칼날 위
+    const a = Math.atan2(b.y - p.cy, b.x - p.cx), r = CONFIG.slash.radius * 0.8;
+    b.reflect(out);                                                // 4) 마우스 방향 반사 (색/꼬리는 Bullet 에서)
+    this.parryFx(p.cx + Math.cos(a) * r, p.cy + Math.sin(a) * r, out);
   },
 
   parryMelee(e) {
-    Particles.burst(this.player.tipX, this.player.tipY, 12, CONFIG.colors.parry, 180, { life: 0.3, glow: true });
-    this.killEnemy(e, this.player.slashAngle, true);
+    const p = this.player;
+    this.parryFx(p.tipX, p.tipY, p.slashAngle);
+    this.killEnemy(e, p.slashAngle, true);
   },
 
+  // 6) 적 사망: 베인 방향으로 두 조각 + 파편
   killEnemy(e, angle, byParry = false) {
     if (e.dead) return;
     e.dead = true;
-    Particles.burst(e.cx, e.cy, 18, CONFIG.colors.enemyRim, 160, { angle, spread: 1.0, life: 0.5, grav: 400, size: 2 });
-    Particles.burst(e.cx, e.cy, 10, CONFIG.colors.player, 220, { angle, spread: 0.5, life: 0.25, glow: true });
+    const F = CONFIG.fx, C = CONFIG.colors;
+    e.setState('dead');                // 무기 발광을 끄고 시체 자세로
+    Pieces.split((g) => e.draw(g), e.cx, e.cy, angle, byParry ? C.parry : C.player, byParry ? 1.4 : 1);
+    Particles.burst(e.cx, e.cy, F.debris, C.enemyRim, 170, { angle, spread: 1.1, life: 0.7, grav: 500, size: 2 });
+    Particles.burst(e.cx, e.cy, F.debris, C.enemyBody, 130, { angle, spread: 1.4, life: 0.8, grav: 500, size: 2 });
+    Particles.burst(e.cx, e.cy, 8, byParry ? C.parry : C.player, 240, { angle, spread: 0.4, life: 0.2, glow: true, streak: true });
+    this.hitstop = Math.max(this.hitstop, F.killHitstop);
+    this.addShake(F.killShake, F.killShakeTime, angle);
+    Sfx.play('kill');
   },
 
   killPlayer(angle) {
-    const p = this.player;
+    const p = this.player, F = CONFIG.fx, C = CONFIG.colors;
     p.dead = true;
     this.state = 'dead';
-    Particles.burst(p.cx, p.cy, 24, CONFIG.colors.player, 180, { angle, spread: 1.2, life: 0.6, grav: 400, size: 2 });
+    Pieces.split((g) => { p.dead = false; p.slashT = -1; p.draw(g); p.dead = true; }, p.cx, p.cy, angle, C.attack, 1.1);
+    Particles.burst(p.cx, p.cy, 16, C.player, 180, { angle, spread: 1.0, life: 0.6, grav: 400, size: 1 });
+    this.hitstop = Math.max(this.hitstop, F.deathHitstop);
+    this.addShake(F.deathShake, 0.2, angle);
+    Sfx.play('death');
   },
 
   render() {
@@ -958,13 +1262,23 @@ const Game = {
     ctx.fillRect(0, 0, W, H);
 
     ctx.save();
-    ctx.translate(-Math.round(this.cam.x), -Math.round(this.cam.y));
+    ctx.translate(-Math.round(this.cam.x - this.shake.ox), -Math.round(this.cam.y - this.shake.oy));
     drawTerrain(ctx);
+    Pieces.draw(ctx);
     for (const e of this.enemies) e.draw(ctx);
     this.player.draw(ctx);
     for (const b of this.bullets) b.draw(ctx);
     Particles.draw(ctx);
+    Rings.draw(ctx);
     ctx.restore();
+
+    if (this.flash > 0) {
+      ctx.fillStyle = '#fff';
+      ctx.globalAlpha = CONFIG.fx.flashAlpha;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+      this.flashShown = true;
+    }
 
     this.drawUI(ctx);
     if (this.fade > 0) {
@@ -1016,8 +1330,7 @@ function frame(now) {
   acc += Math.min(0.25, (now - last) / 1000);
   last = now;
   while (acc >= STEP) {
-    Game.update(STEP);
-    Input.endTick();
+    if (Game.update(STEP)) Input.endTick();
     acc -= STEP;
   }
   Game.render();
