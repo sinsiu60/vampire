@@ -84,6 +84,18 @@ const CONFIG = {
     meleeEarly: 0.1,                  // 근접 적 예고 마지막 이 시간 동안 베어도 '패링'으로 인정
   },
 
+  // 패링 반사 보정: 원하는 방향으로 쳤다고 느끼면서도 잘 맞도록. 강하게, 하지만 티 안 나게.
+  aimAssist: {
+    AIM_SNAP_ANGLE: 35,               // 마우스 방향 ±이 각도(°) 안의 적을 스냅 후보로
+    OWNER_PRIORITY_ANGLE: 50,         // 그 총알을 쏜 적이 ±이 각도(°) 안이면 최우선
+    AIM_SNAP_RANGE: 300,              // 후보 최대 거리 (px)
+    HOMING_TURN_RATE: 90,             // 반사 총알이 대상 쪽으로 도는 최대 속도 (°/초)
+    REFLECT_HITBOX_SCALE: 1.8,        // 반사 총알의 적 피격 판정 배율 (그래픽은 그대로)
+    REFLECT_SLOW_DURATION: 0.15,      // 반사 히트스톱 직후 슬로우 길이 (실제 초)
+    REFLECT_SLOW_SCALE: 0.4,          // 슬로우 중 게임 속도
+    MELEE_PARRY_RANGE_BONUS: 0.2,     // 근접 패링 판정 거리 +20%
+  },
+
   fx: {
     // 패링 성공 연출
     parryHitstop: 0.08,               // 1) 히트스톱: 화면 전체 정지
@@ -214,7 +226,7 @@ const Input = {
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Space') e.preventDefault();
+      if (e.code === 'Space' || e.code === 'F1') e.preventDefault(); // F1: 브라우저 도움말 막기
       if (!this.down.has(e.code)) this.pressed.add(e.code);
       this.down.add(e.code);
     });
@@ -559,11 +571,16 @@ class Bullet {
     this.dead = false;
     this.trail = [];          // 지난 위치 [x0,y0,x1,y1,...] (최신이 앞)
     this.reflectT = 0;        // 반사 후 경과 시간 (색 전환용)
+    this.shooter = null;      // 쏜 적
+    this.target = null;       // 반사 후 유도 대상
   }
   update(dt) {
     this.life -= dt;
     if (this.life <= 0) { this.dead = true; return; }
-    if (this.owner === 'player') this.reflectT += dt;
+    if (this.owner === 'player') {
+      this.reflectT += dt;
+      this.home(dt);
+    }
     this.trail.unshift(this.x, this.y);
     const maxTrail = (this.owner === 'player' ? CONFIG.fx.trailLength : 3) * 2;
     if (this.trail.length > maxTrail) this.trail.length = maxTrail;
@@ -583,7 +600,19 @@ class Bullet {
     if (this.owner === 'player') return mixColor(C.attack, C.parry, this.reflectT / CONFIG.fx.reflectColorTime);
     return this.parryable ? C.attack : C.unparryable;
   }
-  reflect(angle) {
+  // 약한 유도: 대상 쪽으로 초당 HOMING_TURN_RATE° 까지만 회전. 대상이 죽으면 직진.
+  home(dt) {
+    if (!this.target) return;
+    if (this.target.dead) { this.target = null; return; }
+    const cur = Math.atan2(this.vy, this.vx);
+    const want = Math.atan2(this.target.cy - this.y, this.target.cx - this.x);
+    const maxTurn = CONFIG.aimAssist.HOMING_TURN_RATE * Math.PI / 180 * dt;
+    const a = cur + clamp(angDiff(want, cur), -maxTurn, maxTurn);
+    const sp = Math.hypot(this.vx, this.vy);
+    this.vx = Math.cos(a) * sp; this.vy = Math.sin(a) * sp;
+  }
+  reflect(angle, target = null) {
+    this.target = target;
     const sp = Math.hypot(this.vx, this.vy) * CONFIG.bullet.reflectSpeedMul;
     this.vx = Math.cos(angle) * sp; this.vy = Math.sin(angle) * sp;
     this.owner = 'player';
@@ -668,18 +697,18 @@ class Player {
   get tipY() { return this.cy + Math.sin(this.slashAngle) * CONFIG.slash.radius * 0.8; }
 
   // 사각형(적 몸통)이 칼에 닿았는가: 가장 가까운 점 + 중심점으로 판정
-  slashHitsRect(r) {
+  slashHitsRect(r, rangeMul = 1) {
     const qx = clamp(this.cx, r.x, r.x + r.w), qy = clamp(this.cy, r.y, r.y + r.h);
-    return this.slashHits(qx, qy, 0) || this.slashHits(r.x + r.w / 2, r.y + r.h / 2, 3);
+    return this.slashHits(qx, qy, 0, rangeMul) || this.slashHits(r.x + r.w / 2, r.y + r.h / 2, 3, rangeMul);
   }
 
   // 점(반지름 r)이 현재 칼 부채꼴 안에 있는가
-  slashHits(px, py, r = 0) {
+  slashHits(px, py, r = 0, rangeMul = 1) {
     if (!this.slashing) return false;
     const S = CONFIG.slash;
     const dx = px - this.cx, dy = py - this.cy;
     const d = Math.hypot(dx, dy);
-    if (d > S.radius + r) return false;
+    if (d > S.radius * rangeMul + r) return false;
     if (d < 6 + r) return true;
     return Math.abs(angDiff(Math.atan2(dy, dx), this.slashAngle)) <= S.arcHalf + Math.asin(Math.min(1, r / d));
   }
@@ -1178,7 +1207,9 @@ class Gunner extends Enemy {
         this.walk(0, 0, C.accel * 2, dt);
         if (this.t < C.telegraph - C.aimLock && !player.dead) this.aimAt(player);
         if (this.t >= C.telegraph) {
-          game.bullets.push(new Bullet(this.muzzleX, this.muzzleY, this.aim, CONFIG.bullet.speed, this.nextParryable));
+          const b = new Bullet(this.muzzleX, this.muzzleY, this.aim, CONFIG.bullet.speed, this.nextParryable);
+          b.shooter = this;
+          game.bullets.push(b);
           Particles.burst(this.muzzleX, this.muzzleY, 4, this.nextParryable ? CONFIG.colors.attack : CONFIG.colors.unparryable,
             70, { angle: this.aim, spread: 0.5, life: 0.12, glow: true });
           this.vx -= Math.cos(this.aim) * 40; // 반동
@@ -1259,6 +1290,8 @@ const Game = {
   cam: { x: 0, y: 0 },
   fade: 0,
   hitstop: 0,             // 남은 정지 시간
+  slowT: 0,               // 반사 직후 슬로우 남은 시간 (히트스톱이 끝난 뒤부터 흐름)
+  debug: false,           // F1: 반사 보정 범위/대상 표시
   flash: 0, flashShown: false,
   shake: { t: 0, time: 1, amp: 0, angle: 0, ox: 0, oy: 0 },
 
@@ -1271,6 +1304,7 @@ const Game = {
     Rings.reset();
     Pieces.reset();
     this.hitstop = 0;
+    this.slowT = 0;
     this.flash = 0;
     this.shake.t = 0; this.shake.ox = this.shake.oy = 0;
     this.cam.x = this.camTarget();
@@ -1296,11 +1330,18 @@ const Game = {
     this.playT += dt;
     if (Input.hit('KeyR')) { this.reset(); return true; }
     if (Input.hit('KeyM')) Sfx.toggleMute();
+    if (Input.hit('F1')) this.debug = !this.debug;
     this.fade = Math.max(0, this.fade - dt);
     if (this.flash > 0 && this.flashShown) this.flash -= dt;
 
     // 히트스톱: 월드 전체 정지
     if (this.hitstop > 0) { this.hitstop -= dt; return false; }
+    // 반사 직후 슬로우: 월드 시간만 느리게 (실제 시간 기준으로 지속)
+    const realDt = dt;
+    if (this.slowT > 0) {
+      this.slowT -= realDt;
+      dt *= CONFIG.aimAssist.REFLECT_SLOW_SCALE;
+    }
 
     const p = this.player;
     if (!p.dead) {
@@ -1315,6 +1356,7 @@ const Game = {
     Particles.update(dt);
     Rings.update(dt);
     Pieces.update(dt);
+    dt = realDt;
     if (this.state === 'play' && this.enemies.length === 0) { this.state = 'clear'; Sfx.play('clear'); }
     this.cam.x = lerp(this.cam.x, this.camTarget(), CONFIG.camera.lerp);
 
@@ -1363,7 +1405,8 @@ const Game = {
       // 2) 패링: 근접 공격 → 적 즉사
       for (const e of this.enemies) {
         if (e.dead || !e.parryVulnerable || !e.parryVulnerable()) continue;
-        if (p.slashHitsRect(e.threatBox()) || p.slashHitsRect(e)) this.parryMelee(e);
+        const reach = 1 + CONFIG.aimAssist.MELEE_PARRY_RANGE_BONUS;
+        if (p.slashHitsRect(e.threatBox(), reach) || p.slashHitsRect(e, reach)) this.parryMelee(e);
       }
     }
 
@@ -1379,7 +1422,7 @@ const Game = {
       if (b.dead) continue;
       if (b.owner === 'player') {
         for (const e of this.enemies) {
-          if (!e.dead && circleRect(b.x, b.y, b.r, e)) {
+          if (!e.dead && circleRect(b.x, b.y, b.r * CONFIG.aimAssist.REFLECT_HITBOX_SCALE, e)) {
             this.killEnemy(e, Math.atan2(b.vy, b.vx), true);
             b.dead = true;
             break;
@@ -1400,13 +1443,37 @@ const Game = {
     }
   },
 
+  // 반사 대상 고르기. 기준 방향 = 플레이어 → 마우스, 거리/시야는 반사 시작점(총알 위치) 기준.
+  //  1) 그 총알을 쏜 적이 ±OWNER_PRIORITY_ANGLE 안이면 최우선
+  //  2) 아니면 ±AIM_SNAP_ANGLE 안에서 마우스 방향과 각도 차가 가장 작은 적
+  //  거리 AIM_SNAP_RANGE 초과, 벽에 가려진 적은 제외. 없으면 null (마우스 방향 그대로).
+  pickReflectTarget(ox, oy, aimAngle, shooter) {
+    const A = CONFIG.aimAssist, deg = Math.PI / 180;
+    let best = null, bestDiff = Infinity;
+    for (const e of this.enemies) {
+      if (e.dead) continue;
+      const dx = e.cx - ox, dy = e.cy - oy;
+      if (dx * dx + dy * dy > A.AIM_SNAP_RANGE * A.AIM_SNAP_RANGE) continue;
+      const diff = Math.abs(angDiff(Math.atan2(dy, dx), aimAngle));
+      const limit = (e === shooter ? A.OWNER_PRIORITY_ANGLE : A.AIM_SNAP_ANGLE) * deg;
+      if (diff > limit) continue;
+      if (!lineOfSight(ox, oy, e.cx, e.cy)) continue;
+      if (e === shooter) return e;
+      if (diff < bestDiff) { best = e; bestDiff = diff; }
+    }
+    return best;
+  },
+
   parryBullet(b) {
     const m = this.mouseWorld(), p = this.player;
-    const out = Math.atan2(m.y - p.cy, m.x - p.cx);
+    const aim = Math.atan2(m.y - p.cy, m.x - p.cx);
+    const target = this.pickReflectTarget(b.x, b.y, aim, b.shooter);
+    const out = target ? Math.atan2(target.cy - b.y, target.cx - b.x) : aim;
     // 맞부딪힌 지점: 총알 방향의 칼날 위
     const a = Math.atan2(b.y - p.cy, b.x - p.cx), r = CONFIG.slash.radius * 0.8;
-    b.reflect(out);                                                // 4) 마우스 방향 반사 (색/꼬리는 Bullet 에서)
+    b.reflect(out, target);                                        // 4) 반사 (색/꼬리/유도는 Bullet 에서)
     this.parryFx(p.cx + Math.cos(a) * r, p.cy + Math.sin(a) * r, out);
+    this.slowT = CONFIG.aimAssist.REFLECT_SLOW_DURATION;           // 히트스톱이 끝나면 슬로우 시작
   },
 
   parryMelee(e) {
@@ -1455,6 +1522,7 @@ const Game = {
     for (const b of this.bullets) b.draw(ctx);
     Particles.draw(ctx);
     Rings.draw(ctx);
+    if (this.debug) this.drawAimDebug(ctx);
     ctx.restore();
 
     if (this.flash > 0) {
@@ -1505,6 +1573,64 @@ const Game = {
     this.present();
   },
 
+  // F1 디버그: 스냅 범위 부채꼴(실선 = 일반 ±35°, 점선 = 쏜 적 우선 ±50°)과 대상 표시
+  drawAimDebug(g) {
+    const p = this.player;
+    if (p.dead) return;
+    const A = CONFIG.aimAssist, deg = Math.PI / 180, C = CONFIG.colors;
+    const m = this.mouseWorld();
+    const aim = Math.atan2(m.y - p.cy, m.x - p.cx);
+    // 지금 패링한다면: 가장 가까운 적 총알 위치/쏜 적 기준으로 미리 계산
+    let ox = p.cx, oy = p.cy, shooter = null, near = Infinity;
+    for (const b of this.bullets) {
+      if (b.owner !== 'enemy') continue;
+      const d = Math.hypot(b.x - p.cx, b.y - p.cy);
+      if (d < near && d < 80) { near = d; ox = b.x; oy = b.y; shooter = b.shooter; }
+    }
+    const preview = this.pickReflectTarget(ox, oy, aim, shooter);
+    g.save();
+    g.strokeStyle = C.ui; g.fillStyle = C.ui;
+    g.lineWidth = 1;
+    const R = A.AIM_SNAP_RANGE, s = A.AIM_SNAP_ANGLE * deg, o = A.OWNER_PRIORITY_ANGLE * deg;
+    g.globalAlpha = 0.08;
+    g.beginPath(); g.moveTo(ox, oy); g.arc(ox, oy, R, aim - s, aim + s); g.closePath(); g.fill();
+    g.globalAlpha = 0.45;
+    g.stroke();
+    g.setLineDash([3, 3]);
+    g.beginPath(); g.moveTo(ox, oy); g.arc(ox, oy, R, aim - o, aim + o); g.closePath(); g.stroke();
+    g.setLineDash([]);
+    // 근접 패링 확대 판정 (칼 반경 × (1 + 보너스))
+    g.globalAlpha = 0.35;
+    g.beginPath(); g.arc(p.cx, p.cy, CONFIG.slash.radius * (1 + A.MELEE_PARRY_RANGE_BONUS), 0, Math.PI * 2); g.stroke();
+    // 쏜 적 표시
+    if (shooter && !shooter.dead) {
+      g.globalAlpha = 0.6;
+      g.setLineDash([2, 2]);
+      g.strokeRect(Math.round(shooter.x) - 3.5, Math.round(shooter.y) - 3.5, shooter.w + 7, shooter.h + 7);
+      g.setLineDash([]);
+    }
+    // 지금 패링하면 선택될 대상
+    const mark = (e, a) => {
+      g.globalAlpha = a;
+      const x = Math.round(e.x) - 2.5, y = Math.round(e.y) - 2.5, w = e.w + 5, h = e.h + 5, k = 4;
+      for (const [cx, cy, sx, sy] of [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]]) {
+        g.beginPath(); g.moveTo(cx + sx * k, cy); g.lineTo(cx, cy); g.lineTo(cx, cy + sy * k); g.stroke();
+      }
+    };
+    if (preview) mark(preview, 1);
+    // 날아가는 반사 총알 → 유도 대상
+    for (const b of this.bullets) {
+      if (b.owner !== 'player') continue;
+      g.globalAlpha = 0.5;
+      g.beginPath(); g.arc(b.x, b.y, b.r * A.REFLECT_HITBOX_SCALE, 0, Math.PI * 2); g.stroke();
+      if (b.target && !b.target.dead) {
+        g.beginPath(); g.moveTo(b.x, b.y); g.lineTo(b.target.cx, b.target.cy); g.stroke();
+        mark(b.target, 0.8);
+      }
+    }
+    g.restore();
+  },
+
   drawUI(g) {
     const C = CONFIG.colors;
     g.save();
@@ -1515,7 +1641,8 @@ const Game = {
     g.textAlign = 'left';
     g.globalAlpha = 0.85;
     g.fillText('남은 적 ' + this.enemies.length, 8, 10);
-    if (Sfx.muted) { g.textAlign = 'right'; g.fillText('MUTE', W - 8, 10); }
+    g.textAlign = 'right';
+    g.fillText([this.debug ? 'AIM DEBUG' : '', Sfx.muted ? 'MUTE' : ''].filter(Boolean).join('  '), W - 8, 10);
     // 조작 안내 (첫 판 몇 초)
     if (this.playT < CONFIG.hintTime) {
       g.globalAlpha = 0.75 * clamp(CONFIG.hintTime - this.playT, 0, 1);
