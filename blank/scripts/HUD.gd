@@ -32,6 +32,7 @@ func _draw() -> void:
 	var flags := []
 	if Debug.aim_debug: flags.append("AIM DEBUG")
 	if Debug.timing: flags.append("TIMING")
+	if main.boss != null and main.boss.invincible: flags.append("철견 무적")
 	if Audio.muted: flags.append("MUTE")
 	if not flags.is_empty():
 		Fonts.text(self, "  ".join(flags), Vector2(W - 8, 10), 10, Color(ui, 0.85), "right", true, true)
@@ -64,10 +65,57 @@ func _draw() -> void:
 		_glow_text("%s  ·  R 처음부터" % GameState.chapter_name(), Vector2(W / 2.0, H / 2.0 + 10), 12, false)
 	elif main.game_state == "dead":
 		_glow_text("R  —  재시작", Vector2(W / 2.0, H / 2.0), 12, false)
+	_draw_boss()
 	_draw_radio()
 	# 디버그 모드: 지금 장 · 방
 	if Debug.debug_mode():
 		Fonts.text(self, GameState.label(), Vector2(8, H - 22), 9, Color(ui, 0.7), "left", false, true)
+
+
+## 철견: 화면 위 체력 칸 3개 (하늘색) · 등장 이름 카드 "쾅" · 대사 한 줄
+func _draw_boss() -> void:
+	var b: BossCheolgyeon = main.boss
+	if b == null or not is_instance_valid(b) or b.dead:
+		return
+	var B: Dictionary = Config.boss
+	var W: float = Config.view.w
+	var H: float = Config.view.h
+	var ui: Color = Config.colors.ui
+	if b.fight:
+		var n: int = B.BOSS_CHEOLGYEON_HP
+		var cw := 22.0
+		var gap := 4.0
+		var x0 := roundf(W / 2.0 - (cw * n + gap * (n - 1)) / 2.0)
+		Fonts.text(self, String(B.NAME), Vector2(W / 2.0, 9), 9, Color(ui, 0.85), "center", false, true)
+		for i in n:
+			var r := Rect2(x0 + i * (cw + gap), 16, cw, 5)
+			if i < b.hp:
+				draw_rect(r, ui)
+				draw_rect(r.grow(1.0), Color(ui, 0.25), false, 1.0)
+			else:
+				draw_rect(r, Color(ui, 0.45), false, 1.0)
+	# 이름 카드: 박히는 3프레임 동안 확대 → 원래 크기, 1.5초 유지 뒤 페이드아웃
+	var cs: Dictionary = b.card_state()
+	if not cs.is_empty():
+		var a: float = cs.alpha
+		var s: float = cs.scale
+		var c := Vector2(W / 2.0, H / 2.0 - 8.0)
+		draw_rect(Rect2(0, c.y - 26, W, 48), Color(0, 0, 0, 0.55 * a))
+		draw_rect(Rect2(0, c.y - 26, W, 1), Color(ui, 0.5 * a))
+		draw_rect(Rect2(0, c.y + 21, W, 1), Color(ui, 0.5 * a))
+		draw_set_transform(c, 0.0, Vector2(s, s))
+		Fonts.text(self, String(B.NAME), Vector2(0, -6), 30, Color(1, 1, 1, a), "center", false, true)
+		Fonts.text(self, String(B.TITLE), Vector2(0, 14), 10, Color(ui, a), "center", false, true)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# 대사 (화면 아래, 한 자씩)
+	var ls: Dictionary = b.line_state()
+	if not ls.is_empty():
+		var full: String = ls.text
+		var k := clampi(int(ls.t * ls.cps), 0, full.length())
+		var y := H - 36.0
+		draw_rect(Rect2(0, y - 8, W, 16), Color(0, 0, 0, 0.55))
+		Fonts.text(self, String(B.NAME), Vector2(10, y), 9, Color(ui, 0.8), "left", false, true)
+		Fonts.text(self, full.substr(0, k), Vector2(W / 2.0, y), 11, Color.WHITE, "center", false, true)
 
 
 ## 보스방 문이 열리는 동안: 화면 아래 잡음 섞인 무전 한 줄 (글자가 한 자씩 들어오고, 잡음 글자 · 지직 줄 · 흔들림)
@@ -76,10 +124,7 @@ const RADIO_CPS := 16.0          # 초당 글자 수
 
 
 func _draw_radio() -> void:
-	var d: Door = main.room.exit_door() if main.room != null else null
-	if d == null:
-		return
-	var r: Dictionary = d.radio_state()
+	var r: Dictionary = main.radio_state()
 	if r.is_empty():
 		return
 	var W: float = Config.view.w

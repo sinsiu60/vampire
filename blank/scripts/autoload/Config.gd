@@ -94,6 +94,7 @@ var shot := {                         # 히트스캔 사격 + 타이밍 패링
 	"TRACER_WIDTH": 2.0,
 	"REFLECT_TRACER_WIDTH": 3.0,
 	"PLAYER_HIT_PAD": 1.0,
+	"SLASH_CATCH_PAD": 14.0,          # 막 벤 칼(판정 창 PARRY_EARLY 안)은 몸 둘레 이만큼까지 탄을 받아냄 — 연속 패링 중 돌진으로 비껴도 받아침
 }
 
 var approach := {                     # 발사 타이밍 원
@@ -103,6 +104,7 @@ var approach := {                     # 발사 타이밍 원
 	"BAND_ALPHA": 0.22,
 	"FLASH_FRAMES": 1,
 	"SUCCESS_TIME": 0.15,
+	"SCATTER_TIME": 0.25,             # 가짜 조준 취소 때 원이 흩어지는 시간
 	"SUCCESS_SCALE": 4.0,
 	"DIM_ALPHA": 0.5,
 	"OFFSCREEN_SCALE": 0.5,
@@ -183,6 +185,53 @@ var rooms := {
 	"OPEN_MSG_TIME": 2.0,             # "출구가 열렸다" 표시 시간
 }
 
+# ---------------------------------------------------------------- 보스 "철견" (1장, 하운드 제1 사냥개 부대장 — 쌍권총 난사)
+# 핵심: 연사의 박자를 읽고 연속으로 받아치는 리듬 패링. 시간은 월드 시간(초) — 연출(카드·무전)만 실제 시간
+var boss := {
+	"NAME": "철견", "TITLE": "하운드 제1 사냥개",
+	"BOSS_CHEOLGYEON_HP": 3,
+	"w": 20, "h": 36,                              # 일반 근접 적(16×26)보다 큰 몸 (약 1.4배)
+	"accel": 900.0,
+	# 사격 (기존 히트스캔 · 조준선 · 줄어드는 원 그대로)
+	"AIM_TIME": 0.8, "AIM_LOCK_TIME": 0.15,        # 탄마다: 원이 AIM_TIME 동안 줄어들고, 발사 0.15초 전 조준 고정
+	"LASER_ALPHA_MIN": 0.4, "LOCK_BLINKS": 2, "LOCK_BLINK_TIME": 0.025,
+	"GUN_LENGTH": 9.0,
+	"SHOT_PITCH": 0.85,                            # gun_fire.wav 피치 (묵직하게)
+	"FIRST_DELAY": 0.6,                            # 전투 시작 → 첫 연사 조준
+	# 페이즈별 연사: GAPS = 탄 사이 간격 (탄 수 = 간격 수 + 1), REST = 연사 사이 휴식
+	"P1_GAPS": [0.4], "P1_REST": 1.5,                         # 2연발, 제자리
+	"P2_GAPS": [0.3, 0.6], "P2_REST": 1.2, "P2_JUMP": true,    # 3연발 빠름 → 느림, 끝나면 다른 발판으로 점프
+	"P3_GAPS": [0.3, 0.3, 0.3], "P3_REST": 1.0, "P3_ALTERNATE": true,   # 4연발, 왼쪽·오른쪽 총 번갈아
+	"P3_FAKE_CHANCE": 1.0 / 3.0, "FAKE_CANCEL_AT": 0.5,       # 가짜 조준: 3번에 1번꼴, 첫 원이 절반 줄었을 때 취소
+	# 패링
+	"MINI_PARRY_PITCH": 1.2, "MINI_PARRY_VOL": 0.7, "MINI_HITSTOP": 4,   # 연사 중간 탄 (슬로우 없음, 장갑에 튕김)
+	"FINAL_HOLD_MUL": 2.0,                         # 체력 0 이 되는 마지막 풀 패링: SLOWMO_HOLD × 2
+	"STAGGER_TIME": 1.5,                           # 풀 패링 명중 → 경직
+	"HIT_HITSTOP": 10, "HIT_SHAKE": 6.0, "HIT_SHAKE_TIME": 0.25, "HIT_PITCH": 0.8,   # 피격 연출 (킬 연출 대신)
+	"KILL_SHAKE_MUL": 1.5,                         # 처치: 16프레임 킬 연출 + 흔들림 1.5배 + 쌍권총이 공중으로
+	# 발차기 (패링 불가 — 다리가 보라색으로 빛남)
+	"KICK_RANGE": 40.0, "KICK_HEIGHT": 30.0,       # 이 안으로 다가오면 (가로 · 세로)
+	"KICK_WINDUP": 0.4, "KICK_ACTIVE": 0.12, "KICK_RECOVER": 0.5,
+	"KICK_BOX": Vector2(28, 16),                   # 몸 앞쪽 발 높이 판정
+	# 페이즈 2 점프 이동
+	"JUMP_TIME": 0.6, "JUMP_HEIGHT": 44.0,
+	# 페이즈 전환 포효
+	"ROAR_TIME": 0.8, "ROAR_SHAKE": 4.0, "ROAR_VOL": 0.6,
+	# 등장 (실제 시간)
+	"INTRO_LOCK": 0.5,                             # 들어오면 입력 잠금
+	"CARD_DELAY": 0.2,                             # 들어온 뒤 이름 카드가 박히기까지
+	"CARD_SCALES": [1.9, 1.35, 1.1],               # "쾅" — 3프레임 동안 확대 → 원래 크기
+	"CARD_HOLD": 1.5, "CARD_FADE": 0.3, "CARD_SHAKE": 5.0,
+	"LINE": "등록도 안 된 놈이 칼을 들고 왔다고?",
+	"LINE_CPS": 16.0, "LINE_HOLD": 1.0,            # 대사: 한 자씩 → 다 나온 뒤 1초 → 전투 시작
+	"RESUME_DELAY": 0.8,                           # 체크포인트 재시작: 전투 재개까지
+	# 처치 후 (실제 시간)
+	"RADIO_DELAY": 1.0, "RADIO_TEXT": "철견 처리 확인. ...공백, 너 방금 웃었어?", "RADIO_TIME": 3.5,
+	"EXIT_DELAY": 2.0,                             # 처치 2초 뒤 출구 문 열림 (다음 장 예고)
+	# 색 (장갑판 · 금)
+	"PLATE": Color("#30364c"), "PLATE_RIM": Color("#6a718c"), "CRACK": Color("#a7aec4"),
+}
+
 # ---------------------------------------------------------------- 출구 문 (하운드 보안 셔터)
 # 방의 하운드 경비원이 전부 쓰러지면 보안 잠금이 풀려 열림. 시간은 모두 실제 시간(초) — 효과음과 맞춤.
 # 출구 표시는 하늘색(colors.ui)만. 빨강·노랑·보라는 쓰지 않음.
@@ -240,6 +289,8 @@ var audio := {
 	"SFX_TIME_RETURN": 1.0, "SFX_KILL": 1.0,
 	"SFX_DOOR": 0.7,                  # door_open.wav (셔터 · 철망 · 맨홀)
 	"SFX_DOOR_BOSS": 0.9,             # door_boss.wav (보스방 문)
+	"SFX_BOSS_INTRO": 1.0,            # boss_intro.wav (철견 이름 카드 · 포효)
+	"SFX_BOSS_ARMOR": 0.8,            # boss_armor.wav (반사탄이 장갑에 튕김)
 	"GUN_PITCH": Vector2(0.95, 1.05),
 	"KILL_PITCH": Vector2(0.92, 1.08),
 }

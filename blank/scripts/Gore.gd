@@ -103,10 +103,21 @@ func split(parts: Array, origin: Vector2, center: Vector2, angle: float, slice_c
 	_slices.append({ "pos": center, "angle": angle, "t": 0.0, "time": 0.14, "color": slice_color })
 
 
-## 실루엣을 법선 n 쪽 반평면으로 자름 → [{ pts, color, rim: bool }] (조각 중심 기준)
-func _cut(parts: Array, shift: Vector2, d: Vector2, n: Vector2) -> Array:
+## 자르지 않은 한 조각을 던짐 (철견이 처치될 때 공중으로 날아가는 쌍권총 등) — parts 는 origin 기준 로컬
+func toss(parts: Array, origin: Vector2, center: Vector2, vel: Vector2, vrot: float) -> void:
+	_pieces.append({
+		"polys": _cut(parts, origin - center, Vector2.RIGHT, Vector2.DOWN, true),
+		"pos": center, "vel": vel, "rot": 0.0, "vrot": vrot, "bounces": 0, "rest": false,
+		"flash": 0, "born": Engine.get_physics_frames(),
+	})
+
+
+## 실루엣을 법선 n 쪽 반평면으로 자름 → [{ pts, color, rim: bool }] (조각 중심 기준). whole = 자르지 않음
+func _cut(parts: Array, shift: Vector2, d: Vector2, n: Vector2, whole := false) -> Array:
 	const L := 40.0
 	var half := PackedVector2Array([d * L, -d * L, -d * L + n * L, d * L + n * L])
+	if whole:
+		half = PackedVector2Array([Vector2(-200, -200), Vector2(200, -200), Vector2(200, 200), Vector2(-200, 200)])
 	var out := []
 	var offs := [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]
 	for pass_rim in [true, false]:

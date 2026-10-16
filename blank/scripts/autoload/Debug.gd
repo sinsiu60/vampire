@@ -7,6 +7,7 @@ extends Node
 ##  F4 프레임 진행: 게임을 멈추고 F4 를 누를 때마다 정확히 한 틱. Enter 로 해제
 ##  F5 패링 타이밍 디버그 (조준선 옆 판정 창 바 + 입력 오차 ms)
 ##  F6 다음 방으로 바로 · F7 지금 방 즉시 클리어 — 디버그 빌드(에디터 실행 · 디버그 내보내기)에서만
+##  F8 철견 페이즈 바로 바꾸기 (1 → 2 → 3) · F9 철견 무적 (패턴 관찰용) — 디버그 빌드에서만
 
 signal changed
 
@@ -69,6 +70,14 @@ func _input(event: InputEvent) -> void:
 				main.debug_next_room()
 			else:
 				main.debug_clear_room()
+		KEY_F8, KEY_F9:
+			var main := get_tree().get_first_node_in_group("game")
+			if not debug_mode() or main == null or menu_open or main.boss == null:
+				return
+			if event.physical_keycode == KEY_F8:
+				main.boss.debug_next_phase()
+			else:
+				main.boss.invincible = not main.boss.invincible
 		_:
 			if juice_panel and not menu_open:
 				_juice_key(event.physical_keycode)

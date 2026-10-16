@@ -1,13 +1,13 @@
 extends Node
 ## 효과음 (오토로드).
-## - sounds/*.wav 8종 + 파일이 없는 소리(휘두르기·사망·클리어)는 시작할 때 합성 (Synth.gd).
+## - sounds/*.wav 10종 + 파일이 없는 소리(휘두르기·사망·클리어)는 시작할 때 합성 (Synth.gd).
 ## - Godot 오디오는 Engine.time_scale 의 영향을 받지 않음 → 슬로우모션·히트스톱 중에도 실제 시간으로 재생.
 ## - 페이드도 실제 시간 (Tween.set_ignore_time_scale).
 
 # 오토로드는 프로젝트의 class_name 목록보다 먼저 해석될 수 있어 Synth 를 이름 대신 경로로 불러옴
 const SynthLib := preload("res://scripts/audio/Synth.gd")
 
-const FILES := ["gun_fire", "parry_chang", "slowmo_in", "slowmo_loop", "time_return", "kill_sound", "door_open", "door_boss"]
+const FILES := ["gun_fire", "parry_chang", "slowmo_in", "slowmo_loop", "time_return", "kill_sound", "door_open", "door_boss", "boss_intro", "boss_armor"]
 const POOL_SIZE := 16
 
 var streams := {}                 # 이름 → AudioStream
@@ -78,16 +78,27 @@ func stop_all() -> void:
 
 
 # ---- 게임에서 쓰는 소리 (볼륨·피치 규칙은 Config.audio)
-func shot() -> void:
+## pitch_mul: 철견 사격 0.85 (일반 적보다 묵직하게)
+func shot(pitch_mul := 1.0) -> void:
 	var A: Dictionary = Config.audio
-	play("gun_fire", A.SFX_GUN, randf_range(A.GUN_PITCH.x, A.GUN_PITCH.y))
+	play("gun_fire", A.SFX_GUN, randf_range(A.GUN_PITCH.x, A.GUN_PITCH.y) * pitch_mul)
 
-func kill() -> void:
+## pitch_mul: 철견 피격 0.8
+func kill(pitch_mul := 1.0) -> void:
 	var A: Dictionary = Config.audio
-	play("kill_sound", A.SFX_KILL, randf_range(A.KILL_PITCH.x, A.KILL_PITCH.y))
+	play("kill_sound", A.SFX_KILL, randf_range(A.KILL_PITCH.x, A.KILL_PITCH.y) * pitch_mul)
 
-func parry() -> void:
-	play("parry_chang", Config.audio.SFX_PARRY)
+## 미니 패링(철견 연사 중간 탄): 피치 1.2 · 볼륨 70%
+func parry(pitch := 1.0, vol_mul := 1.0) -> void:
+	play("parry_chang", Config.audio.SFX_PARRY * vol_mul, pitch)
+
+## 철견 등장 카드 · 페이즈 전환 포효 (boss_intro.wav)
+func boss_intro(vol_mul := 1.0) -> void:
+	play("boss_intro", Config.audio.SFX_BOSS_INTRO * vol_mul)
+
+## 반사탄이 철견 장갑에 튕김 (boss_armor.wav) — 풀 패링 명중은 피치 0.8
+func boss_armor(pitch := 1.0) -> void:
+	play("boss_armor", Config.audio.SFX_BOSS_ARMOR, pitch)
 
 func swing() -> void:
 	play("swing", 1.0, randf_range(0.88, 1.12))   # 프로토타입: 매번 음높이 ±12%

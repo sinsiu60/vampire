@@ -56,6 +56,13 @@ func center() -> Vector2:
 	return global_position + _center_local()
 
 
+## 이번 베기가 패링/처치에 쓰임 → 쿨타임 없이 바로 다음 베기 가능 (헛스윙했을 때만 WHIFF_COOLDOWN)
+## 리듬 패링: 연사의 다음 탄을 곧바로 받아칠 수 있게
+func mark_used() -> void:
+	slash_used = true
+	_slash_cd = 0.0
+
+
 ## F4 프레임 진행 중 멈춘 사이 누른 입력 (Debug 가 넘겨줌)
 func queue_slash() -> void:
 	_queued_slash = true

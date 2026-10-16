@@ -22,6 +22,7 @@ const CHAPTERS := {
 var chapter := 1
 var room := 1                    ## 1부터
 var cleared := {}                ## "1-3" → true (클리어한 방)
+var boss_checkpoint := {}        ## 보스 체크포인트 { key: "1-6", phase, dead? } — 죽으면 R 로 지금 페이즈 시작부터
 var room_override := ""          ## 비어 있지 않으면 이 방 씬을 대신 엶 (테스트·옛 테스트 방 res://scenes/Room.tscn)
 
 
@@ -60,6 +61,7 @@ func advance() -> bool:
 	if is_last_room():
 		return false
 	room += 1
+	boss_checkpoint = {}
 	room_changed.emit()
 	return true
 
@@ -67,6 +69,7 @@ func advance() -> bool:
 ## 방 번호로 바로 (디버그 F6 · 장 처음부터)
 func go_to(r: int) -> void:
 	room = clampi(r, 1, room_count())
+	boss_checkpoint = {}
 	room_changed.emit()
 
 

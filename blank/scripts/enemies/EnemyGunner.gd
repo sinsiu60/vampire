@@ -23,6 +23,7 @@ func _ready() -> void:
 	if first_delay > 0.0: c.first_delay = first_delay
 	_setup(c)
 	add_to_group("gunners")
+	add_to_group("aimers")
 	aim = 0.0 if facing > 0 else PI
 
 
@@ -54,6 +55,15 @@ func remaining() -> float:
 ## 예정된(또는 마지막) 발사 시각 — 여러 총잡이 발사 간격 조정용
 func expected_fire_t() -> float:
 	return TimeManager.world_time + remaining() if state == "aim" else last_fire_t
+
+
+## 발사 타이밍 원 정보 (Effects.approach_infos 가 모음) — 조준 중일 때 하나
+func approach_infos() -> Array:
+	if not is_aiming():
+		return []
+	return [{ "pos": muzzle(), "remaining": remaining(), "aim_time": cfg.AIM_TIME, "locked": is_locked(),
+		"k": clampf(t / lock_start(), 0.0, 1.0), "parryable": next_parryable, "fire_t": expected_fire_t(),
+		"owner": self, "aim": aim, "t": t }]
 
 
 func _aim_at(player: Player) -> void:

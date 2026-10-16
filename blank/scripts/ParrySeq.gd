@@ -37,14 +37,15 @@ func _ready() -> void:
 
 
 ## 패링한 틱(k = 0)에 호출. hitstop_frames = 같은 틱에 건 히트스톱 (그동안 월드 시간 0)
-func start(t: Enemy, d: float, ds: float, hitstop_frames: int) -> void:
+## hold_mul = 슬로우 유지 시간 배율 (철견 마지막 처치는 SLOWMO_HOLD × 2)
+func start(t: Enemy, d: float, ds: float, hitstop_frames: int, hold_mul := 1.0) -> void:
 	var P: Dictionary = Config.parry_seq
 	var fps: int = Config.fps
 	cancel()
 	var len := Audio.length("time_return")
 	return_dur = len if len > 0.0 else float(P.RETURN_FALLBACK)
 	in_tick = roundi(P.SLOWMO_IN * fps)
-	return_tick = roundi((P.SLOWMO_IN + P.SLOWMO_HOLD) * fps)
+	return_tick = roundi((P.SLOWMO_IN + P.SLOWMO_HOLD * hold_mul) * fps)
 	kill_tick = return_tick + roundi(return_dur * fps)
 	k = 0
 	active = true

@@ -5,6 +5,9 @@ extends Node2D
 ## 화면 흔들림·줌·섬광은 실제 시간 (히트스톱·슬로우 중에도 재생).
 
 var room: Room                    # GameState 의 지금 방 씬 (_ready 에서 불러옴, 노드 이름 "Room")
+var boss: BossCheolgyeon          # 보스방이면 철견 (처치되면 null)
+var _boss_outro := -1.0           # 철견 처치 뒤 실제 시간 (무전 1초 · 출구 2초), -1 = 없음
+var _outro_radio := false
 @onready var player: Player = $Player
 @onready var camera: Camera2D = $Player/Camera
 @onready var effects: Effects = $Effects
@@ -28,6 +31,7 @@ var entering := false             # Boot 가 검은 전환으로 들여보냄 �
 var transitioning := false        # 출구로 나가는 중 (입력 잠금)
 var open_msg_t := -1.0            # "출구가 열렸다" 표시 경과 (실제 시간, -1 = 없음)
 var _exit_pending := false        # 방 클리어 → 마지막 적의 킬 연출이 끝나면 출구 보안 잠금 해제
+var _radio := {}                  # 화면 아래 잡음 섞인 무전 한 줄 { text, t, dur } (철견 처치 뒤 등)
 var _rumble := 0.0                # 이번 틱 미세 진동 (보스방 문 증기 구간) — 흔들림 갱신 때 쓰고 0 으로
 var kill_frame := -1              # 마지막 처치 후 실제 틱 수 (F3/F4 표시, 처치 없으면 -1)
 # F5 패링 입력 오차 표시: { text, ok, t } — 성공은 월드 시간, 실패 원인은 실제 시간 클릭 기준
@@ -38,6 +42,9 @@ var _late_watch := {}             # 아직 안 누른 채 맞음 → 0.5초 안�
 
 func _ready() -> void:
 	_load_room()
+	for b in get_tree().get_nodes_in_group("boss"):
+		if not b.dead:
+			boss = b
 	add_to_group("game")
 	# Main 은 일시정지 중에도 돌고(흔들림 미리보기·입력), 월드는 멈춤
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -134,7 +141,12 @@ func _physics_process(_delta: float) -> void:
 		_late_watch = {}
 	if open_msg_t >= 0.0:
 		open_msg_t += TimeManager.real_delta()
+	if not _radio.is_empty():
+		_radio.t += TimeManager.real_delta()
+		if _radio.t > _radio.dur:
+			_radio = {}
 	_try_open_exit()
+	_boss_outro_tick()
 	if TimeManager.frozen:
 		return
 	_resolve_shots()
@@ -150,6 +162,8 @@ func _physics_process(_delta: float) -> void:
 func _on_room_cleared() -> void:
 	game_state = "clear"
 	GameState.mark_cleared()
+	if _boss_outro >= 0.0:
+		return                            # 철견 처치: 무전 1초 뒤, 출구는 2초 뒤 (_boss_outro_tick)
 	if room.exit_door() != null:
 		_exit_pending = true
 		_try_open_exit()
@@ -163,6 +177,23 @@ func _try_open_exit() -> void:
 	_exit_pending = false
 	room.exit_door().open()
 	open_msg_t = 0.0
+
+
+## 철견 처치 뒤: RADIO_DELAY 초 무전 "철견 처리 확인. ...공백, 너 방금 웃었어?", EXIT_DELAY 초 출구 문 열림 (실제 시간)
+func _boss_outro_tick() -> void:
+	if _boss_outro < 0.0:
+		return
+	var B: Dictionary = Config.boss
+	_boss_outro += TimeManager.real_delta()
+	if not _outro_radio and _boss_outro >= B.RADIO_DELAY:
+		_outro_radio = true
+		show_radio(B.RADIO_TEXT, B.RADIO_TIME)
+	if _boss_outro >= B.EXIT_DELAY:
+		_boss_outro = -1.0
+		var d := room.exit_door()
+		if d != null:
+			d.open()
+			open_msg_t = 0.0
 
 
 ## 열린 출구에 닿으면 다음 방으로 (마지막 방이면 장 끝)
@@ -268,7 +299,7 @@ func _update_shake(dt: float) -> void:
 	var ks := _kill_shake
 	if ks.f < ks.total:
 		var K: Dictionary = Config.kill
-		var amp: float = K.SHAKE_START * pow(1.0 - float(ks.f) / ks.total, K.SHAKE_CURVE)
+		var amp: float = K.SHAKE_START * pow(1.0 - float(ks.f) / ks.total, K.SHAKE_CURVE) * float(ks.get("mul", 1.0))
 		var bias: float = K.SHAKE_BIAS
 		var v := Vector2.from_angle(ks.angle) * bias + Vector2.from_angle(randf() * TAU) * (1.0 - bias)
 		if v.length() < 1e-6:
@@ -282,16 +313,29 @@ func _update_shake(dt: float) -> void:
 	camera.offset = o * Settings.shake
 
 
+## 화면 아래 무전 한 줄 (실제 시간 dur 초)
+func show_radio(text: String, dur: float) -> void:
+	_radio = { "text": text, "t": 0.0, "dur": dur }
+
+
+## 지금 보여 줄 무전 { text, t, alpha } — Main 이 띄운 것 우선, 없으면 보스방 문 무전
+func radio_state() -> Dictionary:
+	if not _radio.is_empty():
+		return { "text": _radio.text, "t": _radio.t, "alpha": clampf((_radio.dur - _radio.t) / 0.4, 0.0, 1.0) }
+	var d: Door = room.exit_door() if room != null else null
+	return d.radio_state() if d != null else {}
+
+
 ## 이번 틱 미세 진동 (문 등 연출 노드가 매 틱 부름)
 func rumble(amp: float) -> void:
 	_rumble = maxf(_rumble, amp)
 
 
-## 킬 흔들림 시작 (처치한 프레임부터 바로 흔들림)
-func start_kill_shake(angle: float, stop_frames: int) -> void:
+## 킬 흔들림 시작 (처치한 프레임부터 바로 흔들림). mul = 세기 배율 (철견 처치 1.5)
+func start_kill_shake(angle: float, stop_frames: int, mul := 1.0) -> void:
 	if not Settings.on("shake"):
 		return
-	_kill_shake = { "f": 0, "total": stop_frames + Config.kill.SHAKE_TAIL_FRAMES, "angle": angle }
+	_kill_shake = { "f": 0, "total": stop_frames + Config.kill.SHAKE_TAIL_FRAMES, "angle": angle, "mul": mul }
 	_update_shake(0.0)
 
 
@@ -353,6 +397,9 @@ func hitscan(from: Vector2, angle: float, dist: float, hit_player: bool, hit_ene
 	var best := 2.0
 	if hit_player and not player.dead:
 		var pad: float = Config.shot.PLAYER_HIT_PAD
+		# 판정 창 안에서 막 벤 칼은 칼날이 닿는 범위까지 탄을 받아냄 (베기 돌진으로 조준선에서 살짝 비껴도 패링)
+		if player.is_slashing() and not player.slash_used and player.slash_t <= Config.shot.PARRY_EARLY + 1e-6:
+			pad = Config.shot.SLASH_CATCH_PAD
 		var t := seg_rect_t(from, end, player.body_rect().grow(pad))
 		if t >= 0.0 and t < best:
 			best = t
@@ -408,7 +455,7 @@ func fire_shot(g: EnemyGunner) -> void:
 		effects.burst(hit.pos, 7, col, 110.0, g.aim + PI, 1.1, 0.2, { "glow": true, "streak": true })
 	if hit.player:
 		pending_shots.append({ "shooter": g, "muzzle": m, "fire_t": TimeManager.world_time, "fire_real": TimeManager.real_time,
-			"angle": g.aim, "parryable": g.next_parryable, "done": false })
+			"angle": g.aim, "parryable": g.next_parryable, "done": false, "aim_time": g.cfg.AIM_TIME })
 
 
 ## 플레이어에 닿은 탄: 발사 -PARRY_EARLY ~ +PARRY_LATE 안에 베기를 시작했으면 패링, 아니면 즉사.
@@ -426,9 +473,15 @@ func _resolve_shots() -> void:
 		var ts := p.last_slash_t
 		if s.parryable and not p.slash_used and ts >= s.fire_t - Sh.PARRY_EARLY - eps and ts <= s.fire_t + Sh.PARRY_LATE + eps:
 			s.done = true
-			p.slash_used = true
+			p.mark_used()
 			report_timing(ts - s.fire_t, "ok")
-			_parry_shot(s)
+			if s.get("boss", false):
+				if s.final:
+					_parry_boss_final(s)
+				else:
+					_parry_boss_mini(s)
+			else:
+				_parry_shot(s)
 			continue
 		if TimeManager.world_time > s.fire_t + Sh.PARRY_LATE + eps:
 			s.done = true
@@ -459,6 +512,81 @@ func pick_reflect_target(origin: Vector2, aim_angle: float, shooter: Enemy) -> E
 			best = e
 			best_diff = diff
 	return best
+
+
+## 철견 사격: 기존 히트스캔과 같음 (MIN_SHOT_GAP 규칙 제외). final = 연사 마지막 탄 (풀 패링)
+func fire_boss_shot(b: BossCheolgyeon, gun: int, aim: float, final: bool) -> void:
+	var Sh: Dictionary = Config.shot
+	var col: Color = Config.colors.attack
+	var m := b.muzzle(gun)
+	var hit := hitscan(m, aim, Sh.RANGE, true, false)
+	effects.add_tracer(m, hit.pos, Sh.TRACER_WIDTH, col, Sh.TRACER_FRAMES, true)
+	effects.burst(m, 5, col, 90.0, aim, 0.5, 0.12, { "glow": true })
+	effects.approach_flash(m)
+	Audio.shot(Config.boss.SHOT_PITCH)
+	if hit.wall:
+		effects.burst(hit.pos, 7, col, 110.0, aim + PI, 1.1, 0.2, { "glow": true, "streak": true })
+	if hit.player:
+		pending_shots.append({ "shooter": b, "muzzle": m, "fire_t": TimeManager.world_time, "fire_real": TimeManager.real_time,
+			"angle": aim, "parryable": true, "done": false, "aim_time": b.cfg.AIM_TIME, "boss": true, "final": final })
+
+
+## 미니 패링 (철견 연사 중간 탄): parry_chang 피치 1.2 · 볼륨 70% + 히트스톱 4프레임 + 노란 불꽃.
+## 반사탄은 철견 가슴 장갑판에 맞고 튕김 (피해 없음) — 맞는 순간 boss_armor.wav + 장갑판에서 노란 불꽃. 슬로우 없음
+func _parry_boss_mini(s: Dictionary) -> void:
+	var B: Dictionary = Config.boss
+	var C: Dictionary = Config.colors
+	var p := player
+	var b: BossCheolgyeon = s.shooter
+	var back: float = s.angle + PI
+	var spark: Vector2 = p.center() + Vector2.from_angle(back) * float(Config.slash.radius) * 0.6
+	TimeManager.hitstop(B.MINI_HITSTOP)
+	effects.burst(spark, 10, C.parry, 220.0, back, 1.2, 0.24, { "glow": true, "streak": true })
+	effects.approach_success(s.muzzle)
+	Audio.parry(B.MINI_PARRY_PITCH, B.MINI_PARRY_VOL)
+	if is_instance_valid(b) and not b.dead:
+		var plate := b.plate_pos()
+		effects.add_tracer(p.center(), plate, Config.shot.REFLECT_TRACER_WIDTH, C.parry, Config.shot.TRACER_FRAMES)
+		var away := (plate - p.center()).angle() + PI
+		effects.burst(plate, 9, C.parry, 200.0, away, 0.9, 0.22, { "glow": true, "streak": true })
+		Audio.boss_armor()
+
+
+## 풀 패링 (철견 연사 마지막 탄): 기존 패링 성공 시퀀스 그대로 — 반사 대상은 철견. 마지막 처치면 슬로우 유지 2배
+func _parry_boss_final(s: Dictionary) -> void:
+	var p := player
+	var b: BossCheolgyeon = s.shooter
+	var aim := (get_global_mouse_position() - p.center()).angle()
+	var back: float = s.angle + PI
+	var spark: Vector2 = p.center() + Vector2.from_angle(back) * float(Config.slash.radius) * 0.6
+	parry_fx(spark, back)
+	effects.approach_success(s.muzzle)
+	var target: Enemy = b if is_instance_valid(b) and not b.dead else null
+	var hold: float = Config.boss.FINAL_HOLD_MUL if target != null and b.is_final_hit() else 1.0
+	seq.start(target, aim, p.center().distance_to(raycast_wall(p.center(), aim, Config.shot.RANGE)),
+		Config.juice.HITSTOP_PARRY_FRAMES if Settings.on("hitstop") else 0, hold)
+	p.input_locked = Config.parry_seq.LOCK_INPUT_DURING_SLOWMO
+
+
+## 풀 패링 반사탄이 철견에 명중: 체력 -1 → 경직 + 피격 연출 (킬 연출 대신) / 체력 0 → 처치
+##  피격: 히트스톱 10프레임 + 흰 섬광 + 흔들림 6px + kill_sound 피치 0.8 + boss_armor 피치 0.8 + 장갑판 금
+func _boss_full_hit(b: BossCheolgyeon, angle: float) -> void:
+	var B: Dictionary = Config.boss
+	var C: Dictionary = Config.colors
+	if b.is_final_hit():
+		b.hp = 0
+		_kill_enemy(b, angle, "reflect")
+		return
+	var plate := b.plate_pos()
+	TimeManager.hitstop(B.HIT_HITSTOP)
+	if Settings.on("screen_flash"):
+		screen_fx.flash()
+	add_shake(B.HIT_SHAKE, B.HIT_SHAKE_TIME, angle)
+	effects.burst(plate, 18, C.parry, 260.0, angle, 0.8, 0.3, { "glow": true, "streak": true })
+	effects.burst(plate, 8, C.player, 160.0, angle, 1.4, 0.3, { "glow": true })
+	Audio.kill(B.HIT_PITCH)
+	Audio.boss_armor(B.HIT_PITCH)
+	b.take_hit()
 
 
 ## 패링 성공 공통 연출 (pos = 칼에 맞부딪힌 지점, angle = 불꽃·흔들림 방향)
@@ -519,7 +647,9 @@ func _reflect_hit(target: Enemy, aim: float) -> void:
 		if r.wall:
 			effects.burst(hit_pos, 8, Config.colors.parry, 120.0, aim + PI, 1.1, 0.22, { "glow": true, "streak": true })
 	effects.add_tracer(o, hit_pos, Sh.REFLECT_TRACER_WIDTH, Config.colors.parry, Sh.TRACER_FRAMES)
-	if victim != null:
+	if victim is BossCheolgyeon:
+		_boss_full_hit(victim, angle)
+	elif victim != null:
 		_kill_enemy(victim, angle, "reflect")
 
 
@@ -540,7 +670,13 @@ func _resolve_combat() -> void:
 	if S.direct_kill and p.is_slashing() and p.slash_t < S.hit_time:
 		for e in enemies():
 			if p.slash_hits_rect(e.body_rect()):
-				p.slash_used = true
+				if e is BossCheolgyeon:
+					# 철견은 칼로 벨 수 없음 — 장갑에 막혀 '깡' (반사탄 풀 패링만 통함)
+					if e.on_slashed(p):
+						effects.burst(p.tip(), 6, Config.colors.player, 160.0, p.slash_angle + PI, 0.9, 0.18, { "glow": true, "streak": true })
+						Audio.boss_armor(1.15)
+					continue
+				p.mark_used()
 				_kill_enemy(e, p.slash_angle)
 	# 3) 근접 공격 명중 → 플레이어 즉사 (패링 시퀀스로 입력이 잠긴 동안은 맞지 않음)
 	if p.input_locked:
@@ -553,7 +689,7 @@ func _resolve_combat() -> void:
 
 
 func _parry_melee(e: Enemy) -> void:
-	player.slash_used = true
+	player.mark_used()
 	parry_fx(player.tip(), player.slash_angle)
 	_kill_enemy(e, player.slash_angle, "parry")
 
@@ -599,8 +735,20 @@ func _kill_enemy(e: Enemy, angle: float, cause := "slash") -> void:
 			K.BLOOD_LIFE * randf_range(0.75, 1.0), C.blood[i % C.blood.size()],
 			{ "size": 3.0 if randf() < 0.45 else 2.0, "grav": K.BLOOD_GRAVITY, "stain": true, "slow": true })
 	effects.burst(c, 8, C.parry if by_parry else C.player, 260.0, angle, 0.35, 0.18, { "glow": true, "streak": true })
+	# 철견: 쌍권총이 공중으로 날아감 + 흔들림 1.5배, 처치 뒤 무전 · 출구 (_boss_outro_tick)
+	var shake_mul := 1.0
+	if e is BossCheolgyeon:
+		shake_mul = Config.boss.KILL_SHAKE_MUL
+		for g in 2:
+			var gp: Vector2 = e.pivot(g) + Vector2.from_angle(e.gun_aim[g]) * 6.0
+			gore.toss(e.gun_parts(g), e.global_position, gp,
+				Vector2(randf_range(-60, 60) + cos(angle) * 80.0, randf_range(-330, -260)), randf_range(-14, 14))
+		GameState.boss_checkpoint = { "key": GameState.room_key(), "dead": true }
+		boss = null
+		_boss_outro = 0.0
+		_outro_radio = false
 	# 5) 킬 흔들림
-	start_kill_shake(angle, stop)
+	start_kill_shake(angle, stop, shake_mul)
 	kill_frame = 0
 	Audio.kill()
 	e.die(angle)

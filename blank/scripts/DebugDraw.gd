@@ -80,18 +80,19 @@ func _mark(e: Enemy, a: float) -> void:
 
 
 func _draw_timing() -> void:
-	for g in get_tree().get_nodes_in_group("gunners"):
-		if g.dead or not g.is_aiming():
-			continue
-		# 조준선 위, 총구에서 조금 떨어진 곳
-		var d := 34.0
-		var n := Vector2(-sin(g.aim), cos(g.aim))
-		var side := -1.0 if n.y > 0.0 else 1.0
-		_bar(g.muzzle() + Vector2.from_angle(g.aim) * d + n * 8.0 * side, g.t, g.cfg.AIM_TIME)
+	var infos := Effects.approach_infos(get_tree())
+	var next := Effects.next_info(infos)
+	for g in infos:
+		if g.owner is EnemyGunner or g == next:
+			# 조준선 위, 총구에서 조금 떨어진 곳 (철견은 다음 탄만)
+			var d := 34.0
+			var n := Vector2(-sin(g.aim), cos(g.aim))
+			var side := -1.0 if n.y > 0.0 else 1.0
+			_bar(g.pos + Vector2.from_angle(g.aim) * d + n * 8.0 * side, g.aim_time - g.remaining, g.aim_time)
 	for s in main.pending_shots:
 		if is_instance_valid(s.shooter):
 			var sh: Enemy = s.shooter
-			var aim: float = sh.cfg.AIM_TIME
+			var aim: float = s.aim_time
 			_bar(Vector2(sh.center().x, sh.body_rect().position.y - 10.0), aim + (TimeManager.world_time - s.fire_t), aim)
 
 

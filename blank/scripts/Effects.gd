@@ -14,7 +14,7 @@ var gore: Gore
 var _tracers: Array = []         # { a, b, width, color, frames, f, muzzle }
 var _sparks: Array = []          # { pos, vel, life, max, color, size, grav, glow, streak, stain, slow, drag }
 var _beams: Array = []           # { o, d, len, f, dust: [{ t, pos, done }], born }
-var _approach_fx: Array = []     # { kind: "flash" | "success", pos, f }
+var _approach_fx: Array = []     # { kind: "flash" | "success" | "scatter", pos, f, r }
 var _rings: Array = []           # { pos, radius, time, t, width, color }
 
 
@@ -102,6 +102,12 @@ func approach_flash(pos: Vector2) -> void:
 		_approach_fx.append({ "kind": "flash", "pos": pos, "f": 0 })
 
 
+## 가짜 조준 취소: 줄어들던 원(반지름 r)이 조각나 흩어짐
+func approach_scatter(pos: Vector2, r: float, color: Color) -> void:
+	if Settings.approach:
+		_approach_fx.append({ "kind": "scatter", "pos": pos, "f": 0, "r": r, "color": color })
+
+
 func approach_success(pos: Vector2) -> void:
 	if Settings.approach:
 		_approach_fx.append({ "kind": "success", "pos": pos, "f": 0 })
@@ -116,7 +122,8 @@ func _physics_process(delta: float) -> void:
 	for fx in _approach_fx:
 		fx.f += 1
 	var success_frames := roundi(A.SUCCESS_TIME * Config.fps)
-	_approach_fx = _approach_fx.filter(func(fx): return fx.f < (A.FLASH_FRAMES if fx.kind == "flash" else success_frames))
+	var scatter_frames := roundi(A.SCATTER_TIME * Config.fps)
+	_approach_fx = _approach_fx.filter(func(fx): return fx.f < (A.FLASH_FRAMES if fx.kind == "flash" else (scatter_frames if fx.kind == "scatter" else success_frames)))
 	_update_beams()
 	# 월드 시간 (킬 스톱 중엔 실제 시간)
 	if TimeManager.kill_stopped:
@@ -182,14 +189,29 @@ func _update_beams() -> void:
 	_beams = _beams.filter(func(b): return b.f < K.BEAM_FRAMES)
 
 
-static func next_shooter(tree: SceneTree) -> EnemyGunner:
-	var best: EnemyGunner = null
-	var bt := INF
-	for g in tree.get_nodes_in_group("gunners"):
-		if g.is_aiming() and g.expected_fire_t() < bt:
-			bt = g.expected_fire_t()
-			best = g
+## 지금 보여야 할 발사 타이밍 원 전부 — 총잡이는 조준 중일 때 하나, 철견은 연사의 탄마다 하나
+## { pos(총구), remaining, aim_time, locked, k(고정까지 진행 0~1), parryable, fire_t, owner, aim, t }
+static func approach_infos(tree: SceneTree) -> Array:
+	var out := []
+	for a in tree.get_nodes_in_group("aimers"):
+		if not a.dead:
+			out.append_array(a.approach_infos())
+	return out
+
+
+## 다음에 발사될 탄 (가장 이른 발사 예정) — 이 원만 100% 밝기
+static func next_info(infos: Array) -> Dictionary:
+	var best := {}
+	for i in infos:
+		if best.is_empty() or i.fire_t < best.fire_t:
+			best = i
 	return best
+
+
+## 다음에 쏠 적 (F1 반사 보정 미리보기의 '쏜 적')
+static func next_shooter(tree: SceneTree) -> Enemy:
+	var n := next_info(approach_infos(tree))
+	return n.owner if not n.is_empty() else null
 
 
 ## 남은 시간(초) → 줄어드는 원 반지름. 선형: 6 + (40 - 6) × (남은 시간 / AIM_TIME). aim = 그 총잡이의 조준 시간
@@ -200,24 +222,24 @@ static func approach_radius(remaining: float, aim := -1.0) -> float:
 	return A.APPROACH_TARGET_RADIUS + (A.APPROACH_START_RADIUS - A.APPROACH_TARGET_RADIUS) * clampf(remaining / aim, 0.0, 1.0)
 
 
-## 원 한 세트 (목표 원 + 판정 창 띠 + 줄어드는 원). s = 축소 배율, dim = 밝기 배율
-static func draw_approach(ci: CanvasItem, c: Vector2, g: EnemyGunner, s := 1.0, dim := 1.0) -> void:
+## 원 한 세트 (목표 원 + 판정 창 띠 + 줄어드는 원). info = approach_infos 의 한 항목, s = 축소 배율, dim = 밝기 배율
+static func draw_approach(ci: CanvasItem, c: Vector2, info: Dictionary, s := 1.0, dim := 1.0) -> void:
 	var A: Dictionary = Config.approach
 	var rt: float = A.APPROACH_TARGET_RADIUS * s
-	var aim: float = g.cfg.AIM_TIME
+	var aim: float = info.aim_time
 	var rb: float = approach_radius(Config.shot.PARRY_EARLY, aim) * s    # 띠 바깥 = PARRY_EARLY 초 전의 원 크기
-	var r: float = approach_radius(g.remaining(), aim) * s
+	var r: float = approach_radius(info.remaining, aim) * s
 	c = c.round()
 	# 패링 판정 창 띠
 	ci.draw_arc(c, (rt + rb) / 2.0, 0.0, TAU, 40, Color(1, 1, 1, A.BAND_ALPHA * dim), rb - rt)
 	# 목표 원 (1px 흰 외곽선)
 	ci.draw_arc(c, rt, 0.0, TAU, 32, Color(1, 1, 1, dim), 1.0)
 	# 줄어드는 원: 고정 전 빨강 1px (투명도 30% → 100%), 고정부터 흰색 2px
-	if g.is_locked():
+	if info.locked:
 		ci.draw_arc(c, r, 0.0, TAU, 40, Color(1, 1, 1, dim), 2.0)
 	else:
-		var k := clampf(g.t / g.lock_start(), 0.0, 1.0)
-		var col: Color = Config.colors.attack if g.next_parryable else Config.colors.unparryable
+		var k: float = info.k
+		var col: Color = Config.colors.attack if info.parryable else Config.colors.unparryable
 		col.a = lerpf(A.ALPHA_MIN, 1.0, k) * dim
 		ci.draw_arc(c, r, 0.0, TAU, 48, col, 1.0)
 
@@ -277,10 +299,13 @@ func _draw() -> void:
 		draw_arc(r.pos, rad, 0.0, TAU, 48, Color(c, c.a * 0.3), w + 3.0)   # 빛 번짐
 		draw_arc(r.pos, rad, 0.0, TAU, 48, c, w)
 	# 발사 타이밍 원: 화면 안의 조준 중인 총잡이 (다음 발사만 100%, 나머지 50%)
-	var next := next_shooter(get_tree())
-	for g in get_tree().get_nodes_in_group("gunners"):
-		if Settings.approach and g.is_aiming() and not is_offscreen(g.muzzle()):
-			draw_approach(self, g.muzzle(), g, 1.0, 1.0 if g == next else A.DIM_ALPHA)
+	# (철견 연사: 탄마다 원이 시간차를 두고 함께 줄어듦 — 늦은 탄부터 그려 다음 탄 원이 맨 위에)
+	var infos := approach_infos(get_tree())
+	var next := next_info(infos)
+	infos.sort_custom(func(a, b): return a.fire_t > b.fire_t)
+	for info in infos:
+		if Settings.approach and not is_offscreen(info.pos):
+			draw_approach(self, info.pos, info, 1.0, 1.0 if info == next else A.DIM_ALPHA)
 	# 발사 순간 흰 번쩍 / 패링 성공 노란 원 퍼짐
 	var rt: float = A.APPROACH_TARGET_RADIUS
 	for fx in _approach_fx:
@@ -288,6 +313,15 @@ func _draw() -> void:
 		if fx.kind == "flash":
 			draw_circle(c, rt, Color(1, 1, 1, 0.85))
 			draw_arc(c, rt, 0.0, TAU, 32, Color.WHITE, 2.0)
+		elif fx.kind == "scatter":
+			# 원이 8조각으로 깨져 바깥으로 흩어지며 사라짐
+			var u: float = float(fx.f) / maxf(1.0, A.SCATTER_TIME * Config.fps)
+			var col: Color = fx.color
+			col.a = 1.0 - u
+			var rr: float = fx.r + 10.0 * (1.0 - (1.0 - u) * (1.0 - u))
+			for i in 8:
+				var a0 := TAU * i / 8.0 + u * 0.6
+				draw_arc(c + Vector2.from_angle(a0 + 0.2) * 6.0 * u, rr, a0, a0 + 0.45, 6, col, 1.0)
 		else:
 			var u: float = float(fx.f) / maxf(1.0, A.SUCCESS_TIME * Config.fps)
 			var col: Color = Config.colors.parry
