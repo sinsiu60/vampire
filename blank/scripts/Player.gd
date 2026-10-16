@@ -267,26 +267,53 @@ func _draw() -> void:
 
 # 흰 실루엣. 발을 기준으로 기울이고(lean) 늘이고 줄임(sx, sy). 방향은 x 배율 부호로
 func _draw_body() -> void:
-	draw_set_transform(Vector2.ZERO, _lean, Vector2(facing * _sx, _sy))
+	for part in body_parts():
+		draw_set_transform_matrix(part.xf)
+		for sh in part.shapes:
+			draw_rect(sh[1], part.body)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+## 지금 자세의 실루엣 [{ xf, shapes, body, rim }] (노드 로컬) — 그리기와 사망 시 두 조각에 같이 씀
+func body_parts() -> Array:
 	var col: Color = Config.colors.player
+	var sh := []
 	if not is_on_floor():
 		var tuck := 1 if velocity.y < 0.0 else 0
-		draw_rect(Rect2(-3, -6, 2, 5 - tuck), col)
-		draw_rect(Rect2(1, -6, 2, 4), col)
-		draw_rect(Rect2(2, -3, 2, 1), col)
+		sh.append(["rect", Rect2(-3, -6, 2, 5 - tuck)])
+		sh.append(["rect", Rect2(1, -6, 2, 4)])
+		sh.append(["rect", Rect2(2, -3, 2, 1)])
 	else:
 		var lift1 := maxf(0.0, roundf(-cos(_run_phase) * 1.5))
 		var lift2 := maxf(0.0, roundf(cos(_run_phase) * 1.5))
-		draw_rect(Rect2(-3 + roundf(sin(_run_phase) * 2.5), -6, 2, 6 - lift1), col)
-		draw_rect(Rect2(roundf(sin(_run_phase + PI) * 2.5), -6, 2, 6 - lift2), col)
-	draw_rect(Rect2(-3, -13, 6, 7), col)      # 몸통
-	draw_rect(Rect2(-2, -17, 5, 4), col)      # 머리
-	draw_rect(Rect2(-4, -17, 2, 2), col)      # 뒷머리
+		sh.append(["rect", Rect2(-3 + roundf(sin(_run_phase) * 2.5), -6, 2, 6 - lift1)])
+		sh.append(["rect", Rect2(roundf(sin(_run_phase + PI) * 2.5), -6, 2, 6 - lift2)])
+	sh.append(["rect", Rect2(-3, -13, 6, 7)])      # 몸통
+	sh.append(["rect", Rect2(-2, -17, 5, 4)])      # 머리
+	sh.append(["rect", Rect2(-4, -17, 2, 2)])      # 뒷머리
 	# 칼집 (베지 않을 때 등 뒤에 비스듬히)
 	if not is_slashing() and _trail.is_empty():
 		for p in [Vector2(-4, -11), Vector2(-5, -10), Vector2(-6, -9), Vector2(-3, -12)]:
-			draw_rect(Rect2(p, Vector2.ONE), col)
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			sh.append(["rect", Rect2(p, Vector2.ONE)])
+	var xf := Transform2D(_lean, Vector2(facing * _sx, _sy), 0.0, Vector2.ZERO)
+	return [{ "xf": xf, "shapes": sh, "body": col, "rim": Color(0, 0, 0, 0) }]
+
+
+## 흰 반달 궤적을 넘겨받고 지움 (처치하면 그 자리에 3겹 킬 궤적) — { angle, flip } 또는 빈 Dictionary
+func take_trail() -> Dictionary:
+	var t := _trail
+	_trail = {}
+	queue_redraw()
+	return t
+
+
+## 처치 반동: 지금 속도만 정해 두면 킬 스톱이 끝난 뒤부터 적용됨
+func recoil(angle: float) -> void:
+	var J: Dictionary = Config.juice
+	_dash_t = 0.0
+	velocity.x = -cos(angle) * J.RECOIL_SPEED
+	if not is_on_floor():
+		velocity.y = -sin(angle) * J.RECOIL_SPEED * 0.5 - J.RECOIL_LIFT
 
 
 # 반달 베기 궤적: SLASH_TRAIL_HOLD 프레임 동안 꽉 찬 채로 보인 뒤 빠르게 가늘어지며 사라짐

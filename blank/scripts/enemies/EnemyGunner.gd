@@ -110,12 +110,12 @@ func _physics_process(delta: float) -> void:
 	queue_redraw()
 
 
-func _draw() -> void:
+func _draw_pose() -> void:
 	var col: Dictionary = Config.colors
 	var C := cfg
 	var atk: Color = col.attack if next_parryable else col.unparryable
 	# 조준선: 0.8 → 0.15초 전 1px → 2px, 투명도 40% → 100%. 고정 후 흰색 2번 깜빡
-	if is_aiming():
+	if is_aiming() and not capturing():
 		var k := clampf(t / lock_start(), 0.0, 1.0)
 		var c := atk
 		c.a = lerpf(C.LASER_ALPHA_MIN, 1.0, k)
@@ -130,7 +130,7 @@ func _draw() -> void:
 		draw_line(to_local(muzzle()), to_local(laser_end), c, width)
 	# 몸 (오른쪽을 볼 때 기준으로 그리고 facing 으로 뒤집음)
 	var base := Transform2D(0.0, Vector2(facing, 1), 0.0, Vector2.ZERO)
-	draw_set_transform_matrix(base)
+	set_xf(base)
 	draw_rimmed([
 		["rect", Rect2(-3, -8, 2, 8)], ["rect", Rect2(1, -8, 2, 8)],
 		["poly", PackedVector2Array([Vector2(-3, -16), Vector2(3, -16), Vector2(3, -6), Vector2(-5, -5)])],  # 뒤로 날리는 긴 코트
@@ -140,13 +140,13 @@ func _draw() -> void:
 	], col.enemy_body, col.enemy_rim)
 	# 팔 + 총 (조준 각도로 회전)
 	var local_aim := aim if facing > 0 else PI - aim
-	draw_set_transform_matrix(base * Transform2D(local_aim, Vector2(1, -14)))
+	set_xf(base * Transform2D(local_aim, Vector2(1, -14)))
 	draw_rimmed([
 		["rect", Rect2(0, -1, 5, 2)], ["rect", Rect2(4, -2, 8, 3)],
 		["rect", Rect2(5, 1, 2, 2)], ["rect", Rect2(12, -1, 3, 1)],   # 손잡이, 총열
 	], col.enemy_body, col.enemy_rim)
 	# 조준 고정 = "지금 친다": 총구에 작은 빨간 빛이 맺힘
-	if is_locked():
+	if is_locked() and not capturing():
 		var u := clampf((t - lock_start()) / C.AIM_LOCK_TIME, 0.0, 1.0)
 		draw_circle(Vector2(15, 0), 1.0 + u * 1.5, atk)
-	draw_set_transform_matrix(Transform2D.IDENTITY)
+	set_xf(Transform2D.IDENTITY)

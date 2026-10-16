@@ -2,13 +2,18 @@ extends Node2D
 class_name Effects
 ## 월드 연출 레이어 (적·플레이어 위에 그림).
 ## - 탄 궤적·총구 섬광: 실제 시간 프레임 수만큼 (히트스톱 중에도 보임)
-## - 불꽃 파티클: 월드 시간 (히트스톱이면 멈춤)
+## - 파티클(불꽃·피·흙먼지): 월드 시간 (히트스톱이면 멈춤). 킬 스톱 중엔 실제 시간으로 움직이고
+##   피(slow_in_stop)만 BLOOD_STOP_SPEED 배로 천천히 퍼짐 → 해제 후 떨어져 지형에 닿으면 자국(Gore)
+## - 빛줄기 (Slash Beam): 실제 시간 프레임. 머리가 지형 윗면을 지날 때 흙먼지
 ## - 발사 타이밍 원 (Approach Circle): 조준 중인 총잡이마다 총구에 그림 + 발사 번쩍 / 패링 성공 퍼짐
 ## - 충격파 링: 월드 시간 (패링 칼 끝)
-## (빛줄기·피·조각 등 킬 연출은 6단계에서 여기에 추가)
+
+var room: Room
+var gore: Gore
 
 var _tracers: Array = []         # { a, b, width, color, frames, f, muzzle }
-var _sparks: Array = []          # { pos, vel, life, max, color }
+var _sparks: Array = []          # { pos, vel, life, max, color, size, grav, glow, streak, stain, slow, drag }
+var _beams: Array = []           # { o, d, len, f, dust: [{ t, pos, done }], born }
 var _approach_fx: Array = []     # { kind: "flash" | "success", pos, f }
 var _rings: Array = []           # { pos, radius, time, t, width, color }
 
@@ -22,13 +27,64 @@ func add_tracer(a: Vector2, b: Vector2, width: float, color: Color, frames: int,
 	_tracers.append({ "a": a, "b": b, "width": width, "color": color, "frames": frames, "f": 0, "muzzle": muzzle })
 
 
-## pos 에서 angle ± spread 방향으로 n 개의 작은 불꽃
-func burst(pos: Vector2, n: int, color: Color, speed: float, angle := 0.0, spread := PI, life := 0.3) -> void:
+## 파티클 하나. opts: size(1) grav(0) glow streak stain(지형에 닿으면 자국) slow(킬 스톱 중 천천히)
+func spawn(pos: Vector2, vel: Vector2, life: float, color: Color, opts := {}) -> void:
+	var stain: bool = opts.get("stain", false)
+	_sparks.append({ "pos": pos, "vel": vel, "life": life, "max": life, "color": color,
+		"size": opts.get("size", 1.0), "grav": opts.get("grav", 0.0), "glow": opts.get("glow", false),
+		"streak": opts.get("streak", false), "stain": stain, "slow": opts.get("slow", false), "drag": not stain })
+
+
+## pos 에서 angle ± spread 방향으로 n 개 (opts 는 spawn 과 같음)
+func burst(pos: Vector2, n: int, color: Color, speed: float, angle := 0.0, spread := PI, life := 0.4, opts := {}) -> void:
 	for i in n:
 		var a := angle + randf_range(-1.0, 1.0) * spread
 		var v := speed * randf_range(0.35, 1.0)
-		var l := life * randf_range(0.6, 1.0)
-		_sparks.append({ "pos": pos, "vel": Vector2.from_angle(a) * v, "life": l, "max": l, "color": color })
+		spawn(pos, Vector2.from_angle(a) * v, randf_range(0.6, 1.0) * life, color, opts)
+
+
+## 빛줄기: 타격 지점 hit 을 지나 angle 방향으로, 화면(view, 전역 사각형) + 여유 밖에서 밖으로.
+## 머리는 빨리 나가고(ease-out) 꼬리는 늦게 따라오며(ease-in) BEAM_FRAMES 프레임에 사라짐
+func beam(hit: Vector2, angle: float, view: Rect2) -> void:
+	var K: Dictionary = Config.kill
+	var d := Vector2.from_angle(angle)
+	var r := view.grow(K.BEAM_MARGIN)
+	var back := _exit_dist(hit, -d, r)
+	var fwd := _exit_dist(hit, d, r)
+	var o := hit - d * back
+	var len := back + fwd
+	var dust := []
+	if room != null:
+		for h in room.surface_hits(o, d, len):
+			dust.append({ "t": h.t, "pos": h.pos, "done": false })
+	_beams.append({ "o": o, "d": d, "len": len, "f": 0, "dust": dust, "born": Engine.get_physics_frames() })
+
+
+static func _exit_dist(p: Vector2, d: Vector2, r: Rect2) -> float:
+	var t := INF
+	if d.x > 0.0: t = minf(t, (r.end.x - p.x) / d.x)
+	elif d.x < 0.0: t = minf(t, (r.position.x - p.x) / d.x)
+	if d.y > 0.0: t = minf(t, (r.end.y - p.y) / d.y)
+	elif d.y < 0.0: t = minf(t, (r.position.y - p.y) / d.y)
+	return maxf(0.0, t)
+
+
+## 머리/꼬리 위치 (시작점에서의 거리)
+static func beam_span(b: Dictionary) -> Vector2:
+	var u: float = (b.f + 1.0) / (Config.kill.BEAM_FRAMES + 1.0)
+	return Vector2(b.len * (1.0 - pow(1.0 - u, 3.0)), b.len * u * u * u)
+
+
+func beam_count() -> int:
+	return _beams.size()
+
+
+func particle_count(color_list: Array) -> int:
+	var n := 0
+	for s in _sparks:
+		if color_list.has(s.color):
+			n += 1
+	return n
 
 
 ## 처음에 확 퍼지고 감속하는 원 (3 → radius)
@@ -54,20 +110,71 @@ func _physics_process(delta: float) -> void:
 		fx.f += 1
 	var success_frames := roundi(A.SUCCESS_TIME * Config.fps)
 	_approach_fx = _approach_fx.filter(func(fx): return fx.f < (A.FLASH_FRAMES if fx.kind == "flash" else success_frames))
-	# 월드 시간
-	if not TimeManager.frozen:
-		for s in _sparks:
-			s.life -= delta
-			s.vel *= 0.96
-			s.pos += s.vel * delta
-		_sparks = _sparks.filter(func(s): return s.life > 0.0)
-		for r in _rings:
-			r.t += delta
-		_rings = _rings.filter(func(r): return r.t < r.time)
+	_update_beams()
+	# 월드 시간 (킬 스톱 중엔 실제 시간)
+	if TimeManager.kill_stopped:
+		_update_particles(TimeManager.real_delta(), true)
+		_update_rings(TimeManager.real_delta())
+	elif not TimeManager.frozen:
+		_update_particles(delta, false)
+		_update_rings(delta)
 	queue_redraw()
 
 
 ## 다음에 발사할 총잡이 (가장 이른 발사 예정)
+func _update_rings(dt: float) -> void:
+	for r in _rings:
+		r.t += dt
+	_rings = _rings.filter(func(r): return r.t < r.time)
+
+
+func _update_particles(dt: float, stopped: bool) -> void:
+	var keep := []
+	var bs: float = Config.kill.BLOOD_STOP_SPEED
+	for s in _sparks:
+		if stopped and s.slow:
+			s.pos += s.vel * dt * bs
+			keep.append(s)
+			continue
+		s.life -= dt
+		if s.life <= 0.0:
+			continue
+		s.vel.y += s.grav * dt
+		if s.drag:
+			s.vel.x *= 0.96
+			s.vel.y *= 0.98
+		s.pos += s.vel * dt
+		# 피: 바닥/벽/발판에 닿으면 자국으로 남기고 사라짐
+		if s.stain and room != null and room.solid_at(s.pos):
+			if gore != null:
+				gore.add_stain(s.pos, s.vel, s.color)
+			continue
+		keep.append(s)
+	_sparks = keep
+
+
+func _update_beams() -> void:
+	var K: Dictionary = Config.kill
+	var C: Dictionary = Config.colors
+	var now := Engine.get_physics_frames()
+	for b in _beams:
+		var head: float = beam_span(b).x
+		for d in b.dust:
+			if d.done or d.t > head:
+				continue
+			d.done = true
+			# 흙먼지: 바닥에서 위로 뭉게뭉게, 빛줄기 진행 방향으로 살짝 끌려감
+			for i in K.DUST_COUNT:
+				var a := -PI / 2.0 + randf_range(-1.1, 1.1)
+				var v: float = K.DUST_SPEED * randf_range(0.3, 1.0)
+				spawn(d.pos + Vector2(randf_range(-3, 3), -1), Vector2(cos(a) * v + b.d.x * 40.0, sin(a) * v),
+					randf_range(0.35, 0.7), C.dust[i % C.dust.size()], { "size": 2.0 if randf() < 0.5 else 3.0, "grav": 60.0 })
+		# 생긴 틱에는 프레임을 넘기지 않음 → 첫 프레임(f=0)부터 BEAM_FRAMES 장이 모두 그려짐
+		if now > b.born:
+			b.f += 1
+	_beams = _beams.filter(func(b): return b.f < K.BEAM_FRAMES)
+
+
 static func next_shooter(tree: SceneTree) -> EnemyGunner:
 	var best: EnemyGunner = null
 	var bt := INF
@@ -122,11 +229,34 @@ func _draw() -> void:
 		if tr.muzzle and tr.f < 2:
 			draw_circle(tr.a, 5.0 - tr.f * 2.0, Color(tr.color, 0.5))
 			draw_circle(tr.a, 3.0 - tr.f, Color.WHITE)
-	# 불꽃
+	# 파티클
 	for s in _sparks:
 		var c: Color = s.color
 		c.a = minf(1.0, s.life / s.max * 1.5)
-		draw_rect(Rect2(s.pos.round(), Vector2.ONE), c)
+		var sz: float = s.size
+		if s.streak:
+			# 속도 방향으로 늘어진 불꽃 선
+			var tail: Vector2 = s.pos - s.vel * 0.035
+			if s.glow:
+				draw_line(s.pos, tail, Color(c, c.a * 0.3), sz + 2.0)
+			draw_line(s.pos, tail, c, sz)
+		else:
+			var r := Rect2((s.pos - Vector2(sz, sz) / 2.0).round(), Vector2(sz, sz))
+			if s.glow:
+				draw_rect(r.grow(1.0), Color(c, c.a * 0.3))
+			draw_rect(r, c)
+	# 빛줄기: 하늘색 테두리 + 글로우, 흰 중심
+	var K: Dictionary = Config.kill
+	var CC: Dictionary = Config.colors
+	for b in _beams:
+		var sp := beam_span(b)
+		if sp.x - sp.y < 0.5:
+			continue
+		var p0: Vector2 = b.o + b.d * sp.y
+		var p1: Vector2 = b.o + b.d * sp.x
+		draw_line(p0, p1, Color(CC.beam_edge, 0.18), K.BEAM_WIDTH + 2.0 + K.BEAM_GLOW)
+		draw_line(p0, p1, CC.beam_edge, K.BEAM_WIDTH + 2.0)
+		draw_line(p0, p1, CC.beam_core, K.BEAM_WIDTH)
 	# 충격파 링
 	for r in _rings:
 		var u: float = r.t / r.time

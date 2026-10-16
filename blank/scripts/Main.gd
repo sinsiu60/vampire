@@ -19,6 +19,9 @@ var seq_active: bool:             # 패링 슬로우 시퀀스 중 — 그동안
 	get: return seq.active
 var zoom := 1.0                   # 시간 복귀 동안 살짝 줌인 → 명중 후 ZOOM_OUT_FRAMES 동안 원상복구
 var _shake := { "amp": 0.0, "time": 0.0, "t": 0.0, "angle": 0.0 }   # 방향성 흔들림 (패링·사망)
+var _kill_shake := { "f": 0, "total": 0, "angle": 0.0 }               # 킬 흔들림 (매 프레임 랜덤, 공격 방향 치우침)
+var _shake_frame := -1            # 이번 틱 흔들림을 이미 갱신했으면 그 틱 번호
+var gore: Gore
 
 
 func _ready() -> void:
@@ -28,6 +31,14 @@ func _ready() -> void:
 	player.global_position = room.spawn_position()
 	player.died.connect(_on_player_died)
 	seq.finished.connect(_on_seq_finished)
+	# 처치 흔적 레이어: 방 안, 지형 바로 위 · 적 아래
+	gore = Gore.new()
+	gore.name = "Gore"
+	gore.room = room
+	room.add_child(gore)
+	room.move_child(gore, room.terrain.get_index() + 1)
+	effects.room = room
+	effects.gore = gore
 	screen_fx.seq = seq
 	var size := room.size_px()
 	camera.limit_left = 0
@@ -60,7 +71,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	_update_shake(1.0 / Config.fps)
+	if _shake_frame != Engine.get_physics_frames():
+		_update_shake(1.0 / Config.fps)
 	_update_zoom()
 	if TimeManager.frozen:
 		return
@@ -90,13 +102,32 @@ func add_shake(amp: float, time: float, angle: float) -> void:
 	camera.offset = Vector2.from_angle(angle) * amp * float(Config.settings.shake)   # 첫 프레임에 바로 밀림
 
 
+## 화면 흔들림 = 방향성 흔들림(패링/사망) + 킬 흔들림. 옵션의 강도 배율 적용. 실제 시간 한 틱에 한 번
 func _update_shake(dt: float) -> void:
+	_shake_frame = Engine.get_physics_frames()
 	var sh := _shake
 	var o := Vector2.ZERO
 	if sh.t > 0.0:
 		sh.t = maxf(0.0, sh.t - dt)
 		o = Vector2.from_angle(sh.angle) * sh.amp * _shake_envelope(1.0 - sh.t / sh.time)
+	# 킬 흔들림: 킬 스톱 16f 동안 (1 - f/total)^2.5 로 감쇠, 해제 후 6f 안에 0
+	var ks := _kill_shake
+	if ks.f < ks.total:
+		var K: Dictionary = Config.kill
+		var amp: float = K.SHAKE_START * pow(1.0 - float(ks.f) / ks.total, K.SHAKE_CURVE)
+		var bias: float = K.SHAKE_BIAS
+		var v := Vector2.from_angle(ks.angle) * bias + Vector2.from_angle(randf() * TAU) * (1.0 - bias)
+		if v.length() < 1e-6:
+			v = Vector2.RIGHT
+		o += v.normalized() * amp * randf_range(0.6, 1.0)
+		ks.f += 1
 	camera.offset = o * float(Config.settings.shake)
+
+
+## 킬 흔들림 시작 (처치한 프레임부터 바로 흔들림)
+func start_kill_shake(angle: float, stop_frames: int) -> void:
+	_kill_shake = { "f": 0, "total": stop_frames + Config.kill.SHAKE_TAIL_FRAMES, "angle": angle }
+	_update_shake(0.0)
 
 
 func _update_zoom() -> void:
@@ -204,12 +235,12 @@ func fire_shot(g: EnemyGunner) -> void:
 	var m := g.muzzle()
 	var hit := hitscan(m, g.aim, Sh.RANGE, true, false)
 	effects.add_tracer(m, hit.pos, Sh.TRACER_WIDTH, col, Sh.TRACER_FRAMES, true)
-	effects.burst(m, 5, col, 90.0, g.aim, 0.5, 0.12)
+	effects.burst(m, 5, col, 90.0, g.aim, 0.5, 0.12, { "glow": true })
 	effects.approach_flash(m)        # 원 두 개가 겹치며 1프레임 번쩍 (빗나가면 그대로 사라짐)
 	g.velocity.x -= cos(g.aim) * 40.0   # 반동
 	Audio.shot()
 	if hit.wall:
-		effects.burst(hit.pos, 7, col, 110.0, g.aim + PI, 1.1, 0.2)
+		effects.burst(hit.pos, 7, col, 110.0, g.aim + PI, 1.1, 0.2, { "glow": true, "streak": true })
 	if hit.player:
 		pending_shots.append({ "shooter": g, "muzzle": m, "fire_t": TimeManager.world_time,
 			"angle": g.aim, "parryable": g.next_parryable, "done": false })
@@ -274,8 +305,8 @@ func parry_fx(pos: Vector2, angle: float) -> void:
 	effects.ring(pos, F.ring_radius, F.ring_time, F.ring_width, C.parry)
 	effects.ring(pos, F.ring_radius * 0.55, F.ring_time * 0.7, F.ring_width - 1.0, C.parry_hot)
 	add_shake(J.SHAKE_PARRY, J.SHAKE_TIME, angle)
-	effects.burst(pos, 14, C.parry, 260.0, angle, 1.3, 0.28)
-	effects.burst(pos, 6, C.parry_hot, 120.0, 0.0, PI, 0.35)
+	effects.burst(pos, 14, C.parry, 260.0, angle, 1.3, 0.28, { "glow": true, "streak": true })
+	effects.burst(pos, 6, C.parry_hot, 120.0, 0.0, PI, 0.35, { "glow": true })
 	Audio.parry()
 
 
@@ -318,10 +349,10 @@ func _reflect_hit(target: Enemy, aim: float) -> void:
 		hit_pos = r.pos
 		victim = r.enemy
 		if r.wall:
-			effects.burst(hit_pos, 8, Config.colors.parry, 120.0, aim + PI, 1.1, 0.22)
+			effects.burst(hit_pos, 8, Config.colors.parry, 120.0, aim + PI, 1.1, 0.22, { "glow": true, "streak": true })
 	effects.add_tracer(o, hit_pos, Sh.REFLECT_TRACER_WIDTH, Config.colors.parry, Sh.TRACER_FRAMES)
 	if victim != null:
-		_kill_enemy(victim, angle)
+		_kill_enemy(victim, angle, "reflect")
 
 
 # ================================================================ 근접 · 처치 · 사망
@@ -356,15 +387,55 @@ func _resolve_combat() -> void:
 func _parry_melee(e: Enemy) -> void:
 	player.slash_used = true
 	parry_fx(player.tip(), player.slash_angle)
-	_kill_enemy(e, player.slash_angle)
+	_kill_enemy(e, player.slash_angle, "parry")
 
 
-# 처치 (16프레임 킬 연출·조각·피는 6단계)
-func _kill_enemy(e: Enemy, angle: float) -> void:
+## 적 처치: 킬 연출 타임라인 (Config.kill)
+##  킬 스톱 16f · 빛줄기+흙먼지 · 3겹 궤적 · 피 구름 · 킬 흔들림 · 흰 섬광 두 조각(해제 후 날아감) · 반동 · 처치음
+##  cause: "slash"(직접 베기) | "parry"(근접 패링) | "reflect"(반사탄 — 그 틱 월드 갱신 전이라 그 틱도 멈춤)
+func _kill_enemy(e: Enemy, angle: float, cause := "slash") -> void:
 	if e.dead:
 		return
+	var C: Dictionary = Config.colors
+	var K: Dictionary = Config.kill
+	var p := player
+	var by_parry := cause != "slash"
+	var c := e.center()
+	e.set_state("dead")                  # 무기 발광·조준선을 끄고 시체 자세로
+	# 두 조각: 속도는 지금 정해지지만 킬 스톱이 끝나야 움직이기 시작
+	gore.split(e.capture_silhouette(), e.global_position, c, angle, C.parry if by_parry else C.player, 1.0, true)
+	# 1) 킬 스톱
+	var stop: int = K.KILL_HITSTOP_FRAMES
+	TimeManager.kill_stop(stop)
+	if cause == "reflect":
+		TimeManager.freeze_now()
+	# 2) 빛줄기: 타격 지점(적 중심)을 지나 화면 밖에서 화면 밖으로
+	effects.beam(c, angle, view_rect())
+	# 3) 3겹 궤적 (칼로 벤 경우 — 흰 반달 대신) + 반동
+	if cause != "reflect" and not p.dead:
+		var tr := p.take_trail()
+		gore.kill_trail(p.center(), tr.get("angle", angle), tr.get("flip", 1))
+		p.recoil(angle)
+	# 4) 피: 공격 방향 앞쪽 원뿔로 빨간 덩어리 구름 (킬 스톱 중엔 천천히 퍼짐 → 해제 후 떨어져 자국)
+	var n: int = randi_range(K.BLOOD_MIN, K.BLOOD_MAX)
+	var cone := deg_to_rad(K.BLOOD_CONE)
+	for i in n:
+		var a := angle + randf_range(-1.0, 1.0) * cone * (0.55 if randf() < 0.65 else 1.0)   # 가운데가 짙은 구름
+		var v := randf_range(K.BLOOD_SPEED_MIN, K.BLOOD_SPEED_MAX)
+		effects.spawn(c + Vector2(randf_range(-3, 3), randf_range(-4, 4)), Vector2(cos(a) * v, sin(a) * v - 30.0),
+			K.BLOOD_LIFE * randf_range(0.75, 1.0), C.blood[i % C.blood.size()],
+			{ "size": 3.0 if randf() < 0.45 else 2.0, "grav": K.BLOOD_GRAVITY, "stain": true, "slow": true })
+	effects.burst(c, 8, C.parry if by_parry else C.player, 260.0, angle, 0.35, 0.18, { "glow": true, "streak": true })
+	# 5) 킬 흔들림
+	start_kill_shake(angle, stop)
 	Audio.kill()
 	e.die(angle)
+
+
+## 지금 화면에 보이는 월드 사각형
+func view_rect() -> Rect2:
+	var inv := get_viewport().get_canvas_transform().affine_inverse()
+	return inv * Rect2(Vector2.ZERO, Vector2(Config.view.w, Config.view.h))
 
 
 func _kill_player(angle: float) -> void:
@@ -372,6 +443,9 @@ func _kill_player(angle: float) -> void:
 	seq.cancel()
 	player.input_locked = false
 	add_shake(Config.fx.death_shake, 0.2, angle)
+	# 플레이어도 두 조각 (절단선 빨강, 약하게 벌어짐) + 흰 파편
+	gore.split(player.body_parts(), player.global_position, player.center(), angle, Config.colors.attack, 1.1)
+	effects.burst(player.center(), 16, Config.colors.player, 180.0, angle, 1.0, 0.6, { "grav": 400.0 })
 	player.die(angle)
 
 

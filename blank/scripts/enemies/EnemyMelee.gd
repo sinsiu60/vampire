@@ -100,12 +100,12 @@ func _weapon_hot() -> bool:
 	return false
 
 
-func _draw() -> void:
+func _draw_pose() -> void:
 	var col: Dictionary = Config.colors
 	var wa := _weapon_angle()
 	var atk: Color = col.attack if parryable else col.unparryable
 	var base := Transform2D(0.0, Vector2(facing, 1), 0.0, Vector2.ZERO)
-	draw_set_transform_matrix(base)
+	set_xf(base)
 	var cr := 1.0 if state == "windup" else 0.0
 	# 몸통 실루엣
 	draw_rimmed([
@@ -116,7 +116,7 @@ func _draw() -> void:
 		["poly", PackedVector2Array([Vector2(-3, -29 + cr), Vector2(4, -29 + cr), Vector2(5, -23 + cr), Vector2(-4, -23 + cr)])],      # 투구
 	], col.enemy_body, col.enemy_rim)
 	# 휘두른 궤적 (빨강 반투명 부채꼴)
-	if state == "attack":
+	if state == "attack" and not capturing():
 		var arc := PackedVector2Array()
 		var steps := 12
 		for i in steps + 1:
@@ -129,7 +129,7 @@ func _draw() -> void:
 		c.a = 0.55
 		draw_colored_polygon(arc, c)
 	# 무기 (어깨 축으로 회전)
-	draw_set_transform_matrix(base * Transform2D(wa, Vector2(7, -17)))
+	set_xf(base * Transform2D(wa, Vector2(7, -17)))
 	var blade := [
 		["rect", Rect2(0, -1, 8, 2)],
 		["poly", PackedVector2Array([Vector2(7, -3), Vector2(19, -5), Vector2(23, 0), Vector2(19, 4), Vector2(7, 4)])],
@@ -138,4 +138,4 @@ func _draw() -> void:
 		draw_rimmed(blade, atk, Color(atk, 0.35))     # 발광 대신 같은 색 옅은 테두리
 	else:
 		draw_rimmed(blade, col.enemy_weapon, col.enemy_rim)
-	draw_set_transform_matrix(Transform2D.IDENTITY)
+	set_xf(Transform2D.IDENTITY)

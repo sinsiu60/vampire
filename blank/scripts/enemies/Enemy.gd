@@ -11,6 +11,8 @@ var state := "idle"
 var t := 0.0                     # 지금 상태에 들어온 뒤 경과 시간 (월드 시간)
 var dead := false
 
+var _rec = null                  # 실루엣 기록 중이면 Array (capture_silhouette)
+var _xf := Transform2D.IDENTITY  # 지금 그리기 변환 (기록용)
 
 
 func _setup(c: Dictionary) -> void:
@@ -66,7 +68,7 @@ func attack_box() -> Rect2:
 	return Rect2()
 
 
-## 처치됨 (연출은 6단계에서 Effects 로)
+## 처치됨 (킬 연출은 Main._kill_enemy 가 이 적의 실루엣으로 만든 두 조각으로)
 func die(_angle: float) -> void:
 	if dead:
 		return
@@ -76,9 +78,43 @@ func die(_angle: float) -> void:
 
 
 # ---------------------------------------------------------------- 그리기 도우미
+## 하위 클래스가 지금 자세를 그림. 조준선·공격 궤적처럼 실루엣이 아닌 것은 `if not capturing():` 안에서
+func _draw_pose() -> void:
+	pass
+
+
+func _draw() -> void:
+	_xf = Transform2D.IDENTITY
+	_draw_pose()
+
+
+func capturing() -> bool:
+	return _rec != null
+
+
+## 그리기 변환 (draw_set_transform_matrix 대신 — 기록 중엔 저장만)
+func set_xf(m: Transform2D) -> void:
+	_xf = m
+	if _rec == null:
+		draw_set_transform_matrix(m)
+
+
+## 지금 자세의 실루엣: [{ xf, shapes, body, rim }] (노드 로컬 좌표). 두 조각 만들 때 사용
+func capture_silhouette() -> Array:
+	_rec = []
+	_xf = Transform2D.IDENTITY
+	_draw_pose()
+	var out: Array = _rec
+	_rec = null
+	return out
+
+
 ## 모양 목록 [[ "rect", Rect2 ] | [ "poly", PackedVector2Array ]] 을
 ## 림 색으로 상하좌우 1px 밀어 그린 뒤 본체 색으로 덮음 → 어두운 실루엣 + 1px 테두리
 func draw_rimmed(shapes: Array, body: Color, rim: Color) -> void:
+	if _rec != null:
+		_rec.append({ "xf": _xf, "shapes": shapes, "body": body, "rim": rim })
+		return
 	for off in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
 		_draw_shapes(shapes, rim, off)
 	_draw_shapes(shapes, body, Vector2.ZERO)

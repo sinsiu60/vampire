@@ -54,7 +54,7 @@ offset_right = 472.0
 offset_bottom = 20.0
 theme_override_colors/font_color = Color(0.372549, 0.847059, 1, 1)
 theme_override_font_sizes/font_size = 8
-text = "5단계 — 원이 띠 안에 들어올 때(총을 쏘는 순간) 베면 패링 → 슬로우 → 반사 · 칼이 닿는 순간 베면 근접 패링 · R 재시작"
+text = "6단계 — 원이 띠 안에 들어올 때(총을 쏘는 순간) 베면 패링 → 슬로우 → 반사 · 칼이 닿는 순간 베면 근접 패링 · R 재시작"
 
 [node name="Crosshair" type="Control" parent="HUD"]
 layout_mode = 3
