@@ -4,6 +4,9 @@ extends Node
 ## - Godot 오디오는 Engine.time_scale 의 영향을 받지 않음 → 슬로우모션·히트스톱 중에도 실제 시간으로 재생.
 ## - 페이드도 실제 시간 (Tween.set_ignore_time_scale).
 
+# 오토로드는 프로젝트의 class_name 목록보다 먼저 해석될 수 있어 Synth 를 이름 대신 경로로 불러옴
+const SynthLib := preload("res://scripts/audio/Synth.gd")
+
 const FILES := ["gun_fire", "parry_chang", "slowmo_in", "slowmo_loop", "time_return", "kill_sound"]
 const POOL_SIZE := 16
 
@@ -20,10 +23,10 @@ func _ready() -> void:
 			streams[n] = load(path)
 		else:
 			push_warning("효과음 파일 없음: " + path)
-	streams["swing"] = Synth.swing()
-	streams["death"] = Synth.death()
-	streams["clear"] = Synth.clear()
-	streams["door"] = Synth.door()
+	streams["swing"] = SynthLib.swing()
+	streams["death"] = SynthLib.death()
+	streams["clear"] = SynthLib.clear()
+	streams["door"] = SynthLib.door()
 	for i in POOL_SIZE:
 		var p := AudioStreamPlayer.new()
 		p.process_mode = Node.PROCESS_MODE_ALWAYS

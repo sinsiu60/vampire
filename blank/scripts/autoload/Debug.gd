@@ -93,7 +93,8 @@ func _juice_key(code: int) -> void:
 func _physics_process(_delta: float) -> void:
 	var tree := get_tree()
 	if step:
-		var p: Player = tree.get_first_node_in_group("player")
+		# 오토로드는 프로젝트의 class_name 목록보다 먼저 해석될 수 있어 Player 타입을 쓰지 않음
+		var p = tree.get_first_node_in_group("player")
 		# 멈춘 동안 누른 클릭/점프는 다음에 진행하는 틱에서 처리
 		if p != null and not menu_open:
 			if Input.is_action_just_pressed("slash"):
