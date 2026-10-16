@@ -17,6 +17,8 @@ static var logo_done := false    ## 로고는 실행 후 처음 한 번만
 
 var main: Node = null
 var scale_px := 1
+var _veil: ColorRect             # 방 이동 검은 전환 (게임 화면 위 · 스캔라인 아래)
+var _busy := false
 
 
 func _ready() -> void:
@@ -29,6 +31,13 @@ func _ready() -> void:
 	m.shader = preload("res://shaders/scanline.gdshader")
 	m.set_shader_parameter("alpha", Config.scanline.alpha)
 	lines.material = m
+	var layer := CanvasLayer.new()
+	layer.layer = 50
+	add_child(layer)
+	_veil = ColorRect.new()
+	_veil.color = Color(0, 0, 0, 0)
+	_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_veil)
 	_layout()
 	if logo_done:
 		_start_game()
@@ -52,20 +61,52 @@ func _layout() -> void:
 	screen.position = ((Vector2(win) - sz) / 2.0).floor()
 	lines.position = screen.position
 	lines.size = sz
+	if _veil != null:
+		_veil.position = screen.position
+		_veil.size = sz
 	var m := lines.material as ShaderMaterial
 	m.set_shader_parameter("scale", float(scale_px))
 	m.set_shader_parameter("size", sz)
 
 
-func _start_game() -> void:
+func _start_game(entering := false) -> void:
 	logo_done = true
 	main = MAIN.instantiate()
+	main.entering = entering
 	game.add_child(main)
 
 
-func restart() -> void:
+## 지금 방(GameState) 처음부터 — 사망 후 R, F6
+func restart(entering := false) -> void:
 	Audio.stop_all()
 	if main != null:
 		game.remove_child(main)
 		main.queue_free()
-	_start_game()
+	_start_game(entering)
+
+
+## 출구 → 다음 방: TRANSITION_TIME 동안 검게 (반은 어두워지고, 방을 바꾼 뒤 반은 밝아짐). 실제 시간.
+## 밝아지는 반은 새 방을 다 만든 다음 프레임부터 셈 (방 불러오는 시간이 전환을 잡아먹지 않게)
+func next_room() -> void:
+	if _busy:
+		return
+	_busy = true
+	var half: float = Config.rooms.TRANSITION_TIME / 2.0
+	var tw := create_tween()
+	tw.set_ignore_time_scale(true)
+	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	tw.tween_property(_veil, "color:a", 1.0, half)
+	await tw.finished
+	GameState.advance()
+	restart(true)
+	await get_tree().process_frame
+	var tw2 := create_tween()
+	tw2.set_ignore_time_scale(true)
+	tw2.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	tw2.tween_property(_veil, "color:a", 0.0, half)
+	await tw2.finished
+	_busy = false
+
+
+func transition_alpha() -> float:
+	return _veil.color.a

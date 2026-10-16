@@ -1,7 +1,6 @@
-[gd_scene load_steps=13 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://scripts/Main.gd" id="1_main"]
-[ext_resource type="PackedScene" path="res://scenes/Room.tscn" id="2_room"]
 [ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="3_player"]
 [ext_resource type="Script" path="res://scripts/Crosshair.gd" id="4_cross"]
 [ext_resource type="PackedScene" path="res://scenes/Effects.tscn" id="5_fx"]
@@ -21,8 +20,6 @@ layer = -10
 
 [node name="Backdrop" type="Node2D" parent="BackdropLayer"]
 script = ExtResource("9_bg")
-
-[node name="Room" parent="." instance=ExtResource("2_room")]
 
 [node name="Player" parent="." instance=ExtResource("3_player")]
 

@@ -8,7 +8,21 @@ var layers: Array = []           # [{ tex, factor }]
 var _seed := 0
 
 
+var _room_w := 0.0
+
+
 func _ready() -> void:
+	_auto_build.call_deferred()
+
+
+func _auto_build() -> void:
+	if layers.is_empty():
+		build(Config.room.w)
+
+
+## 방 폭에 맞춰 다시 그림 (Main 이 방을 불러온 뒤 호출) — 도시 층 폭 = 화면 + (방 폭 - 화면) × 배율
+func build(room_w: float) -> void:
+	_room_w = room_w
 	_build()
 
 
@@ -44,9 +58,7 @@ func _build() -> void:
 	var sky := Image.create(W, H, false, Image.FORMAT_RGBA8)
 	for y in H:
 		var u := clampf((y + 0.5) / H / 0.85, 0.0, 1.0)
-		var c: Color = C.sky_top.lerp(C.sky_bottom, u)
-		for x in W:
-			sky.set_pixel(x, y, c)
+		sky.fill_rect(Rect2i(0, y, W, 1), C.sky_top.lerp(C.sky_bottom, u))
 	for i in 60:
 		var sx := floori(_r(0, W))
 		var sy := floori(_r(0, H * 0.55))
@@ -60,7 +72,7 @@ func _build() -> void:
 func _city(factor: float, color: Color, min_h: float, max_h: float, min_w: float, max_w: float, windows: bool) -> Dictionary:
 	var W: int = Config.view.w
 	var H: int = Config.view.h
-	var cw := ceili(W + (Config.room.w - W) * factor) + 16
+	var cw := ceili(W + maxf(0.0, _room_w - W) * factor) + 16
 	var img := Image.create(cw, H, false, Image.FORMAT_RGBA8)
 	var base := 240
 	var x := -4

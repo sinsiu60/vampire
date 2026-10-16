@@ -177,6 +177,16 @@ var anim := {
 
 var debug := { "SLOW_SCALE": 0.1 }
 
+# ---------------------------------------------------------------- 방 진행 (1장 버티컬 슬라이스)
+var rooms := {
+	"TRANSITION_TIME": 0.3,           # 출구 → 다음 방: 검게 전환 (반은 어두워지고 반은 밝아짐)
+	"DOOR_W": 14.0, "DOOR_H": 30.0,   # 문 크기 (발 기준 가운데)
+	"DOOR_OPEN_TIME": 0.2,            # 출구 문판이 올라가는 시간 (실제 시간)
+	"DOOR_LIGHT_TIME": 0.4,           # 문이 열릴 때 빛 기둥이 사라지는 시간
+	"DOOR_LIGHT_H": 70.0,             # 빛 기둥 높이
+	"OPEN_MSG_TIME": 2.0,             # "출구가 열렸다" 표시 시간
+}
+
 # 옵션(흔들림 강도·발사 타이밍 원)과 F2 타격감 토글은 Settings 오토로드
 
 # ---------------------------------------------------------------- 연출 · UI
@@ -189,6 +199,7 @@ var audio := {
 	"dir": "res://sounds/",
 	"SFX_GUN": 0.8, "SFX_PARRY": 1.0, "SFX_SLOWMO_IN": 0.8, "SFX_SLOWMO_LOOP": 0.5,
 	"SFX_TIME_RETURN": 1.0, "SFX_KILL": 1.0,
+	"SFX_DOOR": 0.9,                  # 출구 문 열림 (합성)
 	"GUN_PITCH": Vector2(0.95, 1.05),
 	"KILL_PITCH": Vector2(0.92, 1.08),
 }

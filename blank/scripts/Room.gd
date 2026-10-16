@@ -1,8 +1,13 @@
 extends Node2D
 class_name Room
-## 방: TileMapLayer(Terrain) 로 지형을 그리고, PlayerSpawn 마커로 시작 위치를 알려줌.
-## 타일: (0,0) 지형 윗면, (1,0) 지형 속, (2,0) 일방향 발판 — tiles/terrain.tres
-## 에디터에서 Terrain 레이어에 직접 칠해서 방을 고칠 수 있음.
+## 방 하나 = 씬 하나 (rooms/ch1/room_01.tscn …). 에디터에서 그대로 고칠 수 있게:
+##  Terrain     TileMapLayer — 타일: (0,0) 지형 윗면, (1,0) 지형 속, (2,0) 일방향 발판 (tiles/terrain.tres)
+##  PlayerSpawn Marker2D — 시작 위치 (발)
+##  Entrance / Exit  Door — 입구 / 출구 문 (출구는 적을 모두 처치하면 열림). 없으면 옛 방식(CLEAR 글자)
+##  Enemies     Node2D — 아래에 EnemyMelee / EnemyGunner 인스턴스를 놓으면 됨
+## 방 크기는 Terrain 에 칠한 칸 범위로 정해짐 (카메라 한계·자국 이미지·배경 폭).
+
+@export var room_title := ""     ## 방 설명 (디버그 표시용, 예: "기본 베기 연습")
 
 @onready var terrain: TileMapLayer = $Terrain
 
@@ -11,9 +16,19 @@ func spawn_position() -> Vector2:
 	return $PlayerSpawn.global_position
 
 
-## 방 크기 (px) — 카메라 한계로 사용
+## 방 크기 (px) — 칠한 타일의 오른쪽·아래 끝 (왼쪽·위는 0 부터)
 func size_px() -> Vector2:
-	return Vector2(Config.room.w, Config.room.h)
+	var r := terrain.get_used_rect()
+	var t: float = Config.room.tile
+	return Vector2(maxi(r.end.x, ceili(Config.view.w / t)), maxi(r.end.y, ceili(Config.view.h / t))) * t
+
+
+func exit_door() -> Door:
+	return get_node_or_null("Exit") as Door
+
+
+func entrance_door() -> Door:
+	return get_node_or_null("Entrance") as Door
 
 
 # ---------------------------------------------------------------- 연출용 간단한 지형 판정 (조각·핏방울·빛줄기 흙먼지)

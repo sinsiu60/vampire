@@ -10,9 +10,18 @@ var next_parryable := true       ## 이번 사격이 패링 가능한가 (보라
 var last_fire_t := -INF          ## 마지막 발사 시각 (월드 시간)
 var laser_end := Vector2.ZERO    ## 조준선 끝점 (벽까지, 전역)
 
+# 방마다 바꿀 수 있는 값 (0 = Config.gunner 기본값). 패링 연습 방처럼 여유 있게 만들 때
+@export var aim_time := 0.0      ## 조준 시작 → 발사 (기본 0.8초)
+@export var cooldown := 0.0      ## 발사 후 다음 조준까지 (기본 1.35초)
+@export var first_delay := 0.0   ## 발견 후 첫 조준까지 (기본 0.5초)
+
 
 func _ready() -> void:
-	_setup(Config.gunner)
+	var c: Dictionary = Config.gunner.duplicate()
+	if aim_time > 0.0: c.AIM_TIME = aim_time
+	if cooldown > 0.0: c.cooldown = cooldown
+	if first_delay > 0.0: c.first_delay = first_delay
+	_setup(c)
 	add_to_group("gunners")
 	aim = 0.0 if facing > 0 else PI
 

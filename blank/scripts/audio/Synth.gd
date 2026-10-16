@@ -36,6 +36,19 @@ static func clear() -> AudioStreamWAV:
 	return _to_wav(buf)
 
 
+## 출구 문 열림: 걸쇠 '철컥'(짧은 대역 잡음) → 낮게 미끄러지는 소리 → 맑은 두 음 '띵'
+static func door() -> AudioStreamWAV:
+	var dur := 0.55
+	var buf := PackedFloat32Array()
+	buf.resize(int(dur * RATE))
+	_noise_layer(buf, "band", [2600.0, 1400.0], 2.0, 0.07, 0.8, 0.002)          # 걸쇠
+	_noise_layer(buf, "low", [500.0, 180.0], 0.8, 0.3, 0.35, 0.03)              # 문판이 올라가는 마찰
+	_osc_layer(buf, "sine", 140.0, 220.0, 0.25, 0.25, 0.01, 0.0)                # 낮게 열림
+	_osc_layer(buf, "tri", 880.0, 880.0, 0.3, 0.12, 0.004, 0.18)                # 띵
+	_osc_layer(buf, "tri", 1318.5, 1318.5, 0.35, 0.09, 0.004, 0.24)             # 띵 (5도 위)
+	return _to_wav(buf)
+
+
 # ---------------------------------------------------------------- 내부
 # 엔벨로프: 0 → (attack) vol → (지수 감쇠) 0.0001 @ dur
 static func _env(t: float, vol: float, attack: float, dur: float) -> float:

@@ -1,10 +1,10 @@
 extends Node2D
-## 메인: 방·플레이어 배치, 카메라, 전투 판정, 사격(히트스캔)·타이밍 패링, 사망·클리어·즉시 재시작.
+## 메인: 지금 방(GameState.room_path) 을 불러와 배치, 출구 → 다음 방, 플레이어 배치, 카메라, 전투 판정, 사격(히트스캔)·타이밍 패링, 사망·클리어·즉시 재시작.
 ## 이 노드는 플레이어·적보다 늦게 물리 틱을 받는다 (process_physics_priority) → 모두 움직인 뒤 판정.
 ## 총잡이는 group "game" 으로 이 노드를 찾아 raycast_wall / should_hold_aim / fire_shot 을 부른다.
 ## 화면 흔들림·줌·섬광은 실제 시간 (히트스톱·슬로우 중에도 재생).
 
-@onready var room: Room = $Room
+var room: Room                    # GameState 의 지금 방 씬 (_ready 에서 불러옴, 노드 이름 "Room")
 @onready var player: Player = $Player
 @onready var camera: Camera2D = $Player/Camera
 @onready var effects: Effects = $Effects
@@ -24,6 +24,9 @@ var _shake := { "amp": 0.0, "time": 0.0, "t": 0.0, "angle": 0.0 }   # 방향성 
 var _kill_shake := { "f": 0, "total": 0, "angle": 0.0 }               # 킬 흔들림 (매 프레임 랜덤, 공격 방향 치우침)
 var _shake_frame := -1            # 이번 틱 흔들림을 이미 갱신했으면 그 틱 번호
 var gore: Gore
+var entering := false             # Boot 가 검은 전환으로 들여보냄 → 자체 재시작 페이드 생략
+var transitioning := false        # 출구로 나가는 중 (입력 잠금)
+var open_msg_t := -1.0            # "출구가 열렸다" 표시 경과 (실제 시간, -1 = 없음)
 var kill_frame := -1              # 마지막 처치 후 실제 틱 수 (F3/F4 표시, 처치 없으면 -1)
 # F5 패링 입력 오차 표시: { text, ok, t } — 성공은 월드 시간, 실패 원인은 실제 시간 클릭 기준
 var timing_msg := {}
@@ -32,6 +35,7 @@ var _late_watch := {}             # 아직 안 누른 채 맞음 → 0.5초 안�
 
 
 func _ready() -> void:
+	_load_room()
 	add_to_group("game")
 	# Main 은 일시정지 중에도 돌고(흔들림 미리보기·입력), 월드는 멈춤
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -63,11 +67,22 @@ func _ready() -> void:
 	hud.main = self
 	menu.main = self
 	debug_draw.main = self
-	# 재시작 직후 짧게 밝아지는 페이드 (실제 시간, 입력은 바로 받음)
-	fade.color = Color(0, 0, 0, 1)
-	var tw := create_tween()
-	tw.set_ignore_time_scale(true)
-	tw.tween_property(fade, "color:a", 0.0, Config.restart_fade)
+	($BackdropLayer/Backdrop as Backdrop).build(size.x)
+	# 재시작 직후 짧게 밝아지는 페이드 (실제 시간, 입력은 바로 받음). 방 이동은 Boot 가 따로 검게 전환
+	if not entering:
+		fade.color = Color(0, 0, 0, 1)
+		var tw := create_tween()
+		tw.set_ignore_time_scale(true)
+		tw.tween_property(fade, "color:a", 0.0, Config.restart_fade)
+
+
+## 지금 방 씬을 불러와 배경 바로 뒤(플레이어보다 먼저 틱을 받는 자리)에 둠
+func _load_room() -> void:
+	var ps: PackedScene = load(GameState.room_path())
+	room = ps.instantiate()
+	room.name = "Room"
+	add_child(room)
+	move_child(room, $BackdropLayer.get_index() + 1)
 
 
 func enemies() -> Array:
@@ -80,6 +95,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("slash"):
 		_note_click()
 	if event.is_action_pressed("restart"):
+		if game_state == "chapter_clear":
+			GameState.reset_chapter()       # 장 끝 → 1번 방부터
+		elif transitioning:
+			return
 		restart()
 	elif event.is_action_pressed("mute"):
 		Audio.toggle_mute()
@@ -111,13 +130,64 @@ func _physics_process(_delta: float) -> void:
 		timing_msg.t += TimeManager.real_delta()
 	if not _late_watch.is_empty() and TimeManager.real_time > _late_watch.until:
 		_late_watch = {}
+	if open_msg_t >= 0.0:
+		open_msg_t += TimeManager.real_delta()
 	if TimeManager.frozen:
 		return
 	_resolve_shots()
 	_resolve_combat()
 	if game_state == "play" and enemies().is_empty():
-		game_state = "clear"
+		_on_room_cleared()
+	_check_exit()
+
+
+# ================================================================ 방 진행
+## 방의 적을 모두 처치: 클리어 기록 + 출구 문 열림 (출구가 없는 옛 테스트 방은 CLEAR 글자 + 클리어음)
+func _on_room_cleared() -> void:
+	game_state = "clear"
+	GameState.mark_cleared()
+	var d := room.exit_door()
+	if d != null:
+		d.open()
+		open_msg_t = 0.0
+	else:
 		Audio.clear()
+
+
+## 열린 출구에 닿으면 다음 방으로 (마지막 방이면 장 끝)
+func _check_exit() -> void:
+	if game_state != "clear" or transitioning or player.dead:
+		return
+	var d := room.exit_door()
+	if d == null or not d.touches(player.body_rect()):
+		return
+	transitioning = true
+	player.input_locked = true
+	if GameState.is_last_room():
+		game_state = "chapter_clear"
+		Audio.clear()
+		return
+	var boot := get_tree().get_first_node_in_group("boot")
+	if boot != null:
+		boot.next_room()
+	else:
+		GameState.advance()
+		Audio.stop_all()
+		get_tree().reload_current_scene()
+
+
+## F6: 다음 방으로 바로 (마지막 방이면 1번 방)
+func debug_next_room() -> void:
+	var next := GameState.room % GameState.room_count() + 1
+	GameState.go_to(next)
+	restart()
+
+
+## F7: 지금 방 즉시 클리어 (연출 없이 적 제거 → 출구 열림)
+func debug_clear_room() -> void:
+	pending_shots.clear()
+	for e in enemies():
+		e.die(0.0)
 
 
 # ================================================================ F5 패링 입력 오차

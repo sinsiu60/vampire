@@ -192,10 +192,11 @@ static func next_shooter(tree: SceneTree) -> EnemyGunner:
 	return best
 
 
-## 남은 시간(초) → 줄어드는 원 반지름. 선형: 6 + (40 - 6) × (남은 시간 / AIM_TIME)
-static func approach_radius(remaining: float) -> float:
+## 남은 시간(초) → 줄어드는 원 반지름. 선형: 6 + (40 - 6) × (남은 시간 / AIM_TIME). aim = 그 총잡이의 조준 시간
+static func approach_radius(remaining: float, aim := -1.0) -> float:
 	var A: Dictionary = Config.approach
-	var aim: float = Config.gunner.AIM_TIME
+	if aim <= 0.0:
+		aim = Config.gunner.AIM_TIME
 	return A.APPROACH_TARGET_RADIUS + (A.APPROACH_START_RADIUS - A.APPROACH_TARGET_RADIUS) * clampf(remaining / aim, 0.0, 1.0)
 
 
@@ -203,8 +204,9 @@ static func approach_radius(remaining: float) -> float:
 static func draw_approach(ci: CanvasItem, c: Vector2, g: EnemyGunner, s := 1.0, dim := 1.0) -> void:
 	var A: Dictionary = Config.approach
 	var rt: float = A.APPROACH_TARGET_RADIUS * s
-	var rb: float = approach_radius(Config.shot.PARRY_EARLY) * s    # 띠 바깥 = PARRY_EARLY 초 전의 원 크기
-	var r: float = approach_radius(g.remaining()) * s
+	var aim: float = g.cfg.AIM_TIME
+	var rb: float = approach_radius(Config.shot.PARRY_EARLY, aim) * s    # 띠 바깥 = PARRY_EARLY 초 전의 원 크기
+	var r: float = approach_radius(g.remaining(), aim) * s
 	c = c.round()
 	# 패링 판정 창 띠
 	ci.draw_arc(c, (rt + rb) / 2.0, 0.0, TAU, 40, Color(1, 1, 1, A.BAND_ALPHA * dim), rb - rt)

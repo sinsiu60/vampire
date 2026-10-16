@@ -6,6 +6,7 @@ extends Node
 ##     모든 프레임 단위 연출(히트스톱·킬 스톱·빛줄기·패링 시퀀스)이 같은 비율로 느려짐. 소리는 실제 속도
 ##  F4 프레임 진행: 게임을 멈추고 F4 를 누를 때마다 정확히 한 틱. Enter 로 해제
 ##  F5 패링 타이밍 디버그 (조준선 옆 판정 창 바 + 입력 오차 ms)
+##  F6 다음 방으로 바로 · F7 지금 방 즉시 클리어 — 디버그 빌드(에디터 실행 · 디버그 내보내기)에서만
 
 signal changed
 
@@ -23,6 +24,11 @@ var menu_open := false           ## 옵션 메뉴가 열려 있으면 일시정�
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	process_physics_priority = -2000
+
+
+## 디버그 모드 = 디버그 빌드 (에디터에서 실행하거나 디버그로 내보낸 실행 파일). 방 번호 표시 · F6 / F7
+func debug_mode() -> bool:
+	return OS.is_debug_build()
 
 
 ## TimeManager 가 time_scale 에 곱하는 값
@@ -55,6 +61,14 @@ func _input(event: InputEvent) -> void:
 				step = false
 				_step_queue = 0
 		KEY_F5: timing = not timing
+		KEY_F6, KEY_F7:
+			var main := get_tree().get_first_node_in_group("game")
+			if not debug_mode() or main == null or menu_open:
+				return
+			if event.physical_keycode == KEY_F6:
+				main.debug_next_room()
+			else:
+				main.debug_clear_room()
 		_:
 			if juice_panel and not menu_open:
 				_juice_key(event.physical_keycode)

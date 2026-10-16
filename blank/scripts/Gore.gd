@@ -19,7 +19,8 @@ var _slices: Array = []          # { pos, angle, t, time, color }
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE   # 옵션 메뉴·F4 프레임 진행이면 멈춤 (히트스톱은 time_scale 이라 상관없음)
-	_stain_img = Image.create(int(Config.room.w), int(Config.room.h), false, Image.FORMAT_RGBA8)
+	var sz: Vector2 = room.size_px() if room != null else Vector2(Config.room.w, Config.room.h)
+	_stain_img = Image.create(int(sz.x), int(sz.y), false, Image.FORMAT_RGBA8)
 	_stain_tex = ImageTexture.create_from_image(_stain_img)
 	TimeManager.kill_stop_released.connect(release_trail)
 

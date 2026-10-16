@@ -23,6 +23,7 @@ func _ready() -> void:
 	streams["swing"] = Synth.swing()
 	streams["death"] = Synth.death()
 	streams["clear"] = Synth.clear()
+	streams["door"] = Synth.door()
 	for i in POOL_SIZE:
 		var p := AudioStreamPlayer.new()
 		p.process_mode = Node.PROCESS_MODE_ALWAYS
@@ -94,6 +95,9 @@ func death() -> void:
 
 func clear() -> void:
 	play("clear")
+
+func door() -> void:
+	play("door", Config.audio.SFX_DOOR)
 
 
 func _free_player() -> AudioStreamPlayer:

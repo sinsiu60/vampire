@@ -87,16 +87,16 @@ func _draw_timing() -> void:
 		var d := 34.0
 		var n := Vector2(-sin(g.aim), cos(g.aim))
 		var side := -1.0 if n.y > 0.0 else 1.0
-		_bar(g.muzzle() + Vector2.from_angle(g.aim) * d + n * 8.0 * side, g.t)
+		_bar(g.muzzle() + Vector2.from_angle(g.aim) * d + n * 8.0 * side, g.t, g.cfg.AIM_TIME)
 	for s in main.pending_shots:
 		if is_instance_valid(s.shooter):
 			var sh: Enemy = s.shooter
-			_bar(Vector2(sh.center().x, sh.body_rect().position.y - 10.0), Config.gunner.AIM_TIME + (TimeManager.world_time - s.fire_t))
+			var aim: float = sh.cfg.AIM_TIME
+			_bar(Vector2(sh.center().x, sh.body_rect().position.y - 10.0), aim + (TimeManager.world_time - s.fire_t), aim)
 
 
-func _bar(c: Vector2, cur: float) -> void:
+func _bar(c: Vector2, cur: float, fire: float) -> void:
 	var Sh: Dictionary = Config.shot
-	var fire: float = Config.gunner.AIM_TIME
 	var span: float = fire + Sh.PARRY_LATE + 0.05
 	var w := 48.0
 	var x0 := roundf(c.x - w / 2.0)

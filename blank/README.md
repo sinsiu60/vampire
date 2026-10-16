@@ -32,12 +32,14 @@
 | `menu` | ESC (옵션 메뉴) |
 
 디버그 키 (`Debug.gd`): F1 반사 보정 표시 · F2 타격감 토글 패널 · F3 슬로우 10% · F4 프레임 진행 (F4 한 틱, Enter 해제) · F5 패링 타이밍 바 + 입력 오차 ms
+· F6 다음 방으로 바로 · F7 지금 방 즉시 클리어 (F6 · F7 과 왼쪽 아래 "1장 - 방 3/6" 표시는 디버그 빌드에서만 — 에디터 실행 · 디버그 내보내기)
 
 ## 구조
 ```
 blank/
   project.godot
   scripts/autoload/Config.gd   모든 수치 (프로토타입 CONFIG 를 그대로 옮김)
+  scripts/autoload/GameState.gd 진행 상태: 지금 장 · 방 번호, 클리어한 방, 장마다 방 씬 목록
   scripts/autoload/Settings.gd 옵션(흔들림 강도·발사 타이밍 원, user://settings.cfg 에 저장) + F2 타격감 토글
   scripts/autoload/Debug.gd    F1 ~ F5 디버그 키, F3 슬로우(물리 틱 6/초 + time_scale 0.1), F4 프레임 진행(일시정지 + 한 틱씩)
   scripts/autoload/TimeManager.gd  Engine.time_scale 로 히트스톱·슬로우, 실제 시간 틱(real_frames / real_time), 월드 시간
@@ -54,7 +56,9 @@ blank/
   scripts/ScreenFX.gd          화면 효과 셰이더 값 (채도·비네트 = 시퀀스 진행도, 흰 섬광 = 실제 시간 1프레임)
   shaders/screen_fx.gdshader   화면 복사 텍스처로 채도 감소 → 비네트 → 섬광 (CanvasLayer "ScreenFX", 월드 위 · HUD 아래)
   scripts/Player.gd            이동·가변 점프·코요테·버퍼, 마우스 방향 베기·돌진·헛스윙 잠금, 칼 판정, 흰 실루엣·반달 궤적
-  scripts/Room.gd              TileMapLayer 방, 시작 위치
+  scripts/Room.gd              방 공통: Terrain · PlayerSpawn · Entrance/Exit 문 · Enemies, 방 크기 = 칠한 타일 범위
+  scripts/Door.gd              입구/출구 문 (출구: 적을 모두 처치하면 열림 — 문판이 올라가며 빛 기둥 + 효과음, @tool 이라 에디터에서도 보임)
+  rooms/ch1/room_01 ~ 06.tscn  1장 "비 내리는 뒷골목 시장" 방 6개 (아래 표)
   scripts/DrawUtil.gd          공용 그리기 (초승달/반달 궤적)
   scripts/Crosshair.gd         하늘색 조준점 (OS 커서 숨김)
   scripts/Boot.gd · Logo.gd    시작 씬: 게임 화면(SubViewport) 정수 배율 배치 · 창 해상도 스캔라인 · 로고(처음 한 번) · R 재시작
@@ -64,7 +68,7 @@ blank/
   scripts/Menu.gd              ESC 옵션 메뉴 (흔들림 0~150% 슬라이더 + 미리보기, 발사 타이밍 원 켜기/끄기)
   scripts/DebugDraw.gd         F1 스냅 범위 부채꼴·대상 표시, F5 판정 창 바 (월드)
   scenes/Boot.tscn (Screen/Game = SubViewport 480×270 · Scanlines)
-  scenes/Main.tscn (BackdropLayer · Room · Player · Effects · ParrySeq · DebugDraw · ScreenFX · HUD[Offscreen · Text · Menu · Crosshair · Fade])  Player.tscn  Room.tscn  EnemyMelee.tscn  EnemyGunner.tscn  Effects.tscn   (적 배치는 Room.tscn 의 Enemies 아래)
+  scenes/Main.tscn (BackdropLayer · Room(GameState 의 방을 불러와 끼움) · Player · Effects · ParrySeq · DebugDraw · ScreenFX · HUD[Offscreen · Text · Menu · Crosshair · Fade])  Player.tscn  Room.tscn  EnemyMelee.tscn  EnemyGunner.tscn  Effects.tscn   (적 배치는 Room.tscn 의 Enemies 아래)
   tiles/terrain.tres           TileSet: (0,0) 지형 윗면, (1,0) 지형 속 = 물리 레이어 0 (지형, 비트 1)
                                (2,0) 일방향 발판 = 물리 레이어 1 (발판, 비트 16) — 몸은 올라서지만 총알·시야는 통과
   art/tiles.png                8×8 타일 3장
@@ -85,6 +89,11 @@ blank/
 | 5 | 패링 슬로우 시퀀스 (time_return 길이에 맞춘 처치) + 화면 효과 셰이더 (채도·비네트·섬광) | ✅ |
 | 6 | 16프레임 킬 연출, 빛줄기, 화면 흔들림, 피·파편·자국, 두 조각 | ✅ |
 | 7 | 배경 시차, 스캔라인 셰이더, 머플러·잔상, "시우 공방" 로고, 옵션 메뉴, 디버그 키 | ✅ |
+
+### 1장 버티컬 슬라이스
+| 단계 | 내용 | 상태 |
+|---|---|---|
+| 1 | 방 진행 구조: 방 6개 씬 · 입구/출구 문 · 클리어하면 출구 열림 · 0.3초 검은 전환 · 방 단위 재시작 · GameState | ✅ |
 
 ### 1단계 확인 (Godot 4.5.1, 60fps 물리)
 | 항목 | 결과 | 프로토타입 |
@@ -230,3 +239,44 @@ f = 처치한 틱부터 센 실제 틱 (처치 틱 = 0).
   화면이 60fps 아래로 떨어지면 따라잡지 않고 그만큼 게임이 느려진다 (판정은 월드 시간이라 일관됨).
 - 일시정지(옵션 메뉴 · F4)는 `SceneTree.paused`. 방·플레이어·연출 노드는 PAUSABLE, Main(흔들림 미리보기·입력)·HUD·메뉴는 ALWAYS.
 - 5·6단계 테스트를 다시 돌려 같은 결과 확인 (반사탄 명중 틱은 6단계부터 월드가 멈춤 → 패링~명중 월드 시간 0.4318 − 1/60 = 0.4151초).
+
+## 1장 버티컬 슬라이스 — 1단계: 방 진행 구조
+1장 "비 내리는 뒷골목 시장" = 방 6개. 방 하나 = 씬 하나 (`rooms/ch1/room_01.tscn` ~ `room_06.tscn`).
+
+| 방 | 구성 | 크기 |
+|---|---|---|
+| 1 | 근접 적 2명 — 기본 베기 연습 (낮은 발판 하나) | 560px |
+| 2 | 총잡이 1명 — 패링 연습. 발판 위에서 멀리 조준, **조준 1.2초**(기본 0.8) · 다음 조준까지 2초 · 첫 조준 0.8초, 낮은 엄폐물 | 640px |
+| 3 | 근접 2 + 총잡이 1 (엄폐물 · 발판 위 총잡이) | 800px |
+| 4 | 발판 5개 높낮이(y 200 · 160 · 120 · 176 · 200) + 총잡이 2명 — 발사 간격 MIN_SHOT_GAP 유지 | 800px |
+| 5 | 좁은 복도 (천장 y 192, 높이 48px) + 근접 적 3명 연속 | 880px |
+| 6 | 보스방 자리 — 임시로 총잡이 3명 (발판 3개, 한 화면 남짓) | 512px |
+
+**방 씬 구성** (에디터에서 그대로 고치면 됨)
+- `Terrain` (TileMapLayer): 칠한 칸 범위가 방 크기 → 카메라 한계 · 자국 이미지 · 배경 폭이 따라감
+- `Entrance` / `Exit` (`scenes/Door.tscn`, `kind` = entrance / exit), `PlayerSpawn` (Marker2D)
+- `Enemies`: `EnemyMelee` / `EnemyGunner` 인스턴스. 총잡이는 인스펙터에서 `aim_time` · `cooldown` · `first_delay` 를 방마다 바꿀 수 있음 (0 = 기본값)
+- 루트(`Room.gd`)의 `room_title` = 방 설명
+
+**진행**
+- 방의 적을 모두 처치 → 출구 문 열림: 걸쇠·'띵' 합성 효과음 + 문판이 0.2초 동안 올라가고 빛 기둥이 0.4초 번쩍 → 열린 문 안쪽은 은은한 하늘색. 위에 "출구가 열렸다 →" 2초
+- 열린 출구에 몸이 닿으면 입력 잠그고 0.3초 검은 전환(0.15초 어두워짐 → 다음 방 → 0.15초 밝아짐, 실제 시간) — `Boot.next_room`
+- 죽으면 R: 지금 방 처음부터 즉시. 이전 방 클리어 기록은 `GameState.cleared` 에 그대로
+- 6번 방 출구 = 장 끝: "1장 클리어 · 비 내리는 뒷골목 시장 · R 처음부터" → R 이면 클리어 기록을 지우고 1번 방
+- 옛 프로토타입 테스트 방 `scenes/Room.tscn` 은 `GameState.room_override` 로 열 수 있음 (출구가 없어 CLEAR 글자로 끝남)
+
+**디버그** (디버그 빌드에서만 — 에디터 실행 · 디버그 내보내기)
+- F6 다음 방으로 바로 (6번 다음은 1번) · F7 지금 방 즉시 클리어 (연출 없이 적 제거 → 출구 열림)
+- 왼쪽 아래 "1장 - 방 3/6"
+
+### 확인
+| 항목 | 결과 |
+|---|---|
+| 시작 | 로고 → 1번 방, 시작 위치 (40, 240), 출구 잠김, "1장 - 방 1/6" |
+| 클리어 | 적 2명 처치 → `clear`, 출구 열림 · 문 효과음 · "출구가 열렸다", `GameState` 에 1-1 클리어 |
+| 방 이동 | 출구에 닿고 171ms 에 완전히 검정 → 방 2 → 302ms 에 다 밝아짐 (0.3초) |
+| 방 2 총잡이 | AIM_TIME 1.2 (기본 0.8 은 그대로), 조준 시작 → 발사 72틱 = 1.2초, 판정 창 띠 바깥 반지름 8.83 |
+| 사망 → R | 방 2 처음부터 (총잡이 다시 1명), 방 1 클리어 기록 유지 |
+| F7 / F6 | 적 0 → 출구 열림 / 방 3 · 4 · 5 · 6 차례로 (적 구성 표와 같음) |
+| 방 4 | 총잡이 2명 발사 간격 최소 0.317초 (≥ 0.3) |
+| 장 끝 | 방 6 클리어 → 출구 → `chapter_clear` → R → 방 1, 클리어 기록 비움 |

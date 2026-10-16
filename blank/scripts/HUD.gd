@@ -1,7 +1,8 @@
 extends Control
 class_name HUD
 ## 화면 글자 (480×270 HUD 레이어): 남은 적 수 · 켜진 디버그 표시 · 조작 안내(처음 몇 초) · CLEAR / 사망 ·
-## F5 패링 입력 오차 · F2 타격감 패널 · F3/F4 시간 디버그 줄
+## F5 패링 입력 오차 · F2 타격감 패널 · F3/F4 시간 디버그 줄 · "출구가 열렸다" · 장 클리어 ·
+## (디버그 모드) 왼쪽 아래 "1장 - 방 3/6"
 
 static var play_t := 0.0         ## 첫 판 시작 후 경과 (재시작해도 이어짐 — 안내는 처음 몇 초만)
 
@@ -49,12 +50,23 @@ func _draw() -> void:
 		var a := 0.75 * clampf(Config.hint_time - play_t, 0.0, 1.0)
 		Fonts.text(self, "A/D 이동 · Space 점프 · 클릭 베기 — 칼이 닿는 순간 / 총을 쏘는 순간 베면 패링",
 			Vector2(W / 2.0, H - 10), 10, Color(ui, a), "center")
-	# CLEAR / 사망
-	if main.game_state == "clear":
+	# 출구 열림 · CLEAR (출구 없는 옛 테스트 방) · 장 클리어 · 사망
+	var t: float = main.open_msg_t
+	var R: Dictionary = Config.rooms
+	if t >= 0.0 and t < R.OPEN_MSG_TIME:
+		var a := clampf((R.OPEN_MSG_TIME - t) / 0.4, 0.0, 1.0) * clampf(t / 0.1, 0.0, 1.0)
+		Fonts.text(self, "출구가 열렸다  →", Vector2(W / 2.0, 40), 12, Color(ui, a), "center", false, true)
+	if main.game_state == "clear" and main.room.exit_door() == null:
 		_glow_text("CLEAR", Vector2(W / 2.0, H / 2.0 - 18), 28, true)
 		_glow_text("방의 적을 모두 처치했다  ·  R 다시 하기", Vector2(W / 2.0, H / 2.0 + 10), 12, false)
+	elif main.game_state == "chapter_clear":
+		_glow_text("%d장 클리어" % GameState.chapter, Vector2(W / 2.0, H / 2.0 - 18), 24, false)
+		_glow_text("%s  ·  R 처음부터" % GameState.chapter_name(), Vector2(W / 2.0, H / 2.0 + 10), 12, false)
 	elif main.game_state == "dead":
 		_glow_text("R  —  재시작", Vector2(W / 2.0, H / 2.0), 12, false)
+	# 디버그 모드: 지금 장 · 방
+	if Debug.debug_mode():
+		Fonts.text(self, GameState.label(), Vector2(8, H - 22), 9, Color(ui, 0.7), "left", false, true)
 
 
 func _glow_text(s: String, p: Vector2, size: int, mono: bool) -> void:
