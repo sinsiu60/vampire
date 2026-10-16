@@ -1,17 +1,22 @@
 extends Node2D
-## 메인: 방·플레이어 배치, 카메라, 전투 판정, 사망·클리어·즉시 재시작.
+## 메인: 방·플레이어 배치, 카메라, 전투 판정, 사격(히트스캔)·타이밍 패링, 사망·클리어·즉시 재시작.
 ## 이 노드는 플레이어·적보다 늦게 물리 틱을 받는다 (process_physics_priority) → 모두 움직인 뒤 판정.
+## 총잡이는 group "game" 으로 이 노드를 찾아 raycast_wall / should_hold_aim / fire_shot 을 부른다.
 
 @onready var room: Room = $Room
 @onready var player: Player = $Player
 @onready var camera: Camera2D = $Player/Camera
+@onready var effects: Effects = $Effects
 @onready var state_label: Label = $HUD/State
 @onready var fade: ColorRect = $HUD/Fade
 
 var game_state := "play"          # play | dead | clear
+var pending_shots: Array = []     # 플레이어에 닿아 패링 입력을 기다리는 탄 { shooter, muzzle, fire_t, angle, parryable, done }
+var seq_active := false           # 패링 슬로우 시퀀스 중 (5단계) — 그동안 총잡이는 발사를 미룸
 
 
 func _ready() -> void:
+	add_to_group("game")
 	process_physics_priority = 100
 	TimeManager.reset()
 	player.global_position = room.spawn_position()
@@ -49,6 +54,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(_delta: float) -> void:
 	if TimeManager.frozen:
 		return
+	_resolve_shots()
 	_resolve_combat()
 	if game_state == "play" and enemies().is_empty():
 		game_state = "clear"
@@ -56,12 +62,205 @@ func _physics_process(_delta: float) -> void:
 		state_label.text = "CLEAR\n방의 적을 모두 처치했다 · R 다시 하기"
 
 
+# ================================================================ 레이캐스트
+## 벽·바닥(일방향 발판 제외)까지의 끝점
+func raycast_wall(from: Vector2, angle: float, dist: float) -> Vector2:
+	var to := from + Vector2.from_angle(angle) * dist
+	var q := PhysicsRayQueryParameters2D.create(from, to, Config.layers.terrain)
+	var hit := get_world_2d().direct_space_state.intersect_ray(q)
+	return hit.position if not hit.is_empty() else to
+
+
+## 두 점 사이 시야가 트였는가 (일방향 발판은 막지 않음)
+func line_of_sight(a: Vector2, b: Vector2) -> bool:
+	var q := PhysicsRayQueryParameters2D.create(a, b, Config.layers.terrain)
+	return get_world_2d().direct_space_state.intersect_ray(q).is_empty()
+
+
+## 선분 a→b 가 사각형 r 에 처음 들어가는 지점의 비율 t (0~1). 안 닿으면 -1 (Liang–Barsky)
+static func seg_rect_t(a: Vector2, b: Vector2, r: Rect2) -> float:
+	var d := b - a
+	var t0 := 0.0
+	var t1 := 1.0
+	for axis in 2:
+		var p0 := a[axis]
+		var dd := d[axis]
+		var mn := r.position[axis]
+		var mx := r.end[axis]
+		if absf(dd) < 1e-9:
+			if p0 < mn or p0 > mx:
+				return -1.0
+		else:
+			var ta := (mn - p0) / dd
+			var tb := (mx - p0) / dd
+			if ta > tb:
+				var tmp := ta
+				ta = tb
+				tb = tmp
+			t0 = maxf(t0, ta)
+			t1 = minf(t1, tb)
+			if t0 > t1:
+				return -1.0
+	return t0
+
+
+## 히트스캔: from 에서 angle 로. 벽에 막히고, 그 앞에 있는 플레이어/적 중 먼저 닿는 것
+func hitscan(from: Vector2, angle: float, dist: float, hit_player: bool, hit_enemies: bool) -> Dictionary:
+	var end := raycast_wall(from, angle, dist)
+	var res := { "pos": end, "wall": end.distance_to(from) < dist - 0.5, "player": false, "enemy": null }
+	var best := 2.0
+	if hit_player and not player.dead:
+		var pad: float = Config.shot.PLAYER_HIT_PAD
+		var t := seg_rect_t(from, end, player.body_rect().grow(pad))
+		if t >= 0.0 and t < best:
+			best = t
+			res.player = true
+	if hit_enemies:
+		for e in enemies():
+			var t := seg_rect_t(from, end, e.body_rect())
+			if t >= 0.0 and t < best:
+				best = t
+				res.player = false
+				res.enemy = e
+	if best <= 1.0:
+		res.pos = from.lerp(end, best)
+		res.wall = false
+	return res
+
+
+# ================================================================ 사격 · 타이밍 패링
+## 총잡이 g 가 지금 조준을 더 진행하면 안 되는가
+##  - 패링 시퀀스 중 (플레이어 입력이 잠겨 피할 수 없으므로)
+##  - 다른 총잡이의 (예정된) 발사와 MIN_SHOT_GAP 안으로 겹칠 때, 나중 순서인 쪽이 기다림
+func should_hold_aim(g: EnemyGunner, nt: float) -> bool:
+	if seq_active:
+		return true
+	var gap: float = Config.shot.MIN_SHOT_GAP
+	var mine: float = TimeManager.world_time + (g.cfg.AIM_TIME - nt)
+	var gunners := get_tree().get_nodes_in_group("gunners")
+	var gi := gunners.find(g)
+	for o in gunners:
+		if o == g or o.dead:
+			continue
+		var of: float = o.expected_fire_t()
+		if is_inf(of):
+			continue
+		var other_first := of < mine or (of == mine and gunners.find(o) < gi)
+		if other_first and mine - of < gap:
+			return true
+	return false
+
+
+## 적 발사: 즉시 레이캐스트. 플레이어에 닿으면 PARRY_LATE 동안 패링 입력을 기다린 뒤 판정
+func fire_shot(g: EnemyGunner) -> void:
+	var Sh: Dictionary = Config.shot
+	var col: Color = Config.colors.attack if g.next_parryable else Config.colors.unparryable
+	var m := g.muzzle()
+	var hit := hitscan(m, g.aim, Sh.RANGE, true, false)
+	effects.add_tracer(m, hit.pos, Sh.TRACER_WIDTH, col, Sh.TRACER_FRAMES, true)
+	effects.burst(m, 5, col, 90.0, g.aim, 0.5, 0.12)
+	effects.approach_flash(m)        # 원 두 개가 겹치며 1프레임 번쩍 (빗나가면 그대로 사라짐)
+	g.velocity.x -= cos(g.aim) * 40.0   # 반동
+	Audio.shot()
+	if hit.wall:
+		effects.burst(hit.pos, 7, col, 110.0, g.aim + PI, 1.1, 0.2)
+	if hit.player:
+		pending_shots.append({ "shooter": g, "muzzle": m, "fire_t": TimeManager.world_time,
+			"angle": g.aim, "parryable": g.next_parryable, "done": false })
+
+
+## 플레이어에 닿은 탄: 발사 -PARRY_EARLY ~ +PARRY_LATE 안에 베기를 시작했으면 패링, 아니면 즉사.
+## 방향과 상관없이 판정 창 안에서 베기만 하면 성공. 시각은 월드 시간 (슬로우 중에도 같은 비율)
+func _resolve_shots() -> void:
+	var Sh: Dictionary = Config.shot
+	var eps := 1e-6
+	var p := player
+	for s in pending_shots:
+		if s.done:
+			continue
+		if p.dead:
+			s.done = true
+			continue
+		var ts := p.last_slash_t
+		if s.parryable and not p.slash_used and ts >= s.fire_t - Sh.PARRY_EARLY - eps and ts <= s.fire_t + Sh.PARRY_LATE + eps:
+			s.done = true
+			p.slash_used = true
+			_parry_shot(s)
+			continue
+		if TimeManager.world_time > s.fire_t + Sh.PARRY_LATE + eps:
+			s.done = true
+			_kill_player(s.angle)
+	pending_shots = pending_shots.filter(func(s): return not s.done)
+
+
+## 반사 대상 고르기. 기준 방향 = 플레이어 → 마우스
+##  1) 그 탄을 쏜 적이 ±OWNER_PRIORITY_ANGLE 안이면 최우선
+##  2) 아니면 ±AIM_SNAP_ANGLE 안에서 마우스 방향과 각도 차가 가장 작은 적
+##  거리 AIM_SNAP_RANGE 초과, 벽에 가려진 적은 제외. 없으면 null (마우스 방향 그대로)
+func pick_reflect_target(origin: Vector2, aim_angle: float, shooter: Enemy) -> Enemy:
+	var A: Dictionary = Config.aim_assist
+	var best: Enemy = null
+	var best_diff := INF
+	for e in enemies():
+		var d: Vector2 = e.center() - origin
+		if d.length() > A.AIM_SNAP_RANGE:
+			continue
+		var diff := absf(angle_difference(aim_angle, d.angle()))
+		var limit := deg_to_rad(A.OWNER_PRIORITY_ANGLE if e == shooter else A.AIM_SNAP_ANGLE)
+		if diff > limit or not line_of_sight(origin, e.center()):
+			continue
+		if e == shooter:
+			return e
+		if diff < best_diff:
+			best = e
+			best_diff = diff
+	return best
+
+
+## 사격 패링 성공. (4단계: 바로 반사 — 5단계에서 슬로우 시퀀스 + time_return 길이에 맞춘 명중으로 바뀜)
+func _parry_shot(s: Dictionary) -> void:
+	var p := player
+	var aim := (get_global_mouse_position() - p.center()).angle()
+	var target := pick_reflect_target(p.center(), aim, s.shooter)
+	# 노란 불꽃은 탄이 날아온 쪽 칼날 위에서
+	var back: float = s.angle + PI
+	var spark: Vector2 = p.center() + Vector2.from_angle(back) * float(Config.slash.radius) * 0.6
+	effects.burst(spark, 14, Config.colors.parry, 260.0, back, 1.3, 0.28)
+	effects.approach_success(s.muzzle)    # 원이 노랗게 바뀌며 바깥으로 퍼짐
+	Audio.parry()
+	TimeManager.hitstop(Config.juice.HITSTOP_PARRY_FRAMES)
+	_reflect_hit(target, aim)
+
+
+## 반사탄(히트스캔): 대상이 있으면 그 적에 반드시 명중, 없으면 마우스 방향으로
+func _reflect_hit(target: Enemy, aim: float) -> void:
+	var Sh: Dictionary = Config.shot
+	var o := player.center()
+	var hit_pos: Vector2
+	var victim: Enemy = null
+	var angle := aim
+	if target != null and not target.dead:
+		angle = (target.center() - o).angle()
+		hit_pos = target.center()
+		victim = target
+	else:
+		var r := hitscan(o, aim, Sh.RANGE, false, true)
+		hit_pos = r.pos
+		victim = r.enemy
+		if r.wall:
+			effects.burst(hit_pos, 8, Config.colors.parry, 120.0, aim + PI, 1.1, 0.22)
+	effects.add_tracer(o, hit_pos, Sh.REFLECT_TRACER_WIDTH, Config.colors.parry, Sh.TRACER_FRAMES)
+	if victim != null:
+		_kill_enemy(victim, angle)
+
+
+# ================================================================ 근접 · 처치 · 사망
 func _resolve_combat() -> void:
 	var p := player
 	if p.dead:
 		return
 	var S: Dictionary = Config.slash
-	# 1) 근접 패링: 공격(또는 예고 마지막 순간)에 칼을 맞대면 → 적 즉사
+	# 1) 근접 패링: 공격(또는 예고 마지막 순간)에 칼을 맞대면 → 적 즉사 (사격 패링은 _resolve_shots 의 타이밍 판정)
 	if p.in_parry_window():
 		var reach: float = 1.0 + Config.aim_assist.MELEE_PARRY_RANGE_BONUS
 		for e in enemies():
@@ -98,6 +297,7 @@ func _kill_enemy(e: Enemy, angle: float) -> void:
 
 
 func _kill_player(angle: float) -> void:
+	pending_shots.clear()
 	player.die(angle)
 
 

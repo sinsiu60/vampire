@@ -40,13 +40,17 @@ blank/
   scripts/audio/Synth.gd       파일 없는 소리(휘두르기·사망·클리어)를 시작할 때 PCM 으로 합성
   scripts/enemies/Enemy.gd     적 공통: 중력·충돌·발판 끝 멈춤·실루엣(림 라이트) 그리기
   scripts/enemies/EnemyMelee.gd  근접 적: 추적 → 0.4초 예고(무기 빨간 점멸) → 내딛으며 베기 → 경직
-  scripts/Main.gd              배치·카메라, 전투 판정(근접 패링·직접 베기·피격), 사망·CLEAR·R 재시작
+  scripts/enemies/EnemyGunner.gd 총잡이: 거리 유지 → 0.8초 조준(빨간 조준선이 추적) → 0.15초 전 고정(흰 깜빡) → 히트스캔 발사
+  scripts/Main.gd              배치·카메라, 레이캐스트·히트스캔, 사격 타이밍 패링·반사, 전투 판정(근접 패링·직접 베기·피격), 사망·CLEAR·R 재시작
+  scripts/Effects.gd           월드 연출 레이어: 탄 궤적·총구 섬광(실제 시간), 불꽃(월드 시간), 발사 타이밍 원
+  scripts/OffscreenIndicators.gd  화면 밖에서 조준 중인 총잡이 → 가장자리에 작은 원 + 화살표 (HUD)
   scripts/Player.gd            이동·가변 점프·코요테·버퍼, 마우스 방향 베기·돌진·헛스윙 잠금, 칼 판정, 흰 실루엣·반달 궤적
   scripts/Room.gd              TileMapLayer 방, 시작 위치
   scripts/DrawUtil.gd          공용 그리기 (초승달/반달 궤적)
   scripts/Crosshair.gd         하늘색 조준점 (OS 커서 숨김)
-  scenes/Main.tscn  Player.tscn  Room.tscn  EnemyMelee.tscn   (적 배치는 Room.tscn 의 Enemies 아래)
-  tiles/terrain.tres           TileSet: (0,0) 지형 윗면, (1,0) 지형 속, (2,0) 일방향 발판
+  scenes/Main.tscn  Player.tscn  Room.tscn  EnemyMelee.tscn  EnemyGunner.tscn  Effects.tscn   (적 배치는 Room.tscn 의 Enemies 아래)
+  tiles/terrain.tres           TileSet: (0,0) 지형 윗면, (1,0) 지형 속 = 물리 레이어 0 (지형, 비트 1)
+                               (2,0) 일방향 발판 = 물리 레이어 1 (발판, 비트 16) — 몸은 올라서지만 총알·시야는 통과
   art/tiles.png                8×8 타일 3장
   sounds/*.wav                 gun_fire, parry_chang, slowmo_in, slowmo_loop, time_return, kill_sound
 ```
@@ -61,7 +65,7 @@ blank/
 | 1 | 프로젝트 설정 + Config + 플레이어 이동·점프 + 테스트 방 + R 재시작 | ✅ |
 | 2 | 마우스 방향 베기 + 돌진 + 헛스윙 잠금, 반달 베기 궤적, 조준점 | ✅ |
 | 3 | TimeManager(히트스톱·슬로우, 실제 시간 타이머) + Audio + 근접 적 + 근접 패링 + 원히트 사망 + CLEAR | ✅ |
-| 4 | 히트스캔 총잡이 (조준선 + 줄어드는 원 + 판정 창 띠 + 발사 간격) + 타이밍 패링 | |
+| 4 | 히트스캔 총잡이 (조준선 + 줄어드는 원 + 판정 창 띠 + 발사 간격) + 타이밍 패링 | ✅ |
 | 5 | 패링 슬로우 시퀀스 (time_return 길이에 맞춘 처치) + 화면 효과 셰이더 (채도·비네트·섬광) | |
 | 6 | 16프레임 킬 연출, 빛줄기, 화면 흔들림, 피·파편·자국, 두 조각 | |
 | 7 | 배경 시차, 스캔라인 셰이더, 머플러·잔상, "시우 공방" 로고, 옵션 메뉴, 디버그 키 | |
@@ -111,3 +115,25 @@ blank/
 - **효과음**: Godot 오디오는 time_scale 영향을 받지 않아 슬로우·히트스톱 중에도 실제 시간으로 재생. 페이드는 `Tween.set_ignore_time_scale`.
 - `slowmo_loop.wav` 는 임포트 설정에서 Loop Mode = Forward.
 - 처치 연출(16프레임 킬 스톱·두 조각·피·빛줄기)은 6단계 — 지금은 적이 바로 사라짐.
+
+### 4단계 확인
+| 항목 | 결과 | 프로토타입 |
+|---|---|---|
+| 조준 → 발사 | 조준 시작 후 39틱째 고정(0.65초), 48틱째 발사(0.8초), 총소리 | 같음 |
+| 줄어드는 원 | 반지름 39.3 → 31.5 → 23.0 → 14.5 → 6.7 (1·12·24·36·47틱, 40→6 선형) | 같음 |
+| 판정 창 띠 | 목표 원 6 ~ 바깥 10.25 (PARRY_EARLY 0.1초 전 원 크기) | 같음 |
+| 타이밍 판정 창 | 베기 시작 − 발사 = −117ms 사망 · −100ms 패링 · 0ms 패링 · +50ms 패링 · +67ms 사망 | 같음 (−100 ~ +50ms) |
+| 안 베면 | 발사 후 4틱째 사망 (PARRY_LATE 0.05초가 지난 첫 틱) | 같음 |
+| 사격 패링 | 패링음 + 히트스톱 6틱 + 반사탄(3px 노랑)이 쏜 적 처치 + 처치음 + 원이 노랗게 퍼짐 | 같음 (슬로우 시퀀스는 5단계) |
+| 고정 후 피함 | 발사됐지만 빗나감, 생존 | 같음 |
+| 고정 전 움직임 | 조준선이 따라와 맞음 | 같음 |
+| 엄폐물 뒤 | 상자 뒤에 있으면 조준 안 함(idle), 상자 위로 올라가면 조준 | 같음 |
+| 두 총잡이 | 같은 틱에 조준을 시작시켜도 발사 간격 최소 0.317초 (≥ MIN_SHOT_GAP 0.3, 1틱 단위) | 같음 |
+| 헛스윙 잠금 | 발사 0.27초 전 헛스윙 → 판정 창 안에서 다시 클릭해도 베기 막힘 → 사망 | 같음 |
+| 화면 밖 총잡이 | 화면 가장자리에 축소 원(50%) + 총잡이 쪽 화살표 | 같음 |
+
+- 사격 판정은 즉시 레이캐스트(`PhysicsRayQueryParameters2D`, 지형 비트만) + 플레이어·적은 사각형-선분 교차(Liang–Barsky).
+- 탄이 플레이어에 닿으면 `pending_shots` 에 넣고 PARRY_LATE 동안 기다린다. 판정 시각은 `TimeManager.world_time`
+  (슬로우 중에도 같은 비율). 플레이어 → 적 → Main 순으로 물리 틱이 돌아서(`process_physics_priority`) 같은 틱 안에서 판정이 끝난다.
+- 반사 대상: 쏜 적이 마우스 방향 ±50° 안이면 최우선, 아니면 ±35° 안에서 가장 가까운 각도의 적 (거리 300, 벽에 가리면 제외).
+- 다음에 쏠 총잡이의 원만 100%, 나머지는 50%.

@@ -13,7 +13,8 @@ var dead := false
 # ---- 베기
 var slash_t := -1.0              ## 베기 시작 후 경과 시간 (-1 = 베는 중 아님)
 var slash_angle := 0.0           ## 베는 방향 (라디안, 화면 좌표: +y 아래)
-var slash_used := false          ## 이번 베기가 패링/처치에 쓰였는가 (아니면 헛스윙) — 적 단계에서 세팅
+var slash_used := false          ## 이번 베기가 패링/처치에 쓰였는가 (아니면 헛스윙)
+var last_slash_t := -INF         ## 마지막 베기 시작 시각 (월드 시간) — 사격 타이밍 패링 판정
 var _slash_flip := 1             # 베는 방향(위→아래 / 아래→위)을 번갈아
 var _slash_cd := 0.0             # 다음 베기까지 남은 시간
 var _whiff_checked := false
@@ -41,8 +42,8 @@ func _ready() -> void:
 	$Collision.shape = shape
 	$Collision.position = Vector2(0, -c.h / 2.0)
 	floor_snap_length = 2.0
-	collision_layer = 2              # 플레이어
-	collision_mask = 1               # 지형만 (적과는 몸으로 부딪히지 않음)
+	collision_layer = Config.layers.player
+	collision_mask = Config.layers.terrain | Config.layers.platform   # 지형만 (적과는 몸으로 부딪히지 않음)
 	add_to_group("player")
 
 
@@ -199,6 +200,7 @@ func _start_slash(aim: Vector2) -> void:
 	slash_angle = a
 	slash_t = 0.0
 	slash_used = false
+	last_slash_t = TimeManager.world_time
 	_whiff_checked = false
 	_slash_cd = S.cooldown
 	_slash_flip = -_slash_flip

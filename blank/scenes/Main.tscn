@@ -1,9 +1,11 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/Main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://scenes/Room.tscn" id="2_room"]
 [ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="3_player"]
 [ext_resource type="Script" path="res://scripts/Crosshair.gd" id="4_cross"]
+[ext_resource type="PackedScene" path="res://scenes/Effects.tscn" id="5_fx"]
+[ext_resource type="Script" path="res://scripts/OffscreenIndicators.gd" id="6_off"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
@@ -12,7 +14,19 @@ script = ExtResource("1_main")
 
 [node name="Player" parent="." instance=ExtResource("3_player")]
 
+[node name="Effects" parent="." instance=ExtResource("5_fx")]
+
 [node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="Offscreen" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("6_off")
 
 [node name="Hint" type="Label" parent="HUD"]
 offset_left = 8.0
@@ -21,7 +35,7 @@ offset_right = 472.0
 offset_bottom = 20.0
 theme_override_colors/font_color = Color(0.372549, 0.847059, 1, 1)
 theme_override_font_sizes/font_size = 8
-text = "3단계 — A/D 이동 · Space 점프 · 클릭 베기 · 빨간 칼이 닿는 순간 베면 패링 · R 재시작 · M 음소거"
+text = "4단계 — 클릭 베기 · 칼이 닿는 순간 / 원이 띠 안에 들어올 때(총을 쏘는 순간) 베면 패링 · R 재시작"
 
 [node name="Crosshair" type="Control" parent="HUD"]
 layout_mode = 3

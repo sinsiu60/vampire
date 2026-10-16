@@ -11,8 +11,6 @@ var state := "idle"
 var t := 0.0                     # 지금 상태에 들어온 뒤 경과 시간 (월드 시간)
 var dead := false
 
-const LAYER_TERRAIN := 1
-const LAYER_ENEMY := 4
 
 
 func _setup(c: Dictionary) -> void:
@@ -21,8 +19,8 @@ func _setup(c: Dictionary) -> void:
 	shape.size = Vector2(c.w, c.h)
 	$Collision.shape = shape
 	$Collision.position = Vector2(0, -c.h / 2.0)
-	collision_layer = LAYER_ENEMY
-	collision_mask = LAYER_TERRAIN     # 플레이어와는 몸으로 부딪히지 않음 (프로토타입과 같게)
+	collision_layer = Config.layers.enemy
+	collision_mask = Config.layers.terrain | Config.layers.platform   # 플레이어와는 몸으로 부딪히지 않음
 	floor_snap_length = 2.0
 	add_to_group("enemies")
 
@@ -47,7 +45,7 @@ func can_step(dir: int) -> bool:
 		return true
 	var q := PhysicsPointQueryParameters2D.new()
 	q.position = global_position + Vector2(dir * (cfg.w / 2.0 + 1.0), 2.0)
-	q.collision_mask = LAYER_TERRAIN
+	q.collision_mask = Config.layers.terrain | Config.layers.platform
 	return not get_world_2d().direct_space_state.intersect_point(q, 1).is_empty()
 
 
