@@ -63,24 +63,31 @@ const CONFIG = {
     speed: 48, accel: 500,
     aggroRange: 290, aggroHeight: 130,
     keepMin: 85, keepMax: 175,        // 이 거리 사이를 유지하며 사격
-    firstDelay: 0.5,                  // 발견 후 첫 사격 준비까지
-    telegraph: 0.4,                   // 발사 예고 (총구 빨간 점멸)
-    aimLock: 0.12,                    // 발사 직전 이 시간 동안은 조준 고정 (피할 틈)
-    blinkRate: 0.05,
-    cooldown: 1.35,                   // 발사 후 다음 예고까지
+    firstDelay: 0.5,                  // 발견 후 첫 조준까지
+    AIM_TIME: 0.8,                    // 조준 시작 → 발사 (빨간 조준선이 플레이어 추적)
+    AIM_LOCK_TIME: 0.15,              // 발사 이 시간 전부터 조준 고정 (흰색 깜빡 + 총구 빨간 빛)
+    LASER_ALPHA_MIN: 0.4,             // 조준선 시작 투명도 (고정 직전 1.0)
+    LOCK_BLINKS: 2,                   // 조준 고정 시 흰색 깜빡임 횟수
+    LOCK_BLINK_TIME: 0.025,           // 깜빡임 한 번 길이 (초)
+    cooldown: 1.35,                   // 발사 후 다음 조준까지
     gunLength: 15,
-    unparryableChance: 0,             // 패링 불가(보라) 총알 확률 — 프로토타입에선 0 (구조만)
+    unparryableChance: 0,             // 패링 불가(보라) 사격 확률 — 프로토타입에선 0 (구조만)
   },
 
-  bullet: {
-    speed: 150,                       // 적 총알 속도 (피할 수 있을 정도)
-    radius: 2,
-    life: 4,
-    reflectSpeedMul: 1.9,             // 반사된 총알 속도 배수
+  // 적 사격 = 히트스캔 (발사 즉시 명중) + 타이밍 패링
+  shot: {
+    PARRY_EARLY: 0.10,                // 발사 이 시간 전부터 베기를 시작했으면 패링
+    PARRY_LATE: 0.05,                 // 발사 후 이 시간까지 베기를 시작해도 패링 (그동안 피격 판정 보류)
+    WHIFF_COOLDOWN: 0.3,              // 헛스윙(패링·처치 없음)이면 이 시간 동안 베기 불가 → 연타 패링 방지
+    MIN_SHOT_GAP: 0.3,                // 여러 총잡이의 발사 순간 최소 간격 (자동으로 벌림)
+    RANGE: 480,                       // 사격/반사 사거리 (px)
+    TRACER_FRAMES: 3,                 // 탄 궤적 표시 프레임
+    TRACER_WIDTH: 2,                  // 적 탄 궤적 두께
+    REFLECT_TRACER_WIDTH: 3,          // 반사탄 궤적 두께
+    PLAYER_HIT_PAD: 1,                // 플레이어 피격 판정 여유 (px)
   },
 
   parry: {
-    bulletLeniency: 3,                // 총알 패링 판정 여유 (px)
     meleeEarly: 0.1,                  // 근접 적 예고 마지막 이 시간 동안 베어도 '패링'으로 인정
   },
 
@@ -89,9 +96,6 @@ const CONFIG = {
     AIM_SNAP_ANGLE: 35,               // 마우스 방향 ±이 각도(°) 안의 적을 스냅 후보로
     OWNER_PRIORITY_ANGLE: 50,         // 그 총알을 쏜 적이 ±이 각도(°) 안이면 최우선
     AIM_SNAP_RANGE: 300,              // 후보 최대 거리 (px)
-    HOMING_TURN_RATE: 90,             // 반사 총알이 대상 쪽으로 도는 최대 속도 (°/초)
-    REFLECT_HITBOX_SCALE: 1.8,        // 반사 총알의 적 피격 판정 배율 (그래픽은 그대로)
-    // (반사 직후 슬로우는 parrySeq 로 대체됨)
     MELEE_PARRY_RANGE_BONUS: 0.2,     // 근접 패링 판정 거리 +20%
   },
 
@@ -131,13 +135,21 @@ const CONFIG = {
     SLOW_SCALE: 0.1,                  // 7) F3 슬로우 모드 게임 속도
   },
 
-  // 총알 패링 성공 시퀀스 (실제 시간 기준)
-  //  0초                parry_chang + 히트스톱 6f + 섬광 / slowmo_in, 시간 속도 1.0 → 0.1 (SLOWMO_IN 동안)
-  //  SLOWMO_IN           slowmo_loop 반복 시작
+  // 사격 패링 성공 시퀀스 (실제 시간 기준)
+  //  0초                parry_chang + 히트스톱 6f + 흰 섬광 + 노란 불꽃 /
+  //                     slowmo_in, 시간 속도 1.0 → 0.1 (SLOWMO_IN 동안), 채도 감소 + 비네트
+  //  SLOWMO_IN           slowmo_loop 반복 시작, 노란 반사 궤적이 대상 쪽으로 천천히 뻗어감
   //  + SLOWMO_HOLD       time_return 재생, slowmo 소리 LOOP_FADE 동안 줄이며 정지,
-  //                      시간 속도 0.1 → 1.0 (ease-in) — 길이는 time_return.wav 의 실제 길이
-  //  + time_return 길이   반사탄 명중 → kill_sound + 16프레임 킬 연출
+  //                      시간 속도 0.1 → 1.0 (ease-in) — 길이는 time_return.wav 의 실제 길이.
+  //                      채도·비네트 원상복구, 화면 살짝 줌인
+  //  + time_return 길이   반사탄(히트스캔) 명중 → 3px 노란 궤적 + kill_sound + 16프레임 킬 연출
   parrySeq: {
+    LOCK_INPUT_DURING_SLOWMO: true,   // 시퀀스 중 플레이어 입력 잠금 (그동안 플레이어는 맞지 않음)
+    DESATURATE: 0.4,                  // 슬로우 중 채도 감소량 (0.4 = 40%)
+    VIGNETTE: 0.6,                    // 슬로우 중 가장자리 어둡게 (0~1)
+    ZOOM: 0.06,                       // 시간 복귀 동안 줌인 정도 (0.06 = 6%)
+    ZOOM_OUT_FRAMES: 16,              // 명중 후 줌 원상복구 프레임
+    REFLECT_LINE_WIDTH: 1,            // 뻗어가는 반사 궤적 두께
     SLOWMO_IN: 0.15,                  // 슬로우 진입 시간 (초)
     SLOWMO_HOLD: 0.45,                // 슬로우 유지 시간 (초)
     SLOWMO_SCALE: 0.1,                // 슬로우 중 시간 속도
@@ -174,8 +186,6 @@ const CONFIG = {
     flashTime: 1 / 60,                // 흰 화면 섬광 (한 프레임)
     flashAlpha: 0.85,
     ringRadius: 38, ringTime: 0.3, ringWidth: 3,   // 3) 칼 끝 노란 충격파 링
-    reflectColorTime: 0.12,           // 4) 반사 총알 빨강 → 노랑 전환 시간
-    trailLength: 14,                  //    반사 총알 꼬리 길이 (프레임)
     pieceSpeed: 90, pieceSpin: 9,     // '날아가기'를 끈 경우의 약한 분리 속도/회전
     // 플레이어 사망
     deathHitstop: 0.06, deathShake: 5,
@@ -343,7 +353,7 @@ const Input = {
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
     window.addEventListener('keydown', (e) => {
-      if (['Space', 'F1', 'F2', 'F3', 'F4', 'Escape'].includes(e.code)) e.preventDefault(); // 브라우저 기본 동작(도움말/찾기 등) 막기
+      if (['Space', 'F1', 'F2', 'F3', 'F4', 'F5', 'Escape'].includes(e.code)) e.preventDefault(); // 브라우저 기본 동작(도움말/찾기 등) 막기
       // 디버그 시간 조작은 게임 루프 밖에서 처리 (정지 중에도 받아야 함)
       if (!e.repeat) {
         if (e.code === 'F3') { Debug.slow = !Debug.slow; Debug.step = false; }
@@ -1077,17 +1087,53 @@ const KillTrail = {
 };
 
 // -------------------------------------------------------------
+//  탄 궤적 (히트스캔): 정해진 프레임 수만큼 실제 시간으로 표시
+// -------------------------------------------------------------
+const Tracers = {
+  list: [],
+  reset() { this.list.length = 0; },
+  add(x0, y0, x1, y1, width, color, frames, muzzle = false) {
+    this.list.push({ x0, y0, x1, y1, width, color, frames, muzzle, f: 0 });
+  },
+  tick() {
+    for (const t of this.list) t.f++;
+    this.list = this.list.filter((t) => t.f < t.frames);
+  },
+  draw(g) {
+    for (const t of this.list) {
+      g.save();
+      g.lineCap = 'butt';
+      g.strokeStyle = t.color; g.shadowColor = t.color; g.shadowBlur = 6;
+      g.lineWidth = t.width;
+      g.globalAlpha = 1 - t.f / (t.frames + 1) * 0.5;
+      g.beginPath(); g.moveTo(t.x0, t.y0); g.lineTo(t.x1, t.y1); g.stroke();
+      if (t.muzzle && t.f < 2) {
+        // 총구 섬광
+        g.fillStyle = '#ffffff';
+        g.beginPath(); g.arc(t.x0, t.y0, 3 - t.f, 0, Math.PI * 2); g.fill();
+        g.fillStyle = t.color;
+        g.beginPath(); g.arc(t.x0, t.y0, 5 - t.f * 2, 0, Math.PI * 2); g.globalAlpha = 0.5; g.fill();
+      }
+      g.restore();
+    }
+  },
+};
+
+// -------------------------------------------------------------
 //  총알 패링 성공 시퀀스 (CONFIG.parrySeq 참고). 실제 시간 = 게임 틱(60fps) 기준으로 진행.
 //  k = 패링한 틱부터 센 실제 틱 수. scale = 지금 틱의 월드 시간 속도.
+//  killTick 에 Game 이 반사탄(히트스캔)을 쏜다 (fireNow).
 // -------------------------------------------------------------
 const ParrySeq = {
   active: false, k: 0, scale: 1,
-  bullet: null, target: null,
+  target: null, dir: 0, dist: 0,     // 반사 대상 (없으면 dir 방향으로 dist 까지)
   inTick: 0, returnTick: 0, killTick: 0, returnDur: 0,
   future: null,             // future[k] = k 틱 이후 killTick 까지 월드가 쓸 게임 시간 합
+  growTotal: 0,             // 반사 궤적이 뻗어가는 동안의 게임 시간 합
+  fireNow: false,
   hIn: null, hLoop: null,   // slowmo_in / slowmo_loop 재생 핸들
 
-  start(bullet, target, hitstopFrames) {
+  start(target, dir, dist, hitstopFrames) {
     const P = CONFIG.parrySeq, S = CONFIG.audio.samples, fps = CONFIG.fps;
     this.cancel();
     // 복귀 구간 길이 = time_return.wav 의 실제 재생 길이
@@ -1098,16 +1144,15 @@ const ParrySeq = {
     this.killTick = this.returnTick + Math.round(this.returnDur * fps);
     this.k = 0;
     this.active = true;
+    this.fireNow = false;
     this.scale = this.scaleAt(0);
-    // 반사탄이 정확히 killTick 에 닿도록, 앞으로 월드가 실제로 흘려보낼 게임 시간을 미리 계산
-    // (히트스톱 틱에는 월드가 멈춰 있으므로 0)
+    // 반사 궤적이 게임 시간에 맞춰 뻗어가도록 (느릴 땐 천천히, 시간이 돌아오면 빠르게)
     this.future = new Float64Array(this.killTick + 1);
     for (let j = this.killTick; j >= 1; j--) {
       this.future[j - 1] = this.future[j] + (j > hitstopFrames ? this.scaleAt(j) * STEP : 0);
     }
-    this.bullet = bullet;
-    this.target = target;
-    if (bullet && target) bullet.scripted = true;
+    this.growTotal = this.future[this.inTick - 1] || 1e-6;
+    this.target = target; this.dir = dir; this.dist = dist;
     // 0초: slowmo_in (parry_chang 은 parryFx 에서)
     this.hIn = Sfx.playSample('slowmo_in', { vol: S.SFX_SLOWMO_IN });
     this.hLoop = null;
@@ -1127,6 +1172,23 @@ const ParrySeq = {
     }
     return 1;
   },
+  // 복귀 구간 진행도 0~1 (복귀 전 0)
+  returnU() {
+    if (!this.active || this.k < this.returnTick) return 0;
+    return clamp((this.k - this.returnTick) / (this.killTick - this.returnTick), 0, 1);
+  },
+  // 채도 감소·비네트 세기 0~1: 진입 동안 올라가고, 복귀 동안 원상복구
+  fxAmount() {
+    if (!this.active) return 0;
+    if (this.k < this.inTick) return this.k / this.inTick;
+    if (this.k < this.returnTick) return 1;
+    return 1 - this.returnU();
+  },
+  // 반사 궤적이 뻗어간 정도 0~1 (SLOWMO_IN 부터)
+  growth() {
+    if (!this.active || this.k < this.inTick) return 0;
+    return clamp(1 - this.future[this.k] / this.growTotal, 0, 1);
+  },
 
   // 실제 시간 한 틱 (히트스톱/킬스톱 중에도 Game.update 에서 매 틱 호출)
   tick() {
@@ -1142,135 +1204,22 @@ const ParrySeq = {
       if (this.hLoop) this.hLoop.fadeOut(P.LOOP_FADE);
       this.hIn = this.hLoop = null;
     }
-    // time_return 이 끝나는 틱: 반사탄을 대상에 붙임 (월드가 멈춰 있던 경우에도 반드시 명중)
-    const b = this.bullet, t = this.target;
-    if (k === this.killTick && b && b.scripted && !b.dead && t && !t.dead) {
-      b.x = t.cx; b.y = t.cy; b.arrived = true;
-    }
     this.scale = this.scaleAt(k);
-    if (k >= this.killTick) { this.active = false; this.bullet = this.target = null; }
+    // time_return 재생이 끝나는 바로 그 틱: 반사탄 명중
+    if (k >= this.killTick) { this.fireNow = true; this.active = false; }
   },
-
-  // 지금 틱 이후 killTick 까지 남은 게임 시간
-  futureGame() { return this.active && this.future ? this.future[this.k] : 0; },
 
   // 재시작/사망/새 시퀀스: 소리 정리하고 정상 속도로
   cancel() {
     if (this.hIn) this.hIn.fadeOut(0.08);
     if (this.hLoop) this.hLoop.fadeOut(0.08);
     this.hIn = this.hLoop = null;
-    if (this.bullet) this.bullet.scripted = false;
-    this.bullet = this.target = null;
+    this.target = null;
     this.active = false;
+    this.fireNow = false;
     this.scale = 1;
   },
 };
-
-// -------------------------------------------------------------
-//  총알
-// -------------------------------------------------------------
-class Bullet {
-  constructor(x, y, angle, speed, parryable = true) {
-    this.x = x; this.y = y;
-    this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed;
-    this.r = CONFIG.bullet.radius;
-    this.owner = 'enemy';     // enemy | player(반사됨)
-    this.parryable = parryable;
-    this.life = CONFIG.bullet.life;
-    this.dead = false;
-    this.trail = [];          // 지난 위치 [x0,y0,x1,y1,...] (최신이 앞)
-    this.reflectT = 0;        // 반사 후 경과 시간 (색 전환용)
-    this.shooter = null;      // 쏜 적
-    this.target = null;       // 반사 후 유도 대상
-    this.scripted = false;    // 패링 시퀀스가 도착 프레임을 정한 반사탄
-    this.arrived = false;     //   그 반사탄이 도착 틱에 대상 중심에 닿았는가 (그 전엔 명중 판정 안 함)
-  }
-  update(dt) {
-    this.life -= dt;
-    if (this.life <= 0) { this.dead = true; return; }
-    if (this.owner === 'player') {
-      this.reflectT += dt;
-      if (!this.scripted) this.home(dt);
-    }
-    this.trail.unshift(this.x, this.y);
-    const maxTrail = (this.owner === 'player' ? CONFIG.fx.trailLength : 3) * 2;
-    if (this.trail.length > maxTrail) this.trail.length = maxTrail;
-    if (this.scripted) { this.flyScripted(dt); return; }
-    // 빠른 총알이 벽을 뚫지 않도록 나눠서 이동. 일방향 발판은 통과.
-    const n = Math.max(1, Math.ceil(Math.hypot(this.vx, this.vy) * dt / 3));
-    for (let i = 0; i < n; i++) {
-      this.x += this.vx * dt / n; this.y += this.vy * dt / n;
-      if (solidAt(this.x, this.y, false)) {
-        this.dead = true;
-        Particles.burst(this.x, this.y, 5, this.color, 80, { life: 0.2 });
-        return;
-      }
-    }
-  }
-  get color() {
-    const C = CONFIG.colors;
-    if (this.owner === 'player') return mixColor(C.attack, C.parry, this.reflectT / CONFIG.fx.reflectColorTime);
-    return this.parryable ? C.attack : C.unparryable;
-  }
-  // 패링 시퀀스 반사탄: 남은 게임 시간 동안 대상까지 남은 거리를 고르게 나눠 이동
-  // → time_return 이 끝나는 바로 그 틱에 대상 중심에 도착. 대상이 죽으면 그 방향으로 직진.
-  flyScripted(dt) {
-    const t = this.target;
-    if (!t || t.dead) { this.scripted = false; return; }
-    const dx = t.cx - this.x, dy = t.cy - this.y, d = Math.hypot(dx, dy);
-    const fut = ParrySeq.bullet === this ? ParrySeq.futureGame() : 0;
-    const f = dt <= 0 ? 0 : dt / (dt + fut);
-    this.x += dx * f; this.y += dy * f;
-    if (f >= 1) this.arrived = true;
-    if (d > 0.01 && dt > 0) {
-      const sp = Math.max(60, d * f / dt);           // 방향(처치 각도)·직진 전환용 속도
-      this.vx = dx / d * sp; this.vy = dy / d * sp;
-    }
-  }
-
-  // 약한 유도: 대상 쪽으로 초당 HOMING_TURN_RATE° 까지만 회전. 대상이 죽으면 직진.
-  home(dt) {
-    if (!this.target) return;
-    if (this.target.dead) { this.target = null; return; }
-    const cur = Math.atan2(this.vy, this.vx);
-    const want = Math.atan2(this.target.cy - this.y, this.target.cx - this.x);
-    const maxTurn = CONFIG.aimAssist.HOMING_TURN_RATE * Math.PI / 180 * dt;
-    const a = cur + clamp(angDiff(want, cur), -maxTurn, maxTurn);
-    const sp = Math.hypot(this.vx, this.vy);
-    this.vx = Math.cos(a) * sp; this.vy = Math.sin(a) * sp;
-  }
-  reflect(angle, target = null) {
-    this.target = target;
-    const sp = Math.hypot(this.vx, this.vy) * CONFIG.bullet.reflectSpeedMul;
-    this.vx = Math.cos(angle) * sp; this.vy = Math.sin(angle) * sp;
-    this.owner = 'player';
-    this.life = CONFIG.bullet.life;
-    this.reflectT = 0;
-    this.trail = [];
-  }
-  draw(g) {
-    const col = this.color;
-    g.save();
-    g.shadowColor = col; g.shadowBlur = 6;
-    g.lineCap = 'round';
-    // 꼬리 궤적: 머리에서 멀어질수록 가늘고 옅게 (반사 총알은 주황으로 식어감)
-    const n = this.trail.length / 2;
-    let px = this.x, py = this.y;
-    for (let i = 0; i < n; i++) {
-      const k = i / n;
-      const tx = this.trail[i * 2], ty = this.trail[i * 2 + 1];
-      g.globalAlpha = 1 - k;
-      g.strokeStyle = this.owner === 'player' && k > 0.3 ? CONFIG.colors.parryHot : col;
-      g.lineWidth = Math.max(1, (this.owner === 'player' ? 3 : 2) * (1 - k));
-      g.beginPath(); g.moveTo(px, py); g.lineTo(tx, ty); g.stroke();
-      px = tx; py = ty;
-    }
-    g.globalAlpha = 1;
-    g.fillStyle = col;
-    g.beginPath(); g.arc(this.x, this.y, this.r, 0, Math.PI * 2); g.fill();
-    g.restore();
-  }
-}
 
 // 두 점 사이 시야가 트였는가 (일방향 발판은 막지 않음)
 function lineOfSight(x0, y0, x1, y1) {
@@ -1304,6 +1253,9 @@ class Player {
     this.dashT = 0;
     this.airUpUsed = false;
     this.dead = false;
+    this.lastSlashT = -Infinity;  // 마지막 베기 시작 시각 (월드 시간) — 타이밍 패링 판정
+    this.slashUsed = false;       // 이번 베기가 패링/처치에 쓰였는가 (아니면 헛스윙)
+    this.whiffChecked = false;
     this.trail = null;        // 반달 베기 궤적 (월드 시간으로 흐름 → 히트스톱 중엔 멈춘 채 보임)
     // 애니메이션
     this.lean = 0;
@@ -1348,6 +1300,9 @@ class Player {
     this.slashAngle = a;
     this.slashT = 0;
     this.slashCd = S.cooldown;
+    this.lastSlashT = Game.worldT;
+    this.slashUsed = false;
+    this.whiffChecked = false;
     this.slashFlip = -this.slashFlip;
     this.trail = { ticks: 0, angle: a, flip: this.slashFlip, hit: false };
     let dx = Math.cos(a), dy = Math.sin(a);
@@ -1433,18 +1388,24 @@ class Player {
 
   move(dt, aimX, aimY) {
     const c = CONFIG.player, S = CONFIG.slash;
-    const ax = (Input.held('KeyD') ? 1 : 0) - (Input.held('KeyA') ? 1 : 0);
+    const ctl = !Game.inputLocked;                 // 패링 시퀀스 중 입력 잠금
+    const ax = ctl ? (Input.held('KeyD') ? 1 : 0) - (Input.held('KeyA') ? 1 : 0) : 0;
 
     // 베기 타이머
     this.slashCd = Math.max(0, this.slashCd - dt);
     if (this.slashing) {
       this.slashT += dt;
+      // 헛스윙: 패링 창(PARRY_EARLY)과 직접 베기 판정(hitTime)이 끝날 때까지 아무것도 못 쳤으면 잠시 베기 불가
+      if (!this.whiffChecked && this.slashT >= Math.max(CONFIG.shot.PARRY_EARLY, S.hitTime)) {
+        this.whiffChecked = true;
+        if (!this.slashUsed) this.slashCd = Math.max(this.slashCd, CONFIG.shot.WHIFF_COOLDOWN);
+      }
       if (this.slashT >= S.duration) this.slashT = -1;
     }
-    if (Input.mouse.clicked && this.slashCd <= 0) this.startSlash(aimX, aimY);
+    if (ctl && Input.mouse.clicked && this.slashCd <= 0) this.startSlash(aimX, aimY);
 
     // 점프 입력 타이머
-    if (Input.hit('Space')) this.jumpBuf = c.jumpBuffer;
+    if (ctl && Input.hit('Space')) this.jumpBuf = c.jumpBuffer;
     else this.jumpBuf = Math.max(0, this.jumpBuf - dt);
     if (this.onGround) { this.coyote = c.coyoteTime; this.airUpUsed = false; }
     else this.coyote = Math.max(0, this.coyote - dt);
@@ -1760,7 +1721,9 @@ class Melee extends Enemy {
 }
 
 // -------------------------------------------------------------
-//  총잡이: 가는 몸 + 긴 코트 + 앞으로 튀어나온 총. 발사 0.4초 전 총구 빨간 점멸
+//  총잡이: 가는 몸 + 긴 코트 + 앞으로 튀어나온 총. 히트스캔 사격.
+//  조준(AIM_TIME) 동안 빨간 조준선이 플레이어를 추적하며 점점 굵고 밝아지고,
+//  발사 AIM_LOCK_TIME 전 조준 고정 → 흰색 두 번 깜빡 + 총구에 빨간 빛 → 발사
 // -------------------------------------------------------------
 class Gunner extends Enemy {
   constructor(def) {
@@ -1769,23 +1732,32 @@ class Gunner extends Enemy {
     this.aim = this.facing > 0 ? 0 : Math.PI;
     this.cool = 0;
     this.nextParryable = true;
+    this.lastFireT = -Infinity;     // 마지막 발사 시각 (월드 시간)
+    this.laser = null;              // 조준선 끝점 (벽까지)
   }
   get pivotX() { return this.cx + this.facing; }
   get pivotY() { return this.y + this.h - 14; }
   get muzzleX() { return this.pivotX + Math.cos(this.aim) * this.cfg.gunLength; }
   get muzzleY() { return this.pivotY + Math.sin(this.aim) * this.cfg.gunLength; }
+  get lockStart() { return this.cfg.AIM_TIME - this.cfg.AIM_LOCK_TIME; }
+  get locked() { return this.state === 'aim' && this.t >= this.lockStart; }
 
   aimAt(player) {
     this.aim = Math.atan2(player.cy - this.pivotY, player.cx - this.pivotX);
     this.facing = Math.cos(this.aim) >= 0 ? 1 : -1;
   }
+  // 예정된(또는 마지막) 발사 시각 — 여러 총잡이 발사 간격 조정용
+  expectedFireT(worldT) {
+    return this.state === 'aim' ? worldT + (this.cfg.AIM_TIME - this.t) : this.lastFireT;
+  }
 
   update(dt, player, game) {
     const C = this.cfg;
     const dx = player.cx - this.cx, dy = player.cy - this.cy;
+    // 벽에 가려 플레이어가 안 보이면 조준을 시작하지 않음
     const sees = !player.dead && Math.abs(dx) < C.aggroRange && Math.abs(dy) < C.aggroHeight &&
       lineOfSight(this.pivotX, this.pivotY, player.cx, player.cy);
-    this.t += dt;
+    if (this.state !== 'aim') this.t += dt;
     switch (this.state) {
       case 'idle':
         this.walk(0, 0, C.accel, dt);
@@ -1801,48 +1773,54 @@ class Gunner extends Enemy {
         this.walk(dir, C.speed, C.accel, dt);
         this.cool -= dt;
         if (this.cool <= 0 && sees) {
-          this.setState('windup');
+          this.setState('aim');
           this.nextParryable = Math.random() >= C.unparryableChance;
         }
         break;
       }
-      case 'windup':
+      case 'aim': {
         this.walk(0, 0, C.accel * 2, dt);
-        if (this.t < C.telegraph - C.aimLock && !player.dead) this.aimAt(player);
-        if (this.t >= C.telegraph) {
-          const b = new Bullet(this.muzzleX, this.muzzleY, this.aim, CONFIG.bullet.speed, this.nextParryable);
-          b.shooter = this;
-          game.bullets.push(b);
-          Particles.burst(this.muzzleX, this.muzzleY, 4, this.nextParryable ? CONFIG.colors.attack : CONFIG.colors.unparryable,
-            70, { angle: this.aim, spread: 0.5, life: 0.12, glow: true });
-          this.vx -= Math.cos(this.aim) * 40; // 반동
-          Sfx.play('shot');
+        if (player.dead) { this.setState('idle'); this.laser = null; break; }
+        let nt = this.t + dt;
+        // 다른 총잡이와 발사가 MIN_SHOT_GAP 안으로 겹치거나 패링 시퀀스 중이면, 조준 고정 직전에서 기다림
+        if (game.shouldHoldAim(this, nt)) nt = Math.min(nt, Math.max(this.t, this.lockStart - 1e-4));
+        this.t = nt;
+        if (this.t < this.lockStart) this.aimAt(player);            // 고정 전까지 추적
+        this.laser = game.raycast(this.muzzleX, this.muzzleY, this.aim, CONFIG.shot.RANGE, null);
+        if (this.t >= C.AIM_TIME) {
+          game.fireShot(this);
+          this.lastFireT = game.worldT;
           this.cool = C.cooldown;
+          this.laser = null;
           this.setState('engage');
         }
         break;
+      }
     }
     this.physics(dt);
   }
 
-  muzzleHot() {
-    return this.state === 'windup' &&
-      (Math.floor(this.t / this.cfg.blinkRate) % 2 === 0 || this.t > this.cfg.telegraph - 0.08);
-  }
-
   draw(g) {
-    const Col = CONFIG.colors;
+    const Col = CONFIG.colors, C = this.cfg;
     const fx = Math.round(this.cx), fy = Math.round(this.y + this.h);
     const atkCol = this.nextParryable ? Col.attack : Col.unparryable;
-    // 조준선 (예고 중, 옅게)
-    if (this.state === 'windup') {
+    const aiming = this.state === 'aim' && this.laser;
+    // 조준선: 0.8 → 0.15초 전 1px→2px, 투명도 40%→100%. 고정 후 흰색 두 번 깜빡
+    if (aiming) {
+      const k = clamp(this.t / this.lockStart, 0, 1);
+      let color = atkCol, alpha = lerp(C.LASER_ALPHA_MIN, 1, k), width = k < 0.5 ? 1 : 2;
+      if (this.locked) {
+        const lt = this.t - this.lockStart, period = C.LOCK_BLINK_TIME * 2;
+        if (lt < period * C.LOCK_BLINKS && (lt % period) < C.LOCK_BLINK_TIME) color = '#ffffff';
+        alpha = 1; width = 2;
+      }
       g.save();
-      g.globalAlpha = this.t > this.cfg.telegraph - this.cfg.aimLock ? 0.5 : 0.2;
-      g.strokeStyle = atkCol; g.lineWidth = 1;
-      g.setLineDash([2, 3]);
+      g.globalAlpha = alpha;
+      g.strokeStyle = color; g.lineWidth = width;
+      if (this.locked) { g.shadowColor = color; g.shadowBlur = 4; }
       g.beginPath();
       g.moveTo(this.muzzleX, this.muzzleY);
-      g.lineTo(this.muzzleX + Math.cos(this.aim) * 70, this.muzzleY + Math.sin(this.aim) * 70);
+      g.lineTo(this.laser.x, this.laser.y);
       g.stroke();
       g.restore();
     }
@@ -1869,10 +1847,12 @@ class Gunner extends Enemy {
       g.fillRect(5, 1, 2, 2);   // 손잡이
       g.fillRect(12, -1, 3, 1); // 총열
     }, Col.enemyBody, Col.enemyRim);
-    if (this.muzzleHot()) {
+    // 조준 고정 = "지금 친다": 총구에 작은 빨간 빛이 맺힘
+    if (this.locked) {
+      const u = clamp((this.t - this.lockStart) / C.AIM_LOCK_TIME, 0, 1);
       g.shadowColor = atkCol; g.shadowBlur = 8;
       g.fillStyle = atkCol;
-      g.fillRect(11, -2, 5, 3);
+      g.beginPath(); g.arc(15, 0, 1 + u * 1.5, 0, Math.PI * 2); g.fill();
     }
     g.restore();
   }
@@ -1889,7 +1869,14 @@ const Game = {
   playT: 0,               // 첫 판 시작 후 경과 (조작 안내 표시용)
   player: null,
   enemies: [],
-  bullets: [],
+  pendingShots: [],       // 플레이어에 닿아 패링 입력을 기다리는 탄
+  worldT: 0,              // 월드 시간 (슬로우모션이면 느리게 흐름) — 사격·패링 타이밍 기준
+  realT: 0,               // 실제 시간 (히트스톱·슬로우와 무관하게 틱마다 STEP 씩)
+  lastClickReal: -Infinity, clickNoted: false,  // 마지막 클릭 실제 시각 (베기가 막혔어도) — 실패 오차 표시용
+  inputLocked: false,
+  zoom: 1,
+  timingDebug: false,     // F5: 패링 판정 창 타이밍 바 + 입력 오차 표시
+  timingMsg: null, lateWatch: null,
   cam: { x: 0, y: 0 },
   fade: 0,
   hitstop: 0,             // 남은 정지 시간 (패링/사망)
@@ -1906,7 +1893,12 @@ const Game = {
     this.state = 'play';
     this.player = new Player(ROOM.spawn.x, ROOM.spawn.y);
     this.enemies = ROOM.enemies.map((d) => new ENEMY_TYPES[d.type](d));
-    this.bullets = [];
+    this.pendingShots = [];
+    this.worldT = 0;
+    this.lastClickReal = -Infinity;
+    this.lateWatch = null;
+    this.zoom = 1;
+    Tracers.reset();
     Particles.reset();
     Rings.reset();
     Pieces.reset();
@@ -1952,6 +1944,7 @@ const Game = {
     if (Input.hit('KeyM')) Sfx.toggleMute();
     if (Input.hit('F1')) this.debug = !this.debug;
     if (Input.hit('F2')) this.juicePanel = !this.juicePanel;
+    if (Input.hit('F5')) this.timingDebug = !this.timingDebug;
     if (this.juicePanel) this.handleJuiceKeys();
     this.fade = Math.max(0, this.fade - dt);
 
@@ -1961,17 +1954,33 @@ const Game = {
     Pieces.tickRealtime();
     if (this.killFrame >= 0) this.killFrame++;
     ParrySeq.tick();                   // 패링 시퀀스는 실제 시간으로 진행 (히트스톱/킬스톱 중에도)
+    Tracers.tick();
+    if (this.timingMsg) this.timingMsg.t += dt;
+    this.realT += dt;
+    // 클릭 시각은 실제 시간으로 기록 (히트스톱으로 월드가 멈춘 동안 누른 것도 정확하게)
+    if (Input.mouse.clicked && !this.clickNoted) {
+      this.clickNoted = true;
+      this.lastClickReal = this.realT;
+      const lw = this.lateWatch;   // 패링 실패 후 늦게 누른 클릭 → '+xxms 늦음'
+      if (lw && this.realT <= lw.until) { this.reportTiming(this.realT - lw.fireReal, 'late'); this.lateWatch = null; }
+    }
+    if (this.lateWatch && this.realT > this.lateWatch.until) this.lateWatch = null;
+    this.inputLocked = ParrySeq.active && CONFIG.parrySeq.LOCK_INPUT_DURING_SLOWMO;
+    // 줌: 시간 복귀 동안 살짝 줌인, 명중 후 원상복구
+    const PS = CONFIG.parrySeq;
+    if (ParrySeq.active) this.zoom = 1 + PS.ZOOM * ParrySeq.returnU() ** 2;
+    else this.zoom = approach(this.zoom, 1, PS.ZOOM / PS.ZOOM_OUT_FRAMES);
+    if (ParrySeq.fireNow) { ParrySeq.fireNow = false; this.reflectHit(); }
 
     // 킬 타임스톱: 플레이어·맞은 적(조각)은 베는 자세로 정지. 빛줄기·피·먼지·궤적만 움직임
     if (this.killStop > 0) {
       this.killStop--;
       this.hitstop = Math.max(0, this.hitstop - dt);
       if (!CONFIG.kill.FREEZE_OTHERS) {
+        // 다른 적은 계속 움직이되 그동안 플레이어는 공격하지도 맞지도 않음 (사격도 보류)
         for (const e of this.enemies) e.update(dt, this.player, this);
-        for (const b of this.bullets) b.update(dt);
-        this.resolveCombat(true);
+        this.pendingShots.length = 0;
         this.enemies = this.enemies.filter((e) => !e.dead);
-        this.bullets = this.bullets.filter((b) => !b.dead);
       }
       this.updateFx(dt, true);
       if (this.killStop === 0) KillTrail.release();   // 해제: 조각이 날아가고 조작 재개 (다음 틱부터)
@@ -1983,6 +1992,7 @@ const Game = {
     // 패링 시퀀스 슬로우모션: 월드 시간만 느리게 (소리·흔들림·섬광은 실제 시간)
     const realDt = dt;
     dt *= ParrySeq.scale;
+    this.worldT += dt;
 
     const p = this.player;
     if (!p.dead) {
@@ -1990,10 +2000,9 @@ const Game = {
       p.update(dt, m.x, m.y);
     }
     for (const e of this.enemies) e.update(dt, p, this);
-    for (const b of this.bullets) b.update(dt);
+    this.resolveShots();
     this.resolveCombat();
     this.enemies = this.enemies.filter((e) => !e.dead);
-    this.bullets = this.bullets.filter((b) => !b.dead);
     this.updateFx(dt, false);
     Pieces.update(dt);
     dt = realDt;
@@ -2101,29 +2110,12 @@ const Game = {
     Sfx.play('parry');
   },
 
-  // duringStop: 타임스톱 중 (FREEZE_OTHERS=false 일 때) — 플레이어는 공격하지도 맞지도 않음
-  resolveCombat(duringStop = false) {
+  resolveCombat() {
     const p = this.player;
-    if (duringStop) {
-      for (const b of this.bullets) {
-        if (b.dead || b.owner !== 'player') continue;
-        for (const e of this.enemies) {
-          if (!e.dead && circleRect(b.x, b.y, b.r * CONFIG.aimAssist.REFLECT_HITBOX_SCALE, e)) {
-            this.killEnemy(e, Math.atan2(b.vy, b.vx), 'reflect'); b.dead = true; break;
-          }
-        }
-      }
-      return;
-    }
-    const S = CONFIG.slash, P = CONFIG.parry;
+    const S = CONFIG.slash;
 
     if (!p.dead && p.inParryWindow) {
-      // 1) 패링: 총알 → 마우스 방향으로 반사
-      for (const b of this.bullets) {
-        if (b.dead || b.owner !== 'enemy' || !b.parryable) continue;
-        if (p.slashHits(b.x, b.y, b.r + P.bulletLeniency)) this.parryBullet(b);
-      }
-      // 2) 패링: 근접 공격 → 적 즉사
+      // 1) 패링: 근접 공격 → 적 즉사 (사격 패링은 resolveShots 의 타이밍 판정)
       for (const e of this.enemies) {
         if (e.dead || !e.parryVulnerable || !e.parryVulnerable()) continue;
         const reach = 1 + CONFIG.aimAssist.MELEE_PARRY_RANGE_BONUS;
@@ -2131,33 +2123,15 @@ const Game = {
       }
     }
 
-    // 3) 칼이 적 몸통에 직접 닿음 → 즉사
+    // 2) 칼이 적 몸통에 직접 닿음 → 즉사
     if (!p.dead && S.directKill && p.slashing && p.slashT < S.hitTime) {
       for (const e of this.enemies) {
-        if (!e.dead && p.slashHitsRect(e)) this.killEnemy(e, p.slashAngle, 'slash');
+        if (!e.dead && p.slashHitsRect(e)) { p.slashUsed = true; this.killEnemy(e, p.slashAngle, 'slash'); }
       }
     }
 
-    // 4) 총알 명중
-    for (const b of this.bullets) {
-      if (b.dead) continue;
-      if (b.owner === 'player') {
-        for (const e of this.enemies) {
-          if (b.scripted && (e !== b.target || !b.arrived)) continue;   // 시퀀스 반사탄은 도착 틱에 정해진 대상만
-          if (!e.dead && circleRect(b.x, b.y, b.r * CONFIG.aimAssist.REFLECT_HITBOX_SCALE, e)) {
-            this.killEnemy(e, Math.atan2(b.vy, b.vx), 'reflect');
-            b.dead = true;
-            break;
-          }
-        }
-      } else if (!p.dead && circleRect(b.x, b.y, b.r - 1, p)) {
-        b.dead = true;
-        this.killPlayer(Math.atan2(b.vy, b.vx));
-      }
-    }
-
-    // 5) 근접 공격 명중
-    if (p.dead) return;
+    // 3) 근접 공격 명중 (패링 시퀀스로 입력이 잠긴 동안은 맞지 않음)
+    if (p.dead || this.inputLocked) return;
     for (const e of this.enemies) {
       if (e.dead) continue;
       const box = e.attackBox();
@@ -2186,21 +2160,139 @@ const Game = {
     return best;
   },
 
-  parryBullet(b) {
-    const m = this.mouseWorld(), p = this.player;
+  // 히트스캔 레이: (x, y) 에서 angle 방향으로 range 까지. 지형(일방향 발판 제외)에 막힘.
+  //  player 를 주면 플레이어 판정, enemies 를 주면 적 판정 (먼저 닿는 것)
+  raycast(x, y, angle, range, player, enemies = null) {
+    const dx = Math.cos(angle), dy = Math.sin(angle), step = 1.5, pad = CONFIG.shot.PLAYER_HIT_PAD;
+    for (let d = 0; d <= range; d += step) {
+      const px = x + dx * d, py = y + dy * d;
+      if (solidAt(px, py, false)) return { x: px, y: py, wall: true, player: false, enemy: null };
+      if (player && px >= player.x - pad && px <= player.x + player.w + pad && py >= player.y - pad && py <= player.y + player.h + pad) {
+        return { x: px, y: py, wall: false, player: true, enemy: null };
+      }
+      if (enemies) {
+        for (const e of enemies) {
+          if (!e.dead && px >= e.x && px <= e.x + e.w && py >= e.y && py <= e.y + e.h) return { x: px, y: py, wall: false, player: false, enemy: e };
+        }
+      }
+    }
+    return { x: x + dx * range, y: y + dy * range, wall: false, player: false, enemy: null };
+  },
+
+  // 총잡이 g 가 지금 조준을 더 진행하면 안 되는가
+  //  - 패링 시퀀스 중 (플레이어 입력이 잠겨 피할 수 없으므로)
+  //  - 다른 총잡이의 (예정된) 발사와 MIN_SHOT_GAP 안으로 겹칠 때, 나중 순서인 쪽이 기다림
+  shouldHoldAim(g, nt) {
+    if (ParrySeq.active) return true;
+    const gap = CONFIG.shot.MIN_SHOT_GAP;
+    const mine = this.worldT + (g.cfg.AIM_TIME - nt);
+    const gi = this.enemies.indexOf(g);
+    for (const o of this.enemies) {
+      if (o === g || o.kind !== 'gunner' || o.dead) continue;
+      const of = o.expectedFireT(this.worldT);
+      if (!isFinite(of)) continue;
+      const otherFirst = of < mine || (of === mine && this.enemies.indexOf(o) < gi);
+      if (otherFirst && mine - of < gap) return true;
+    }
+    return false;
+  },
+
+  // 적 발사: 즉시 레이캐스트. 플레이어에 닿으면 PARRY_LATE 동안 패링 입력을 기다린 뒤 판정
+  fireShot(g) {
+    const Sh = CONFIG.shot, C = CONFIG.colors, p = this.player;
+    const col = g.nextParryable ? C.attack : C.unparryable;
+    const hit = this.raycast(g.muzzleX, g.muzzleY, g.aim, Sh.RANGE, p.dead ? null : p);
+    Tracers.add(g.muzzleX, g.muzzleY, hit.x, hit.y, Sh.TRACER_WIDTH, col, Sh.TRACER_FRAMES, true);
+    Particles.burst(g.muzzleX, g.muzzleY, 5, col, 90, { angle: g.aim, spread: 0.5, life: 0.12, glow: true });
+    g.vx -= Math.cos(g.aim) * 40;    // 반동
+    Sfx.play('shot');
+    if (hit.wall) Particles.burst(hit.x, hit.y, 7, col, 110, { angle: g.aim + Math.PI, spread: 1.1, life: 0.2, glow: true, streak: true });
+    if (hit.player) {
+      this.pendingShots.push({ shooter: g, fireT: this.worldT, fireReal: this.realT, angle: g.aim, parryable: g.nextParryable, x: hit.x, y: hit.y, done: false });
+    }
+  },
+
+  // 플레이어에 닿은 탄: 발사 -PARRY_EARLY ~ +PARRY_LATE 안에 베기를 시작했으면 패링, 아니면 즉사
+  resolveShots() {
+    const p = this.player, Sh = CONFIG.shot, eps = 1e-9;
+    for (const s of this.pendingShots) {
+      if (s.done) continue;
+      if (p.dead) { s.done = true; continue; }
+      const ts = p.lastSlashT;
+      if (s.parryable && !p.slashUsed && ts >= s.fireT - Sh.PARRY_EARLY - eps && ts <= s.fireT + Sh.PARRY_LATE + eps) {
+        s.done = true;
+        p.slashUsed = true;
+        this.reportTiming(ts - s.fireT, 'ok');
+        this.parryShot(s);
+        continue;
+      }
+      if (this.worldT > s.fireT + Sh.PARRY_LATE + eps) {
+        s.done = true;
+        this.reportShotFail(s);
+        this.killPlayer(s.angle);
+      }
+    }
+    this.pendingShots = this.pendingShots.filter((s) => !s.done);
+  },
+
+  // 패링 성공: 반사 대상 고르고 슬로우모션 시퀀스 시작 (명중은 time_return 이 끝나는 틱)
+  parryShot(s) {
+    const p = this.player, m = this.mouseWorld();
     const aim = Math.atan2(m.y - p.cy, m.x - p.cx);
-    const target = this.pickReflectTarget(b.x, b.y, aim, b.shooter);
-    const out = target ? Math.atan2(target.cy - b.y, target.cx - b.x) : aim;
-    // 맞부딪힌 지점: 총알 방향의 칼날 위
-    const a = Math.atan2(b.y - p.cy, b.x - p.cx), r = CONFIG.slash.radius * 0.8;
-    b.reflect(out, target);                                        // 4) 반사 (색/꼬리/유도는 Bullet 에서)
-    this.parryFx(p.cx + Math.cos(a) * r, p.cy + Math.sin(a) * r, out);
-    // 슬로우모션 시퀀스: 대상이 있으면 time_return 이 끝나는 프레임에 명중하도록 반사탄 비행을 맞춤
-    ParrySeq.start(b, target, juiceOn.hitstop ? CONFIG.juice.HITSTOP_PARRY_FRAMES : 0);
+    // 쏜 적 우선 → 가려져 있으면 조준 스냅 → 없으면 마우스 방향
+    const target = this.pickReflectTarget(p.cx, p.cy, aim, s.shooter);
+    const ray = this.raycast(p.cx, p.cy, aim, CONFIG.shot.RANGE, null);
+    // 노란 불꽃은 탄이 날아온 쪽 칼날 위에서
+    const back = s.angle + Math.PI, r = CONFIG.slash.radius * 0.6;
+    this.parryFx(p.cx + Math.cos(back) * r, p.cy + Math.sin(back) * r, back);
+    ParrySeq.start(target, aim, Math.hypot(ray.x - p.cx, ray.y - p.cy),
+      juiceOn.hitstop ? CONFIG.juice.HITSTOP_PARRY_FRAMES : 0);
+  },
+
+  // 시퀀스 끝 프레임: 반사탄(히트스캔) 명중
+  reflectHit() {
+    const p = this.player, Sh = CONFIG.shot, C = CONFIG.colors;
+    const t = ParrySeq.target;
+    ParrySeq.target = null;
+    if (p.dead) return;
+    const ox = p.cx, oy = p.cy;
+    let angle, hx, hy, victim = null;
+    if (t && !t.dead) {
+      // 정해 둔 대상은 이 프레임에 반드시 명중
+      angle = Math.atan2(t.cy - oy, t.cx - ox); hx = t.cx; hy = t.cy; victim = t;
+    } else {
+      angle = ParrySeq.dir;
+      const r = this.raycast(ox, oy, angle, Sh.RANGE, null, this.enemies);
+      hx = r.x; hy = r.y; victim = r.enemy;
+      if (r.wall) Particles.burst(hx, hy, 8, C.parry, 120, { angle: angle + Math.PI, spread: 1.1, life: 0.22, glow: true, streak: true });
+    }
+    Tracers.add(ox, oy, hx, hy, Sh.REFLECT_TRACER_WIDTH, C.parry, Sh.TRACER_FRAMES);
+    if (victim) {
+      this.killEnemy(victim, angle, 'reflect');
+      this.enemies = this.enemies.filter((e) => !e.dead);   // 월드 갱신 전이라 여기서 바로 정리 (온전한 몸이 남지 않게)
+      // 이 틱은 월드 갱신 전에 처치됐으므로, 킬 연출 정지가 이 틱 + 16프레임이 되도록 1 보탬
+      if (this.killStop > 0) this.killStop++;
+    }
+  },
+
+  // 패링 입력 오차 표시 (F5 디버그). err = 베기 시작 - 발사 (초, 게임 시간)
+  reportTiming(err, kind) {
+    const ms = Math.round(err * 1000), sign = ms > 0 ? '+' : '';
+    const label = { ok: '성공', early: '이름', late: '늦음', locked: '헛스윙 잠금', none: '입력 없음' }[kind];
+    this.timingMsg = { text: kind === 'none' ? label : `${sign}${ms}ms ${label}`, ok: kind === 'ok', t: 0 };
+  },
+  // 패링 실패: 가장 가까운 클릭으로 원인 표시. 아직 안 눌렀으면 잠시 기다렸다가 '늦음'
+  reportShotFail(s) {
+    const Sh = CONFIG.shot, f = s.fireReal, c = this.lastClickReal, eps = 1e-9;
+    if (c > f + Sh.PARRY_LATE + eps) this.reportTiming(c - f, 'late');                       // 이번 틱에 늦게 누름
+    else if (c >= f - Sh.PARRY_EARLY - eps) this.reportTiming(c - f, 'locked');              // 창 안에 눌렀지만 헛스윙 잠금 등으로 베기 못 함
+    else if (c > f - 0.5) this.reportTiming(c - f, 'early');
+    else { this.lateWatch = { fireReal: f, until: f + 0.5 }; this.reportTiming(0, 'none'); }
   },
 
   parryMelee(e) {
     const p = this.player;
+    p.slashUsed = true;
     this.parryFx(p.tipX, p.tipY, p.slashAngle);
     this.killEnemy(e, p.slashAngle, 'parry');
   },
@@ -2260,6 +2352,7 @@ const Game = {
     const p = this.player, F = CONFIG.fx, C = CONFIG.colors;
     p.dead = true;
     ParrySeq.cancel();
+    this.pendingShots.length = 0;
     this.state = 'dead';
     Pieces.split((g) => Player.drawBody(g, { ...p.pose(), slashing: false }, C.player, 1), p.cx, p.cy, angle, C.attack, 1.1);
     Particles.burst(p.cx, p.cy, 16, C.player, 180, { angle, spread: 1.0, life: 0.6, grav: 400, size: 1 });
@@ -2271,6 +2364,12 @@ const Game = {
   render() {
     if (this.state === 'logo') { this.renderLogo(); return; }
     const sx = this.shake.ox, sy = this.shake.oy;
+    // 줌 (시간 복귀 동안): 플레이어를 중심으로 화면 전체를 살짝 확대
+    ctx.save();
+    if (this.zoom > 1.0001) {
+      const fx = this.player.cx - this.cam.x, fy = this.player.cy - this.cam.y;
+      ctx.translate(fx, fy); ctx.scale(this.zoom, this.zoom); ctx.translate(-fx, -fy);
+    }
     Backdrop.draw(ctx, this.cam.x - sx);
 
     ctx.save();
@@ -2282,12 +2381,16 @@ const Game = {
     Pieces.draw(ctx);
     for (const e of this.enemies) e.draw(ctx);
     this.player.draw(ctx);
-    for (const b of this.bullets) b.draw(ctx);
+    this.drawReflectLine(ctx);
+    Tracers.draw(ctx);
     Particles.draw(ctx);
     Beams.draw(ctx);
     Rings.draw(ctx);
     if (this.debug) this.drawAimDebug(ctx);
+    if (this.timingDebug) this.drawTimingBars(ctx);
     ctx.restore();
+    ctx.restore();
+    this.drawSlowmoFx(ctx);
 
     if (this.flash > 0) {
       ctx.fillStyle = '#fff';
@@ -2337,6 +2440,67 @@ const Game = {
     this.present();
   },
 
+  // 슬로우 중: 플레이어에서 반사 대상 쪽으로 노란 반사 궤적이 뻗어감 (게임 시간에 맞춰)
+  drawReflectLine(g) {
+    const u = ParrySeq.growth();
+    if (u <= 0 || this.player.dead) return;
+    const p = this.player, t = ParrySeq.target, C = CONFIG.colors;
+    let ang, len;
+    if (t && !t.dead) { ang = Math.atan2(t.cy - p.cy, t.cx - p.cx); len = Math.hypot(t.cx - p.cx, t.cy - p.cy); }
+    else { ang = ParrySeq.dir; len = ParrySeq.dist; }
+    const hx = p.cx + Math.cos(ang) * len * u, hy = p.cy + Math.sin(ang) * len * u;
+    g.save();
+    g.strokeStyle = C.parry; g.shadowColor = C.parry; g.shadowBlur = 6;
+    g.lineWidth = CONFIG.parrySeq.REFLECT_LINE_WIDTH;
+    g.globalAlpha = 0.85;
+    g.beginPath(); g.moveTo(p.cx, p.cy); g.lineTo(hx, hy); g.stroke();
+    g.globalAlpha = 1; g.fillStyle = C.parry;
+    g.fillRect(Math.round(hx) - 1, Math.round(hy) - 1, 2, 2);
+    g.restore();
+  },
+
+  // 슬로우 중 화면 채도 감소 + 비네트 (진입 때 들어오고 시간 복귀 동안 원상복구)
+  drawSlowmoFx(g) {
+    const a = ParrySeq.fxAmount();
+    if (a <= 0.001) return;
+    const PS = CONFIG.parrySeq;
+    g.save();
+    g.globalCompositeOperation = 'saturation';
+    g.globalAlpha = PS.DESATURATE * a;
+    g.fillStyle = '#808080';
+    g.fillRect(0, 0, W, H);
+    g.globalCompositeOperation = 'source-over';
+    g.globalAlpha = 1;
+    const grad = g.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.62);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, `rgba(0,0,0,${PS.VIGNETTE * a})`);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, W, H);
+    g.restore();
+  },
+
+  // F5: 조준선 옆에 패링 판정 창(초록) 타이밍 바. 흰 선 = 지금, 빨간 선 = 발사 순간
+  drawTimingBars(g) {
+    const Sh = CONFIG.shot;
+    const bar = (cx, cy, cur) => {
+      const span = CONFIG.gunner.AIM_TIME + Sh.PARRY_LATE + 0.05, w = 48, x0 = Math.round(cx - w / 2), y0 = Math.round(cy);
+      const X = (t) => x0 + Math.round(clamp(t / span, 0, 1) * w);
+      const fire = CONFIG.gunner.AIM_TIME;
+      g.fillStyle = 'rgba(0,0,0,0.7)'; g.fillRect(x0 - 1, y0 - 1, w + 2, 5);
+      g.fillStyle = '#2a3350'; g.fillRect(x0, y0, w, 3);
+      g.fillStyle = '#39e36b'; g.fillRect(X(fire - Sh.PARRY_EARLY), y0, X(fire + Sh.PARRY_LATE) - X(fire - Sh.PARRY_EARLY), 3);
+      g.fillStyle = CONFIG.colors.attack; g.fillRect(X(fire), y0 - 1, 1, 5);
+      g.fillStyle = '#ffffff'; g.fillRect(X(cur), y0 - 2, 1, 7);
+    };
+    for (const e of this.enemies) {
+      if (e.kind !== 'gunner' || e.state !== 'aim' || !e.laser) continue;
+      // 조준선 위, 총구에서 조금 떨어진 곳
+      const d = 34, nx = -Math.sin(e.aim), ny = Math.cos(e.aim), side = ny > 0 ? -1 : 1;
+      bar(e.muzzleX + Math.cos(e.aim) * d + nx * 8 * side, e.muzzleY + Math.sin(e.aim) * d + ny * 8 * side, e.t);
+    }
+    for (const s of this.pendingShots) bar(s.shooter.cx, s.shooter.y - 10, CONFIG.gunner.AIM_TIME + (this.worldT - s.fireT));
+  },
+
   // F1 디버그: 스냅 범위 부채꼴(실선 = 일반 ±35°, 점선 = 쏜 적 우선 ±50°)과 대상 표시
   drawAimDebug(g) {
     const p = this.player;
@@ -2344,12 +2508,13 @@ const Game = {
     const A = CONFIG.aimAssist, deg = Math.PI / 180, C = CONFIG.colors;
     const m = this.mouseWorld();
     const aim = Math.atan2(m.y - p.cy, m.x - p.cx);
-    // 지금 패링한다면: 가장 가까운 적 총알 위치/쏜 적 기준으로 미리 계산
-    let ox = p.cx, oy = p.cy, shooter = null, near = Infinity;
-    for (const b of this.bullets) {
-      if (b.owner !== 'enemy') continue;
-      const d = Math.hypot(b.x - p.cx, b.y - p.cy);
-      if (d < near && d < 80) { near = d; ox = b.x; oy = b.y; shooter = b.shooter; }
+    // 지금 패링한다면: 가장 먼저 쏠 총잡이를 '쏜 적'으로 보고 미리 계산
+    const ox = p.cx, oy = p.cy;
+    let shooter = null, soonest = Infinity;
+    for (const e of this.enemies) {
+      if (e.kind !== 'gunner' || e.state !== 'aim') continue;
+      const ft = e.expectedFireT(this.worldT);
+      if (ft < soonest) { soonest = ft; shooter = e; }
     }
     const preview = this.pickReflectTarget(ox, oy, aim, shooter);
     g.save();
@@ -2382,16 +2547,8 @@ const Game = {
       }
     };
     if (preview) mark(preview, 1);
-    // 날아가는 반사 총알 → 유도 대상
-    for (const b of this.bullets) {
-      if (b.owner !== 'player') continue;
-      g.globalAlpha = 0.5;
-      g.beginPath(); g.arc(b.x, b.y, b.r * A.REFLECT_HITBOX_SCALE, 0, Math.PI * 2); g.stroke();
-      if (b.target && !b.target.dead) {
-        g.beginPath(); g.moveTo(b.x, b.y); g.lineTo(b.target.cx, b.target.cy); g.stroke();
-        mark(b.target, 0.8);
-      }
-    }
+    // 패링 시퀀스 중 → 반사 대상
+    if (ParrySeq.active && ParrySeq.target && !ParrySeq.target.dead) mark(ParrySeq.target, 0.8);
     g.restore();
   },
 
@@ -2487,7 +2644,16 @@ const Game = {
     g.globalAlpha = 0.85;
     g.fillText('남은 적 ' + this.enemies.length, 8, 10);
     g.textAlign = 'right';
-    g.fillText([this.debug ? 'AIM DEBUG' : '', Sfx.muted ? 'MUTE' : ''].filter(Boolean).join('  '), W - 8, 10);
+    g.fillText([this.debug ? 'AIM DEBUG' : '', this.timingDebug ? 'TIMING' : '', Sfx.muted ? 'MUTE' : ''].filter(Boolean).join('  '), W - 8, 10);
+    // F5: 패링 입력 오차 (화면 오른쪽 아래)
+    if (this.timingDebug && this.timingMsg && this.timingMsg.t < 2.5) {
+      g.save();
+      g.globalAlpha = clamp(2.5 - this.timingMsg.t, 0, 1);
+      g.font = 'bold 12px monospace';
+      g.fillStyle = this.timingMsg.ok ? CONFIG.colors.parry : CONFIG.colors.attack;
+      g.fillText(this.timingMsg.text, W - 8, H - 24);
+      g.restore();
+    }
     if (this.juicePanel) this.drawJuicePanel(g);
     if (Debug.slow || Debug.step) this.drawTimeDebug(g);
     // 조작 안내 (첫 판 몇 초)
@@ -2495,7 +2661,7 @@ const Game = {
       g.globalAlpha = 0.75 * clamp(CONFIG.hintTime - this.playT, 0, 1);
       g.textAlign = 'center';
       g.font = '10px sans-serif';
-      g.fillText('A/D 이동 · Space 점프 · 클릭 베기 — 빨간 공격이 닿는 순간 베면 패링', W / 2, H - 10);
+      g.fillText('A/D 이동 · Space 점프 · 클릭 베기 — 칼이 닿는 순간 / 총을 쏘는 순간 베면 패링', W / 2, H - 10);
     }
     g.globalAlpha = 1;
     g.textAlign = 'center';
@@ -2615,7 +2781,7 @@ function drawScanlines() {
 // -------------------------------------------------------------
 let acc = 0, last = performance.now();
 function tick() {
-  if (Game.update(STEP)) Input.endTick();
+  if (Game.update(STEP)) { Input.endTick(); Game.clickNoted = false; }
   Debug.frame++;
 }
 function frame(now) {
