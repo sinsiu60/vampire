@@ -4,6 +4,7 @@ class_name Player
 ## 노드 원점 = 발 중앙. 충돌 박스는 Config.player 의 w×h 로 _ready 에서 맞춤.
 
 signal slashed(angle: float)     ## 베기 시작 (효과음·패링 판정이 듣는다)
+signal died                      ## 원히트 사망
 signal whiffed                   ## 헛스윙 (패링·처치 없이 끝난 베기)
 
 var facing := 1                  # 1 = 오른쪽, -1 = 왼쪽
@@ -19,6 +20,7 @@ var _whiff_checked := false
 var _dash_t := 0.0               # 돌진 남은 시간
 var _air_up_used := false        # 공중 위쪽 돌진을 이미 썼나
 var _trail := {}                 # 반달 베기 궤적 { ticks, angle, flip } (비어 있으면 없음)
+var _queued_slash := false       # 히트스톱 중 누른 클릭 (월드가 다시 흐를 때 처리)
 
 # ---- 이동
 var _coyote := 0.0
@@ -39,6 +41,9 @@ func _ready() -> void:
 	$Collision.shape = shape
 	$Collision.position = Vector2(0, -c.h / 2.0)
 	floor_snap_length = 2.0
+	collision_layer = 2              # 플레이어
+	collision_mask = 1               # 지형만 (적과는 몸으로 부딪히지 않음)
+	add_to_group("player")
 
 
 ## 몸 중심 (베기·조준 기준점, 전역 좌표)
@@ -48,6 +53,23 @@ func center() -> Vector2:
 
 func _center_local() -> Vector2:
 	return Vector2(0, -Config.player.h / 2.0)
+
+
+## 몸통 사각형 (전역 좌표) — 피격 판정
+func body_rect() -> Rect2:
+	var c: Dictionary = Config.player
+	return Rect2(global_position - Vector2(c.w / 2.0, c.h), Vector2(c.w, c.h))
+
+
+## 원히트 사망 (조각·파편 연출은 6단계)
+func die(_angle: float) -> void:
+	if dead:
+		return
+	dead = true
+	velocity = Vector2.ZERO
+	$Collision.set_deferred("disabled", true)
+	queue_redraw()
+	died.emit()
 
 
 func is_slashing() -> bool:
@@ -85,6 +107,13 @@ func _physics_process(delta: float) -> void:
 		return
 	var c: Dictionary = Config.player
 	var S: Dictionary = Config.slash
+	# 히트스톱 중: 아무것도 하지 않고 입력만 모아 둠 (프로토타입처럼 멈춘 동안 누른 클릭도 살림)
+	if TimeManager.frozen:
+		if Input.is_action_just_pressed("slash"):
+			_queued_slash = true
+		if Input.is_action_just_pressed("jump"):
+			_jump_buf = c.jump_buffer
+		return
 	var was_on_floor := is_on_floor()
 
 	# ---- 베기 타이머 · 헛스윙
@@ -99,8 +128,9 @@ func _physics_process(delta: float) -> void:
 				whiffed.emit()
 		if slash_t >= S.duration:
 			slash_t = -1.0
-	if Input.is_action_just_pressed("slash") and _slash_cd <= 0.0:
+	if (Input.is_action_just_pressed("slash") or _queued_slash) and _slash_cd <= 0.0:
 		_start_slash(get_global_mouse_position())
+	_queued_slash = false
 
 	# ---- 점프 입력 타이머 (돌진 중에도 계속 셈)
 	if Input.is_action_just_pressed("jump"):
@@ -189,6 +219,7 @@ func _start_slash(aim: Vector2) -> void:
 	# 돌진 방향으로 늘어남
 	_sx = 1.0 + Config.anim.dash_stretch
 	_sy = 1.0 - Config.anim.dash_stretch * 0.5
+	Audio.swing()
 	slashed.emit(a)
 
 

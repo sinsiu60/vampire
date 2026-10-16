@@ -18,6 +18,8 @@ config/features=PackedStringArray("4.5", "GL Compatibility")
 [autoload]
 
 Config="*res://scripts/autoload/Config.gd"
+TimeManager="*res://scripts/autoload/TimeManager.gd"
+Audio="*res://scripts/autoload/Audio.gd"
 
 [display]
 

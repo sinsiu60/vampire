@@ -35,12 +35,17 @@
 blank/
   project.godot
   scripts/autoload/Config.gd   모든 수치 (프로토타입 CONFIG 를 그대로 옮김)
-  scripts/Main.gd              방 + 플레이어 배치, 카메라 한계, R 재시작
+  scripts/autoload/TimeManager.gd  Engine.time_scale 로 히트스톱·슬로우, 실제 시간 틱(real_frames / real_time), 월드 시간
+  scripts/autoload/Audio.gd    효과음 재생 (파일 6종 + 합성음), 실제 시간 페이드, 음소거
+  scripts/audio/Synth.gd       파일 없는 소리(휘두르기·사망·클리어)를 시작할 때 PCM 으로 합성
+  scripts/enemies/Enemy.gd     적 공통: 중력·충돌·발판 끝 멈춤·실루엣(림 라이트) 그리기
+  scripts/enemies/EnemyMelee.gd  근접 적: 추적 → 0.4초 예고(무기 빨간 점멸) → 내딛으며 베기 → 경직
+  scripts/Main.gd              배치·카메라, 전투 판정(근접 패링·직접 베기·피격), 사망·CLEAR·R 재시작
   scripts/Player.gd            이동·가변 점프·코요테·버퍼, 마우스 방향 베기·돌진·헛스윙 잠금, 칼 판정, 흰 실루엣·반달 궤적
   scripts/Room.gd              TileMapLayer 방, 시작 위치
   scripts/DrawUtil.gd          공용 그리기 (초승달/반달 궤적)
   scripts/Crosshair.gd         하늘색 조준점 (OS 커서 숨김)
-  scenes/Main.tscn  Player.tscn  Room.tscn
+  scenes/Main.tscn  Player.tscn  Room.tscn  EnemyMelee.tscn   (적 배치는 Room.tscn 의 Enemies 아래)
   tiles/terrain.tres           TileSet: (0,0) 지형 윗면, (1,0) 지형 속, (2,0) 일방향 발판
   art/tiles.png                8×8 타일 3장
   sounds/*.wav                 gun_fire, parry_chang, slowmo_in, slowmo_loop, time_return, kill_sound
@@ -55,7 +60,7 @@ blank/
 |---|---|---|
 | 1 | 프로젝트 설정 + Config + 플레이어 이동·점프 + 테스트 방 + R 재시작 | ✅ |
 | 2 | 마우스 방향 베기 + 돌진 + 헛스윙 잠금, 반달 베기 궤적, 조준점 | ✅ |
-| 3 | TimeManager(히트스톱·슬로우, 실제 시간 타이머) + Audio + 근접 적 + 원히트 사망 | |
+| 3 | TimeManager(히트스톱·슬로우, 실제 시간 타이머) + Audio + 근접 적 + 근접 패링 + 원히트 사망 + CLEAR | ✅ |
 | 4 | 히트스캔 총잡이 (조준선 + 줄어드는 원 + 판정 창 띠 + 발사 간격) + 타이밍 패링 | |
 | 5 | 패링 슬로우 시퀀스 (time_return 길이에 맞춘 처치) + 화면 효과 셰이더 (채도·비네트·섬광) | |
 | 6 | 16프레임 킬 연출, 빛줄기, 화면 흔들림, 피·파편·자국, 두 조각 | |
@@ -88,3 +93,21 @@ blank/
 
 - 베기 효과음(합성 '쉭')은 3단계 Audio 와 함께 들어감.
 - 근접 패링 판정 창(`in_parry_window`)·칼 판정(`slash_hits`, `slash_hits_rect`)은 3단계 근접 적이 사용.
+
+### 3단계 확인
+| 항목 | 결과 | 프로토타입 |
+|---|---|---|
+| 히트스톱 `hitstop(6)` | 정확히 6틱 월드 정지 후 time_scale 1.0 복귀 (언제 호출해도) | 같음 |
+| 근접 적 | 추적 → 예고 25틱(0.4초) → 공격 → 플레이어 즉사 | 같음 |
+| 플레이어 사망 | 사망음 + 히트스톱 4틱(0.06초) + "R — 재시작" | 같음 |
+| 직접 베기 | 예고 시작 직후 베면 적 즉사 (휘두르기음 + 처치음) | 같음 |
+| 근접 패링 | 예고 마지막 0.1초 안에 베면 패링음 + 히트스톱 6틱 + 적 즉사, 플레이어 생존 | 같음 |
+| 히트스톱 중 클릭 | 멈춘 동안엔 안 베고, 풀리자마자 베기 | 같음 |
+| 두 명 처치 | CLEAR + 클리어음 | 같음 |
+| 효과음 | `time_return.wav` 길이 0.935초 읽음, `slowmo_loop` 반복 재생 설정, 합성음 휘두르기 0.16초·사망 0.4초·클리어 0.49초 | 같음 |
+
+- **시간 처리**: 히트스톱·슬로우는 `Engine.time_scale`. time_scale 이 0 이어도 물리 틱은 실제 시간으로 계속 오고 delta 만 0
+  (Godot 4.5.1 에서 확인) → 이때 게임 노드는 `TimeManager.frozen` 을 보고 입력만 모아 둔다. 실제 시간 연출은 `TimeManager.real_frames`.
+- **효과음**: Godot 오디오는 time_scale 영향을 받지 않아 슬로우·히트스톱 중에도 실제 시간으로 재생. 페이드는 `Tween.set_ignore_time_scale`.
+- `slowmo_loop.wav` 는 임포트 설정에서 Loop Mode = Forward.
+- 처치 연출(16프레임 킬 스톱·두 조각·피·빛줄기)은 6단계 — 지금은 적이 바로 사라짐.
