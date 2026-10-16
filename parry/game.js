@@ -96,20 +96,50 @@ const CONFIG = {
     MELEE_PARRY_RANGE_BONUS: 0.2,     // 근접 패링 판정 거리 +20%
   },
 
+  // 타격감: 처치/패링 순간 아래 요소가 '동시에' 터진다. F2 패널에서 하나씩 끄고 켜며 비교 가능.
+  juice: {
+    HITSTOP_KILL: 0.12,               // 1) 적 처치 히트스톱 (초)
+    HITSTOP_PARRY: 0.18,              //    패링 성공 히트스톱 (초) — 흔들림/섬광은 히트스톱 중에도 재생
+    ENEMY_FLASH_FRAMES: 2,            // 2) 맞은 적 실루엣을 완전 흰색으로 보이는 프레임 수
+    KILL_KNOCKBACK: 400,              // 3) 처치된 적(두 조각)이 공격 방향으로 튕겨 나가는 속도
+    KNOCKBACK_LIFT: 140,              //    위로 띄우는 속도
+    KNOCKBACK_SPLIT: 70,              //    두 조각이 서로 벌어지는 속도
+    PIECE_SPIN: 16,                   //    조각 회전 속도 (rad/s)
+    PIECE_BOUNCE: 0.45,               //    바닥 반발 계수
+    PIECE_MAX_BOUNCES: 2,             //    최대 튕김 횟수
+    PIECE_MIN_BOUNCE: 90,             //    이 낙하 속도 미만이면 튕기지 않고 미끄러짐
+    PIECE_FRICTION: 650,              //    바닥 미끄럼 감속 (px/s²)
+    PIECE_WALL_BOUNCE: 0.5,
+    GORE_MIN: 15, GORE_MAX: 25,       // 4) 공격 방향 원뿔로 뿜는 파편 수
+    GORE_CONE: 26,                    //    원뿔 반각 (°)
+    GORE_SPEED_MIN: 140, GORE_SPEED_MAX: 430,
+    GORE_GRAVITY: 750,
+    GORE_LIFE: 1.2,                   //    이 시간 안에 지형에 닿은 파편은 자국으로 남음 (재시작 전까지)
+    SLASH_TRAIL_RADIUS: 32,           // 5) 반달 베기 궤적 반지름
+    SLASH_TRAIL_ARC: 80,              //    궤적 반각 (°)
+    SLASH_TRAIL_THICK: 0.5,           //    가장 두꺼운 곳 두께 (반지름 비율)
+    SLASH_TRAIL_HOLD: 3,              //    꽉 찬 상태로 보이는 프레임 수
+    SLASH_TRAIL_FADE: 0.09,           //    그 뒤 사라지는 시간
+    SLASH_HIT_SCALE: 1.2,             //    적을 맞췄을 때 궤적 크기 배율
+    SLASH_HIT_GLOW: 18,               //    적을 맞췄을 때 발광 세기
+    SHAKE_KILL: 6,                    // 6) 방향성 흔들림: 처치 강도 (px)
+    SHAKE_PARRY: 10,                  //    패링 강도 (px)
+    SHAKE_TIME: 0.15,                 //    감쇠 시간
+    SHAKE_OVERSHOOT: 1,               //    되돌아올 때 반대쪽으로 살짝 넘어가는 정도 (0 = 안 넘어감)
+    RECOIL_SPEED: 150,                // 7) 적을 벤 순간 플레이어가 반대 방향으로 밀리는 속도
+    RECOIL_LIFT: 60,                  //    공중이면 살짝 위로
+  },
+
   fx: {
-    // 패링 성공 연출
-    parryHitstop: 0.08,               // 1) 히트스톱: 화면 전체 정지
-    flashTime: 1 / 60,                // 2) 흰 섬광 (한 프레임)
+    // 패링 성공 연출 (히트스톱/흔들림 세기는 juice 참고)
+    flashTime: 1 / 60,                // 흰 화면 섬광 (한 프레임)
     flashAlpha: 0.85,
     ringRadius: 38, ringTime: 0.3, ringWidth: 3,   // 3) 칼 끝 노란 충격파 링
     reflectColorTime: 0.12,           // 4) 반사 총알 빨강 → 노랑 전환 시간
     trailLength: 14,                  //    반사 총알 꼬리 길이 (프레임)
-    parryShake: 4.5, parryShakeTime: 0.18,          // 5) 짧고 강한 화면 흔들림
-    pieceSpeed: 90, pieceSpin: 9,     // 6) 두 조각으로 갈라지는 속도/회전
-    debris: 14,                       //    흩어지는 파편 수
-    // 일반 처치/사망
-    killHitstop: 0.035, killShake: 2, killShakeTime: 0.1,
-    deathHitstop: 0.06, deathShake: 3.5,
+    pieceSpeed: 90, pieceSpin: 9,     // '날아가기'를 끈 경우의 약한 분리 속도/회전
+    // 플레이어 사망
+    deathHitstop: 0.06, deathShake: 5,
   },
 
   anim: {
@@ -149,6 +179,7 @@ const CONFIG = {
     enemyBody: '#10121c',
     enemyRim: '#4a5170',
     enemyWeapon: '#2c3350',
+    gore: '#3a4363', goreLight: '#646d93', // 적 파편/자국 (빨강은 적 공격 전용이라 쓰지 않음)
     attack: '#ff2b3d',
     unparryable: '#b14dff',
     parry: '#ffd23a',
@@ -156,6 +187,20 @@ const CONFIG = {
     ui: '#5fd8ff',
   },
 };
+
+// F2 패널에서 켜고 끄는 타격감 요소 (키 1~9, 0 = 전부 토글)
+const JUICE = [
+  { key: 'hitstop', label: '히트스톱' },
+  { key: 'enemyFlash', label: '피격 흰 섬광' },
+  { key: 'knockback', label: '적 날아가기' },
+  { key: 'gore', label: '파편 + 자국' },
+  { key: 'slashTrail', label: '반달 베기 궤적' },
+  { key: 'shake', label: '방향성 흔들림' },
+  { key: 'recoil', label: '플레이어 반동' },
+  { key: 'sound', label: '사운드' },
+  { key: 'screenFlash', label: '화면 섬광(패링)' },
+];
+const juiceOn = Object.fromEntries(JUICE.map((j) => [j.key, true]));
 
 // -------------------------------------------------------------
 //  공용 유틸
@@ -226,7 +271,7 @@ const Input = {
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Space' || e.code === 'F1') e.preventDefault(); // F1: 브라우저 도움말 막기
+      if (e.code === 'Space' || e.code === 'F1' || e.code === 'F2') e.preventDefault(); // F1: 브라우저 도움말 막기
       if (!this.down.has(e.code)) this.pressed.add(e.code);
       this.down.add(e.code);
     });
@@ -325,8 +370,8 @@ function solidAt(x, y, includeOneWay = true) {
 const Particles = {
   list: [],
   reset() { this.list.length = 0; },
-  spawn(x, y, vx, vy, life, color, size = 1, grav = 0, glow = false, streak = false) {
-    this.list.push({ x, y, vx, vy, life, max: life, color, size, grav, glow, streak });
+  spawn(x, y, vx, vy, life, color, size = 1, grav = 0, glow = false, streak = false, stain = false) {
+    this.list.push({ x, y, vx, vy, life, max: life, color, size, grav, glow, streak, stain, drag: !stain });
   },
   burst(x, y, n, color, speed, opts = {}) {
     for (let i = 0; i < n; i++) {
@@ -343,8 +388,13 @@ const Particles = {
       p.life -= dt;
       if (p.life <= 0) { L[i] = L[L.length - 1]; L.pop(); continue; }
       p.vy += p.grav * dt;
-      p.vx *= 0.96; p.vy *= 0.98;
+      if (p.drag) { p.vx *= 0.96; p.vy *= 0.98; }
       p.x += p.vx * dt; p.y += p.vy * dt;
+      // 파편: 바닥/벽/발판에 닿으면 자국으로 남기고 사라짐
+      if (p.stain && solidAt(p.x, p.y)) {
+        Stains.add(p.x, p.y, p.vx, p.vy, p.color);
+        L[i] = L[L.length - 1]; L.pop();
+      }
     }
   },
   draw(g) {
@@ -366,6 +416,32 @@ const Particles = {
     }
     g.globalAlpha = 1;
   },
+};
+
+// -------------------------------------------------------------
+//  파편 자국: 방 크기 캔버스에 누적해서 그림 (재시작 시 지움)
+// -------------------------------------------------------------
+const Stains = {
+  canvas: null, g: null,
+  reset() {
+    if (!this.canvas) {
+      this.canvas = document.createElement('canvas');
+      this.canvas.width = CONFIG.room.w; this.canvas.height = CONFIG.room.h;
+      this.g = this.canvas.getContext('2d');
+    }
+    this.g.clearRect(0, 0, this.canvas.width, this.canvas.height);
+  },
+  add(x, y, vx, vy, color) {
+    const g = this.g;
+    g.fillStyle = color;
+    // 지형 표면에 붙도록 진행 방향 반대로 1px 되돌린 곳에서 진행 방향으로 번지게
+    const sp = Math.hypot(vx, vy) || 1, ux = vx / sp, uy = vy / sp;
+    const bx = Math.round(x - ux), by = Math.round(y - uy);
+    const len = 1 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < len; i++) g.fillRect(Math.round(bx + ux * i * 0.8), Math.round(by + uy * i * 0.8), 1, 1);
+    if (Math.random() < 0.4) g.fillRect(bx, by, 2, 1);
+  },
+  draw(g) { g.drawImage(this.canvas, 0, 0); },
 };
 
 // -------------------------------------------------------------
@@ -406,48 +482,84 @@ const Pieces = {
   slices: [],               // 잘린 순간 그어지는 빛나는 절단선
   reset() { this.list.length = 0; this.slices.length = 0; },
 
-  // drawFn(g) 이 그리는 실루엣을 (cx, cy) 중심, angle 방향으로 절단
-  split(drawFn, cx, cy, angle, color, power = 1) {
+  // drawFn(g) 이 그리는 실루엣을 (cx, cy) 중심, angle 방향으로 절단해 두 조각으로.
+  // knock = true 면 공격 방향으로 강하게 날아감 (KILL_KNOCKBACK)
+  split(drawFn, cx, cy, angle, color, power = 1, knock = false) {
     const S = 64;
     const img = document.createElement('canvas');
     img.width = S; img.height = S;
     const g = img.getContext('2d');
     g.translate(S / 2 - Math.round(cx), S / 2 - Math.round(cy));
     drawFn(g);
-    const F = CONFIG.fx;
+    // 피격 섬광용 단색 실루엣 (흰색 본체 + 검은 테두리용)
+    const tint = (color) => {
+      const c = document.createElement('canvas');
+      c.width = S; c.height = S;
+      const tg = c.getContext('2d');
+      tg.drawImage(img, 0, 0);
+      tg.globalCompositeOperation = 'source-in';
+      tg.fillStyle = color;
+      tg.fillRect(0, 0, S, S);
+      return c;
+    };
+    const white = tint('#fff'), black = tint('#000');
+
+    const F = CONFIG.fx, J = CONFIG.juice;
     const dx = Math.cos(angle), dy = Math.sin(angle);
     for (const side of [1, -1]) {
-      const nx = -dy * side, ny = dx * side;   // 절단선의 법선 (이 조각이 날아갈 쪽)
-      const sp = F.pieceSpeed * power * rand(0.7, 1.2);
+      const nx = -dy * side, ny = dx * side;   // 절단선의 법선 (이 조각이 벌어질 쪽)
+      let vx, vy, vrot;
+      if (knock) {
+        const sp = J.KILL_KNOCKBACK * power * rand(0.85, 1.1);
+        vx = dx * sp + nx * J.KNOCKBACK_SPLIT * rand(0.6, 1.2);
+        vy = dy * sp * 0.6 + ny * J.KNOCKBACK_SPLIT * rand(0.6, 1.2) - J.KNOCKBACK_LIFT;
+        vrot = side * J.PIECE_SPIN * rand(0.6, 1.2) * (dx >= 0 ? 1 : -1);
+      } else {
+        const sp = F.pieceSpeed * power * rand(0.7, 1.2);
+        vx = nx * sp * 0.6 + dx * sp * rand(0.6, 1.1);
+        vy = ny * sp * 0.6 + dy * sp * rand(0.6, 1.1) - 70 * power;
+        vrot = side * F.pieceSpin * rand(0.5, 1.2) * (dx >= 0 ? 1 : -1);
+      }
       this.list.push({
-        img, side, angle,
+        img, white, black, side, angle,
         x: cx + nx * 1.5, y: cy + ny * 1.5,
-        w: 6, h: 6,
-        vx: nx * sp * 0.6 + dx * sp * rand(0.6, 1.1),
-        vy: ny * sp * 0.6 + dy * sp * rand(0.6, 1.1) - 70 * power,
-        rot: 0, vrot: side * F.pieceSpin * rand(0.5, 1.2) * (dx >= 0 ? 1 : -1),
-        rest: false,
+        w: 6, h: 6, vx, vy, rot: 0, vrot,
+        bounces: 0, rest: false,
+        flash: juiceOn.enemyFlash ? J.ENEMY_FLASH_FRAMES : 0,   // 남은 흰 섬광 프레임
       });
     }
     this.slices.push({ x: cx, y: cy, angle, t: 0, time: 0.14, color });
   },
 
+  // 실제 시간 기준 (히트스톱 중에도 흐름): 흰 섬광 프레임 소모
+  tickRealtime() {
+    for (const p of this.list) if (p.flash > 0) p.flash--;
+  },
+
   update(dt) {
+    const J = CONFIG.juice;
     for (const p of this.list) {
       if (p.rest) continue;
-      p.vy = Math.min(p.vy + CONFIG.enemy.gravity * dt, CONFIG.enemy.maxFall);
+      p.vy = Math.min(p.vy + CONFIG.enemy.gravity * dt, CONFIG.enemy.maxFall * 1.4);
       // 몸체 좌표(x,y)는 조각 중심. moveBody 용 박스로 변환해 지형과 충돌
       const box = { x: p.x - p.w / 2, y: p.y - p.h / 2, w: p.w, h: p.h, vx: p.vx, vy: p.vy };
-      const vyBefore = p.vy;
+      const vxBefore = p.vx, vyBefore = p.vy;
       moveBody(box, dt);
       p.x = box.x + p.w / 2; p.y = box.y + p.h / 2;
       p.vx = box.vx; p.vy = box.vy;
-      if (box.hitWall) p.vx = -p.vx * 0.4;
+      if (box.hitWall) { p.vx = -vxBefore * J.PIECE_WALL_BOUNCE; p.vrot = -p.vrot * 0.6; }
       p.rot += p.vrot * dt;
       if (box.onGround) {
-        if (vyBefore > 80) p.vy = -vyBefore * 0.3;   // 튕김
-        p.vx *= 0.8; p.vrot *= 0.7;
-        if (Math.abs(p.vx) < 4 && Math.abs(p.vrot) < 0.3 && vyBefore < 80) p.rest = true;
+        if (vyBefore > J.PIECE_MIN_BOUNCE && p.bounces < J.PIECE_MAX_BOUNCES) {
+          p.vy = -vyBefore * J.PIECE_BOUNCE;           // 튕김
+          p.bounces++;
+          p.vrot *= 0.6;
+        } else {
+          // 미끄러지다 멈춤
+          p.vx = approach(p.vx, 0, J.PIECE_FRICTION * dt);
+          p.vrot = approach(p.vrot, 0, 30 * dt);
+          if (p.vx === 0) p.rest = true;
+        }
       }
     }
     for (const sl of this.slices) sl.t += dt;
@@ -470,7 +582,14 @@ const Pieces = {
       g.lineTo(dx * L + nx * L, dy * L + ny * L);
       g.closePath();
       g.clip();
-      g.drawImage(p.img, -p.img.width / 2, -p.img.height / 2);
+      const o = -p.img.width / 2;
+      if (p.flash > 0) {
+        // 피격 섬광: 완전 흰 실루엣 + 검은 1px 테두리 (흰 베기 궤적 위에서도 보이게)
+        for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.drawImage(p.black, o + ox, o + oy);
+        g.drawImage(p.white, o, o);
+      } else {
+        g.drawImage(p.img, o, o);
+      }
       g.restore();
     }
     // 절단선 섬광
@@ -539,18 +658,28 @@ const Sfx = {
     src.start(t); src.stop(t + dur + 0.02);
   },
   play(name) {
+    if (!juiceOn.sound) return;
     if (!this.ensure()) return;
     switch (name) {
-      case 'slash': this.noise(0.12, 0.5, 'bandpass', 2500, 700); break;
-      case 'parry': // 날카로운 금속 충돌음
-        this.tone('square', 1900, 1500, 0.25, 0.25);
-        this.tone('triangle', 3100, 2600, 0.35, 0.3);
-        this.tone('sine', 140, 50, 0.2, 0.6);
-        this.noise(0.08, 0.7, 'highpass', 3000, 6000);
+      case 'slash': // 짧은 바람 소리: 대역 통과 잡음이 위→아래로 휩쓸림
+        this.noise(0.11, 0.55, 'bandpass', 2800, 600);
+        this.noise(0.07, 0.25, 'highpass', 5000, 2500);
         break;
+      case 'parry': // 금속 '챙': 비정수배 배음 여러 개가 길게 울림 + 날카로운 타격 잡음
+        [[2093, 0.22], [3227, 0.18], [4870, 0.12], [6311, 0.08]].forEach(([f, v], i) =>
+          this.tone('sine', f, f * 0.995, 0.55 - i * 0.08, v));
+        this.tone('square', 1500, 1200, 0.06, 0.18);
+        this.noise(0.05, 0.8, 'highpass', 4000, 8000);
+        this.tone('sine', 160, 60, 0.18, 0.5);
+        break;
+      case 'kill': // 두 겹: 날카로운 고음 + 묵직한 저음
+        this.tone('triangle', 2600, 1400, 0.09, 0.3);
+        this.noise(0.05, 0.6, 'highpass', 3500, 7000);
+        this.tone('sine', 95, 32, 0.32, 0.9);
+        this.noise(0.22, 0.7, 'lowpass', 900, 80);
+        return;
       case 'shot': this.noise(0.1, 0.5, 'lowpass', 3000, 300); this.tone('square', 220, 60, 0.08, 0.15); break;
       case 'charge': this.tone('sine', 900, 1400, 0.3, 0.06); break;
-      case 'kill': this.noise(0.18, 0.6, 'lowpass', 1800, 120); this.tone('sine', 120, 40, 0.2, 0.5); break;
       case 'death': this.noise(0.4, 0.7, 'lowpass', 1200, 60); this.tone('sawtooth', 200, 40, 0.4, 0.2); break;
       case 'clear': [523, 659, 784, 1046].forEach((f, i) => this.tone('triangle', f, f, 0.25, 0.15, i * 0.08)); break;
     }
@@ -676,6 +805,7 @@ class Player {
     this.dashT = 0;
     this.airUpUsed = false;
     this.dead = false;
+    this.trail = null;        // 반달 베기 궤적 (월드 시간으로 흐름 → 히트스톱 중엔 멈춘 채 보임)
     // 애니메이션
     this.lean = 0;
     this.sx = 1; this.sy = 1;  // squash & stretch
@@ -720,6 +850,7 @@ class Player {
     this.slashT = 0;
     this.slashCd = S.cooldown;
     this.slashFlip = -this.slashFlip;
+    this.trail = { ticks: 0, angle: a, flip: this.slashFlip, hit: false };
     let dx = Math.cos(a), dy = Math.sin(a);
     if (Math.abs(dx) > 0.15) this.facing = Math.sign(dx);
     // 공중 위쪽 돌진은 착지 전까지 1회 — 무한 체공 방지
@@ -742,8 +873,9 @@ class Player {
   }
 
   animate(dt, wasGround, vyBefore, slashBefore) {
-    const A = CONFIG.anim, c = CONFIG.player;
+    const A = CONFIG.anim, c = CONFIG.player, J = CONFIG.juice;
     this.tick++;
+    if (this.trail && ++this.trail.ticks > J.SLASH_TRAIL_HOLD + J.SLASH_TRAIL_FADE * CONFIG.fps) this.trail = null;
     // 기울이기: 속도 방향으로
     const targetLean = this.dashT > 0 ? 0 : clamp(this.vx / c.runSpeed, -1, 1) * A.leanMax;
     this.lean = lerp(this.lean, targetLean, 0.25);
@@ -796,7 +928,7 @@ class Player {
   pose() {
     return {
       x: this.cx, y: this.y + this.h, lean: this.lean, sx: this.sx, sy: this.sy, facing: this.facing,
-      phase: this.runPhase, air: !this.onGround, vy: this.vy, slashing: this.slashing,
+      phase: this.runPhase, air: !this.onGround, vy: this.vy, slashing: !!this.trail || this.slashing,
     };
   }
 
@@ -865,7 +997,7 @@ class Player {
     }
     this.drawScarf(g);
     Player.drawBody(g, this.pose(), CONFIG.colors.player, 1);
-    this.drawSlash(g);
+    // 베기 궤적은 Game.render 에서 시체 조각 아래에 따로 그림 (피격 섬광이 가려지지 않게)
   }
 
   drawScarf(g) {
@@ -916,47 +1048,50 @@ class Player {
     g.restore();
   }
 
-  // 칼 궤적: 부채꼴을 따라 휘두르는 초승달. 가운데가 두껍고 양끝이 가늘다.
+  // 적을 맞혔을 때: 궤적을 더 크고 밝게, 꽉 찬 상태를 다시 보여줌
+  boostTrail() {
+    if (!this.trail) return;
+    this.trail.hit = true;
+    this.trail.ticks = 0;
+  }
+
+  // 반달 베기 궤적: SLASH_TRAIL_HOLD 프레임 동안 꽉 찬 채로 보인 뒤 빠르게 가늘어지며 사라짐.
+  // 가운데가 두껍고 양끝이 가는 반달. F2 에서 끄면 작고 얇은 기본 궤적.
   drawSlash(g) {
-    if (!this.slashing) return;
-    const S = CONFIG.slash;
-    const p = this.slashT / S.duration;
-    const sweep = Math.min(1, this.slashT / (S.parryWindow * 0.7)); // 판정 창 안에 휘두름 완료
-    const tail = Math.max(0, (this.slashT - S.parryWindow * 0.5) / (S.duration - S.parryWindow * 0.5)); // 꼬리부터 사라짐
-    const R = S.radius, cx = this.cx, cy = this.cy;
-    const a0 = this.slashAngle - S.arcHalf * this.slashFlip;
-    const span = S.arcHalf * 2 * this.slashFlip;
-    const N = 14;
-    const u0 = tail, u1 = Math.max(u0, sweep);
-    if (u1 - u0 < 0.01) return;
+    const tr = this.trail;
+    if (!tr) return;
+    const J = CONFIG.juice, S = CONFIG.slash;
+    const big = juiceOn.slashTrail;
+    const fadeTicks = J.SLASH_TRAIL_FADE * CONFIG.fps;
+    const k = tr.ticks <= J.SLASH_TRAIL_HOLD ? 0 : (tr.ticks - J.SLASH_TRAIL_HOLD) / fadeTicks; // 0 → 1 사라짐
+    if (k >= 1) return;
+    const hit = big && tr.hit;
+    let R = big ? J.SLASH_TRAIL_RADIUS : S.radius;
+    if (hit) R *= J.SLASH_HIT_SCALE;
+    R += k * 4;                                         // 사라지며 살짝 퍼짐
+    const thickMax = R * (big ? J.SLASH_TRAIL_THICK : 0.3) * (1 - k);
+    const half = (big ? J.SLASH_TRAIL_ARC * Math.PI / 180 : S.arcHalf);
+    const a0 = tr.angle - half * tr.flip, span = half * 2 * tr.flip;
+    const cx = this.cx, cy = this.cy, N = 18;
     const outer = [], inner = [];
     for (let i = 0; i <= N; i++) {
-      const u = lerp(u0, u1, i / N);
-      const a = a0 + span * u;
-      const thick = Math.sin(Math.PI * u) * R * 0.55;   // 가운데가 가장 두꺼움
+      const u = i / N, a = a0 + span * u;
+      const th = Math.sin(Math.PI * u) ** 0.8 * thickMax;
       outer.push(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
-      inner.push(cx + Math.cos(a) * (R - thick), cy + Math.sin(a) * (R - thick));
+      inner.push(cx + Math.cos(a) * (R - th), cy + Math.sin(a) * (R - th));
     }
     g.save();
-    g.globalAlpha = 1 - p * p * 0.6;
+    g.globalAlpha = 1 - k * k;
     g.fillStyle = CONFIG.colors.player;
     g.shadowColor = CONFIG.colors.player;
-    g.shadowBlur = this.inParryWindow ? 10 : 5;
+    g.shadowBlur = hit ? J.SLASH_HIT_GLOW : big ? 8 : 4;
     g.beginPath();
     g.moveTo(outer[0], outer[1]);
     for (let i = 2; i < outer.length; i += 2) g.lineTo(outer[i], outer[i + 1]);
     for (let i = inner.length - 2; i >= 0; i -= 2) g.lineTo(inner[i], inner[i + 1]);
     g.closePath();
     g.fill();
-    // 칼날 본체: 휘두르는 끝 각도 쪽으로 뻗은 선
-    const ab = a0 + span * u1;
-    g.globalAlpha = 1;
-    g.strokeStyle = CONFIG.colors.player;
-    g.lineWidth = 1;
-    g.beginPath();
-    g.moveTo(cx + Math.cos(ab) * 4, cy + Math.sin(ab) * 4);
-    g.lineTo(cx + Math.cos(ab) * (R + 1), cy + Math.sin(ab) * (R + 1));
-    g.stroke();
+    if (hit) g.fill(); // 한 번 더 칠해 발광을 진하게
     g.restore();
   }
 }
@@ -1292,6 +1427,7 @@ const Game = {
   hitstop: 0,             // 남은 정지 시간
   slowT: 0,               // 반사 직후 슬로우 남은 시간 (히트스톱이 끝난 뒤부터 흐름)
   debug: false,           // F1: 반사 보정 범위/대상 표시
+  juicePanel: false,      // F2: 타격감 요소 토글 패널
   flash: 0, flashShown: false,
   shake: { t: 0, time: 1, amp: 0, angle: 0, ox: 0, oy: 0 },
 
@@ -1303,6 +1439,7 @@ const Game = {
     Particles.reset();
     Rings.reset();
     Pieces.reset();
+    Stains.reset();
     this.hitstop = 0;
     this.slowT = 0;
     this.flash = 0;
@@ -1331,8 +1468,14 @@ const Game = {
     if (Input.hit('KeyR')) { this.reset(); return true; }
     if (Input.hit('KeyM')) Sfx.toggleMute();
     if (Input.hit('F1')) this.debug = !this.debug;
+    if (Input.hit('F2')) this.juicePanel = !this.juicePanel;
+    if (this.juicePanel) this.handleJuiceKeys();
     this.fade = Math.max(0, this.fade - dt);
+
+    // 실제 시간으로 흐르는 연출: 히트스톱 중에도 섬광/흔들림/피격 섬광은 재생
     if (this.flash > 0 && this.flashShown) this.flash -= dt;
+    this.updateShake(dt);
+    Pieces.tickRealtime();
 
     // 히트스톱: 월드 전체 정지
     if (this.hitstop > 0) { this.hitstop -= dt; return false; }
@@ -1359,34 +1502,51 @@ const Game = {
     dt = realDt;
     if (this.state === 'play' && this.enemies.length === 0) { this.state = 'clear'; Sfx.play('clear'); }
     this.cam.x = lerp(this.cam.x, this.camTarget(), CONFIG.camera.lerp);
-
-    // 화면 흔들림: 흔들 방향 위주로, 제곱 감쇠
-    const sh = this.shake;
-    if (sh.t > 0) {
-      sh.t -= dt;
-      const k = Math.max(0, sh.t / sh.time) ** 2;
-      const along = rand(-1, 1) * sh.amp * k, side = rand(-1, 1) * sh.amp * k * 0.4;
-      sh.ox = Math.cos(sh.angle) * along - Math.sin(sh.angle) * side;
-      sh.oy = Math.sin(sh.angle) * along + Math.cos(sh.angle) * side;
-    } else { sh.ox = sh.oy = 0; }
     return true;
   },
 
-  addShake(amp, time, angle = rand(0, Math.PI * 2)) {
+  handleJuiceKeys() {
+    for (let i = 0; i < JUICE.length; i++) {
+      if (Input.hit('Digit' + (i + 1))) juiceOn[JUICE[i].key] = !juiceOn[JUICE[i].key];
+    }
+    if (Input.hit('Digit0')) {
+      const all = JUICE.every((j) => juiceOn[j.key]);
+      for (const j of JUICE) juiceOn[j.key] = !all;
+    }
+  },
+
+  // 방향성 흔들림 엔벨로프: 공격 방향으로 확 밀렸다가 (1-k)² 로 되돌아옴. 끝에 반대쪽으로 살짝 넘어감.
+  shakeEnvelope(k) {
+    return (1 - k) ** 2 * Math.cos(k * Math.PI * CONFIG.juice.SHAKE_OVERSHOOT);
+  },
+  updateShake(dt) {
     const sh = this.shake;
-    if (sh.t > 0 && sh.amp * (sh.t / sh.time) ** 2 > amp) return; // 더 센 흔들림 유지
+    if (sh.t > 0) {
+      sh.t = Math.max(0, sh.t - dt);
+      const e = sh.amp * this.shakeEnvelope(1 - sh.t / sh.time);
+      sh.ox = Math.cos(sh.angle) * e;
+      sh.oy = Math.sin(sh.angle) * e;
+    } else { sh.ox = sh.oy = 0; }
+  },
+  addShake(amp, time, angle = rand(0, Math.PI * 2)) {
+    if (!juiceOn.shake) return;
+    const sh = this.shake;
+    if (sh.t > 0 && sh.amp * this.shakeEnvelope(1 - sh.t / sh.time) > amp) return; // 더 센 흔들림 유지
     sh.amp = amp; sh.time = time; sh.t = time; sh.angle = angle;
-    sh.ox = Math.cos(angle) * amp; sh.oy = Math.sin(angle) * amp; // 첫 프레임에 바로 튕김
+    sh.ox = Math.cos(angle) * amp; sh.oy = Math.sin(angle) * amp; // 첫 프레임에 바로 밀림
+  },
+  addHitstop(t) {
+    if (juiceOn.hitstop) this.hitstop = Math.max(this.hitstop, t);
   },
 
   // 패링 성공 공통 연출 (x, y = 칼에 맞부딪힌 지점)
   parryFx(x, y, angle) {
-    const F = CONFIG.fx, C = CONFIG.colors;
-    this.hitstop = Math.max(this.hitstop, F.parryHitstop);       // 1) 히트스톱
-    this.flash = F.flashTime; this.flashShown = false;           // 2) 흰 섬광
+    const F = CONFIG.fx, C = CONFIG.colors, J = CONFIG.juice;
+    this.addHitstop(J.HITSTOP_PARRY);                            // 1) 히트스톱
+    if (juiceOn.screenFlash) { this.flash = F.flashTime; this.flashShown = false; } // 2) 흰 섬광
     Rings.spawn(x, y, F.ringRadius, F.ringTime, F.ringWidth, C.parry);            // 3) 충격파 링
     Rings.spawn(x, y, F.ringRadius * 0.55, F.ringTime * 0.7, F.ringWidth - 1, C.parryHot);
-    this.addShake(F.parryShake, F.parryShakeTime, angle);         // 5) 화면 흔들림
+    this.addShake(J.SHAKE_PARRY, J.SHAKE_TIME, angle);            // 5) 방향성 흔들림
     Particles.burst(x, y, 14, C.parry, 260, { angle, spread: 1.3, life: 0.28, glow: true, streak: true });
     Particles.burst(x, y, 6, C.parryHot, 120, { life: 0.35, glow: true });
     Sfx.play('parry');
@@ -1413,7 +1573,7 @@ const Game = {
     // 3) 칼이 적 몸통에 직접 닿음 → 즉사
     if (!p.dead && S.directKill && p.slashing && p.slashT < S.hitTime) {
       for (const e of this.enemies) {
-        if (!e.dead && p.slashHitsRect(e)) this.killEnemy(e, p.slashAngle);
+        if (!e.dead && p.slashHitsRect(e)) this.killEnemy(e, p.slashAngle, 'slash');
       }
     }
 
@@ -1423,7 +1583,7 @@ const Game = {
       if (b.owner === 'player') {
         for (const e of this.enemies) {
           if (!e.dead && circleRect(b.x, b.y, b.r * CONFIG.aimAssist.REFLECT_HITBOX_SCALE, e)) {
-            this.killEnemy(e, Math.atan2(b.vy, b.vx), true);
+            this.killEnemy(e, Math.atan2(b.vy, b.vx), 'reflect');
             b.dead = true;
             break;
           }
@@ -1479,21 +1639,44 @@ const Game = {
   parryMelee(e) {
     const p = this.player;
     this.parryFx(p.tipX, p.tipY, p.slashAngle);
-    this.killEnemy(e, p.slashAngle, true);
+    this.killEnemy(e, p.slashAngle, 'parry');
   },
 
-  // 6) 적 사망: 베인 방향으로 두 조각 + 파편
-  killEnemy(e, angle, byParry = false) {
+  // 적 처치: 아래가 같은 프레임에 '동시에' 터진다
+  //  히트스톱 · 피격 흰 섬광 · 두 조각 날아가기 · 원뿔 파편 · 궤적 강화 · 방향성 흔들림 · 반동 · 두 겹 사운드
+  //  cause: 'slash'(직접 베기) | 'parry'(근접 패링) | 'reflect'(반사 총알)
+  killEnemy(e, angle, cause = 'slash') {
     if (e.dead) return;
     e.dead = true;
-    const F = CONFIG.fx, C = CONFIG.colors;
+    const C = CONFIG.colors, J = CONFIG.juice;
+    const byParry = cause !== 'slash';
     e.setState('dead');                // 무기 발광을 끄고 시체 자세로
-    Pieces.split((g) => e.draw(g), e.cx, e.cy, angle, byParry ? C.parry : C.player, byParry ? 1.4 : 1);
-    Particles.burst(e.cx, e.cy, F.debris, C.enemyRim, 170, { angle, spread: 1.1, life: 0.7, grav: 500, size: 2 });
-    Particles.burst(e.cx, e.cy, F.debris, C.enemyBody, 130, { angle, spread: 1.4, life: 0.8, grav: 500, size: 2 });
-    Particles.burst(e.cx, e.cy, 8, byParry ? C.parry : C.player, 240, { angle, spread: 0.4, life: 0.2, glow: true, streak: true });
-    this.hitstop = Math.max(this.hitstop, F.killHitstop);
-    this.addShake(F.killShake, F.killShakeTime, angle);
+    Pieces.split((g) => e.draw(g), e.cx, e.cy, angle, byParry ? C.parry : C.player, 1, juiceOn.knockback);
+    // 공격 방향 원뿔 파편 (지형에 닿으면 자국)
+    if (juiceOn.gore) {
+      const n = J.GORE_MIN + Math.floor(Math.random() * (J.GORE_MAX - J.GORE_MIN + 1));
+      const cone = J.GORE_CONE * Math.PI / 180;
+      for (let i = 0; i < n; i++) {
+        const a = angle + rand(-1, 1) * cone * (Math.random() < 0.7 ? 0.6 : 1); // 가운데에 몰리게
+        const v = rand(J.GORE_SPEED_MIN, J.GORE_SPEED_MAX);
+        Particles.spawn(e.cx + rand(-2, 2), e.cy + rand(-3, 3), Math.cos(a) * v, Math.sin(a) * v - 40,
+          J.GORE_LIFE * rand(0.7, 1), Math.random() < 0.6 ? C.gore : C.goreLight,
+          Math.random() < 0.3 ? 2 : 1, J.GORE_GRAVITY, false, false, true);
+      }
+    }
+    Particles.burst(e.cx, e.cy, 8, byParry ? C.parry : C.player, 260, { angle, spread: 0.35, life: 0.18, glow: true, streak: true });
+    // 궤적 강화 + 반동 (칼로 벤 경우)
+    const p = this.player;
+    if (cause !== 'reflect' && !p.dead) {
+      p.boostTrail();
+      if (juiceOn.recoil) {
+        p.dashT = 0;
+        p.vx = -Math.cos(angle) * J.RECOIL_SPEED;
+        if (!p.onGround) p.vy = -Math.sin(angle) * J.RECOIL_SPEED * 0.5 - J.RECOIL_LIFT;
+      }
+    }
+    this.addHitstop(J.HITSTOP_KILL);
+    this.addShake(J.SHAKE_KILL, J.SHAKE_TIME, angle);
     Sfx.play('kill');
   },
 
@@ -1503,7 +1686,7 @@ const Game = {
     this.state = 'dead';
     Pieces.split((g) => Player.drawBody(g, { ...p.pose(), slashing: false }, C.player, 1), p.cx, p.cy, angle, C.attack, 1.1);
     Particles.burst(p.cx, p.cy, 16, C.player, 180, { angle, spread: 1.0, life: 0.6, grav: 400, size: 1 });
-    this.hitstop = Math.max(this.hitstop, F.deathHitstop);
+    this.addHitstop(F.deathHitstop);
     this.addShake(F.deathShake, 0.2, angle);
     Sfx.play('death');
   },
@@ -1516,6 +1699,8 @@ const Game = {
     ctx.save();
     ctx.translate(-Math.round(this.cam.x - sx), -Math.round(this.cam.y - sy));
     drawTerrain(ctx);
+    Stains.draw(ctx);
+    if (!this.player.dead) this.player.drawSlash(ctx);
     Pieces.draw(ctx);
     for (const e of this.enemies) e.draw(ctx);
     this.player.draw(ctx);
@@ -1631,6 +1816,28 @@ const Game = {
     g.restore();
   },
 
+  // F2: 타격감 요소 토글 패널
+  drawJuicePanel(g) {
+    const x = 8, y0 = 24, lh = 11;
+    g.save();
+    g.globalAlpha = 0.7;
+    g.fillStyle = '#000';
+    g.fillRect(x - 4, y0 - 8, 118, lh * (JUICE.length + 2) + 4);
+    g.globalAlpha = 1;
+    g.fillStyle = CONFIG.colors.ui;
+    g.font = 'bold 10px sans-serif';
+    g.textAlign = 'left';
+    g.fillText('F2 타격감 토글', x, y0);
+    g.font = '10px sans-serif';
+    JUICE.forEach((j, i) => {
+      g.globalAlpha = juiceOn[j.key] ? 1 : 0.4;
+      g.fillText(`${i + 1} ${juiceOn[j.key] ? '■' : '□'} ${j.label}`, x, y0 + lh * (i + 1));
+    });
+    g.globalAlpha = 0.7;
+    g.fillText('0  전부 켜기/끄기', x, y0 + lh * (JUICE.length + 1));
+    g.restore();
+  },
+
   drawUI(g) {
     const C = CONFIG.colors;
     g.save();
@@ -1643,6 +1850,7 @@ const Game = {
     g.fillText('남은 적 ' + this.enemies.length, 8, 10);
     g.textAlign = 'right';
     g.fillText([this.debug ? 'AIM DEBUG' : '', Sfx.muted ? 'MUTE' : ''].filter(Boolean).join('  '), W - 8, 10);
+    if (this.juicePanel) this.drawJuicePanel(g);
     // 조작 안내 (첫 판 몇 초)
     if (this.playT < CONFIG.hintTime) {
       g.globalAlpha = 0.75 * clamp(CONFIG.hintTime - this.playT, 0, 1);
