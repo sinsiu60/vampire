@@ -32,13 +32,13 @@ func reset() -> void:
 	kill_stopped = false
 	_slow = 1.0
 	world_time = 0.0
+	_apply()
 	frozen = false
-	Engine.time_scale = 1.0
 
 
 ## 다음 틱부터 n 틱 동안 월드 정지 (이미 더 길게 멈춰 있으면 그대로)
 func hitstop(frames: int) -> void:
-	if frames <= 0:
+	if frames <= 0 or not Settings.on("hitstop"):
 		return
 	_hitstop = maxi(_hitstop, frames)
 	_apply()
@@ -46,7 +46,7 @@ func hitstop(frames: int) -> void:
 
 ## 킬 스톱: 다음 틱부터 n 틱 동안 월드 정지 (히트스톱과 겹치면 긴 쪽). 끝나는 틱에 kill_stop_released
 func kill_stop(frames: int) -> void:
-	if frames <= 0:
+	if frames <= 0 or not Settings.on("hitstop"):
 		return
 	_killstop = maxi(_killstop, frames)
 	_apply()
@@ -80,8 +80,16 @@ func real_delta() -> float:
 	return 1.0 / Config.fps
 
 
+## time_scale 다시 계산 (F3 슬로우 전환 등)
+func refresh() -> void:
+	_apply()
+
+
 func _physics_process(delta: float) -> void:
-	# delta 는 이미 time_scale 이 곱해진 값
+	# 옵션 메뉴·F4 프레임 진행으로 멈춘 틱은 세지 않음
+	if get_tree().paused:
+		return
+	# delta 는 이미 time_scale 이 곱해진 값 (F3 슬로우면 틱이 드물게 오고 Debug.time_mul 로 1/60 이 됨)
 	frozen = delta <= 0.0
 	world_time += delta
 	_last_delta = delta
@@ -101,4 +109,4 @@ func _physics_process(delta: float) -> void:
 
 
 func _apply() -> void:
-	Engine.time_scale = 0.0 if _hitstop > 0 or _killstop > 0 else _slow
+	Engine.time_scale = 0.0 if _hitstop > 0 or _killstop > 0 else _slow * Debug.time_mul()

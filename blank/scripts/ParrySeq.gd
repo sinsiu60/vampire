@@ -31,7 +31,7 @@ var _h_loop: AudioStreamPlayer = null
 
 
 func _ready() -> void:
-	process_mode = Node.PROCESS_MODE_ALWAYS
+	process_mode = Node.PROCESS_MODE_PAUSABLE   # 옵션 메뉴·F4 프레임 진행이면 멈춤 (히트스톱은 time_scale 이라 상관없음)
 	process_physics_priority = -900
 	z_index = 11
 

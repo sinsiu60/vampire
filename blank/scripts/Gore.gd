@@ -18,7 +18,7 @@ var _slices: Array = []          # { pos, angle, t, time, color }
 
 
 func _ready() -> void:
-	process_mode = Node.PROCESS_MODE_ALWAYS
+	process_mode = Node.PROCESS_MODE_PAUSABLE   # 옵션 메뉴·F4 프레임 진행이면 멈춤 (히트스톱은 time_scale 이라 상관없음)
 	_stain_img = Image.create(int(Config.room.w), int(Config.room.h), false, Image.FORMAT_RGBA8)
 	_stain_tex = ImageTexture.create_from_image(_stain_img)
 	TimeManager.kill_stop_released.connect(release_trail)
@@ -73,6 +73,7 @@ func trail_state() -> Dictionary:
 ## parts = 실루엣 [{ xf, shapes, body, rim }] (origin 기준 로컬), center = 자르는 점(전역), angle = 베인 방향.
 ## knock = 공격 방향으로 강하게 날아감 (KILL_KNOCKBACK). 아니면 약하게 벌어짐 (플레이어 사망)
 func split(parts: Array, origin: Vector2, center: Vector2, angle: float, slice_color: Color, power := 1.0, knock := false) -> void:
+	knock = knock and Settings.on("knockback")
 	var F: Dictionary = Config.fx
 	var J: Dictionary = Config.juice
 	var d := Vector2.from_angle(angle)
@@ -96,7 +97,7 @@ func split(parts: Array, origin: Vector2, center: Vector2, angle: float, slice_c
 			"polys": _cut(parts, shift, d, n),
 			"pos": center + n * 1.5, "vel": v, "rot": 0.0, "vrot": vrot,
 			"bounces": 0, "rest": false,
-			"flash": J.ENEMY_FLASH_FRAMES, "born": Engine.get_physics_frames(),
+			"flash": J.ENEMY_FLASH_FRAMES if Settings.on("enemy_flash") else 0, "born": Engine.get_physics_frames(),
 		})
 	_slices.append({ "pos": center, "angle": angle, "t": 0.0, "time": 0.14, "color": slice_color })
 

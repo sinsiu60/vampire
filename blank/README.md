@@ -5,16 +5,17 @@
 ## 열기 / 실행
 1. Godot **4.5 이상** (TileMapLayer 사용 → 최소 4.3, 4.5.1 에서 확인)으로 `blank/project.godot` 를 연다.
 2. 처음 열면 에디터가 `art/`, `sounds/` 를 자동으로 임포트한다 (`.godot/` 캐시는 git 에 넣지 않음).
-3. F5 (프로젝트 실행) → `scenes/Main.tscn`.
+3. F5 (프로젝트 실행) → `scenes/Boot.tscn` ("시우 공방" 로고 2초 → 게임). `Main.tscn` 만 따로 실행(F6)해도 된다 (로고·스캔라인 없이 창 크기 그대로).
 
 ## 프로젝트 설정 (project.godot)
 | 항목 | 값 |
 |---|---|
-| 기본 뷰포트 | 480 × 270 |
+| 게임 화면 | 480 × 270 (`Boot.tscn` 의 SubViewport) |
 | 창 크기 | 1920 × 1080 (window override) |
-| Stretch | Mode = `viewport`, Aspect = `keep`, Scale Mode = `integer` (정수 배율 — 프로토타입과 같게 픽셀이 고르게) |
-| 텍스처 필터 | Nearest |
-| 물리 틱 | 60 |
+| 확대 | 게임 화면을 창 안에 **정수 배율**로 키워 가운데 (Aspect keep, 남는 곳 검정) — `Boot.gd` 가 창 크기가 바뀔 때마다 계산 |
+| Stretch | Mode = `disabled` (7단계에서 `viewport` → 바꿈, 아래 참고) |
+| 텍스처 필터 | Nearest (프로젝트 기본 + SubViewport + 컨테이너) |
+| 물리 틱 | 60, 렌더 프레임당 최대 1틱 (`max_physics_steps_per_frame = 1`, 아래 참고) |
 | 픽셀 스냅 | 2D Transform / Vertex 모두 켬 |
 | 렌더러 | Compatibility (2D 픽셀 게임에 충분, 저사양·웹 대응) |
 | 배경색 | `#05060d` |
@@ -28,13 +29,17 @@
 | `slash` | 마우스 왼쪽 |
 | `restart` | R |
 | `mute` | M |
-| `menu` | ESC |
+| `menu` | ESC (옵션 메뉴) |
+
+디버그 키 (`Debug.gd`): F1 반사 보정 표시 · F2 타격감 토글 패널 · F3 슬로우 10% · F4 프레임 진행 (F4 한 틱, Enter 해제) · F5 패링 타이밍 바 + 입력 오차 ms
 
 ## 구조
 ```
 blank/
   project.godot
   scripts/autoload/Config.gd   모든 수치 (프로토타입 CONFIG 를 그대로 옮김)
+  scripts/autoload/Settings.gd 옵션(흔들림 강도·발사 타이밍 원, user://settings.cfg 에 저장) + F2 타격감 토글
+  scripts/autoload/Debug.gd    F1 ~ F5 디버그 키, F3 슬로우(물리 틱 6/초 + time_scale 0.1), F4 프레임 진행(일시정지 + 한 틱씩)
   scripts/autoload/TimeManager.gd  Engine.time_scale 로 히트스톱·슬로우, 실제 시간 틱(real_frames / real_time), 월드 시간
   scripts/autoload/Audio.gd    효과음 재생 (파일 6종 + 합성음), 실제 시간 페이드, 음소거
   scripts/audio/Synth.gd       파일 없는 소리(휘두르기·사망·클리어)를 시작할 때 PCM 으로 합성
@@ -52,7 +57,14 @@ blank/
   scripts/Room.gd              TileMapLayer 방, 시작 위치
   scripts/DrawUtil.gd          공용 그리기 (초승달/반달 궤적)
   scripts/Crosshair.gd         하늘색 조준점 (OS 커서 숨김)
-  scenes/Main.tscn (Room · Player · Effects · ParrySeq · ScreenFX · HUD)  Player.tscn  Room.tscn  EnemyMelee.tscn  EnemyGunner.tscn  Effects.tscn   (적 배치는 Room.tscn 의 Enemies 아래)
+  scripts/Boot.gd · Logo.gd    시작 씬: 게임 화면(SubViewport) 정수 배율 배치 · 창 해상도 스캔라인 · 로고(처음 한 번) · R 재시작
+  shaders/scanline.gdshader    스캔라인 (확대된 픽셀 한 줄마다 아래 1/3 을 20% 어둡게)
+  scripts/Backdrop.gd          하늘 + 도시 2겹 시차 배경 (프로토타입과 같은 시드로 같은 실루엣)
+  scripts/HUD.gd · Fonts.gd    남은 적 · 디버그 표시 · 조작 안내 · CLEAR/사망 · F2 패널 · F3/F4 줄 · F5 오차
+  scripts/Menu.gd              ESC 옵션 메뉴 (흔들림 0~150% 슬라이더 + 미리보기, 발사 타이밍 원 켜기/끄기)
+  scripts/DebugDraw.gd         F1 스냅 범위 부채꼴·대상 표시, F5 판정 창 바 (월드)
+  scenes/Boot.tscn (Screen/Game = SubViewport 480×270 · Scanlines)
+  scenes/Main.tscn (BackdropLayer · Room · Player · Effects · ParrySeq · DebugDraw · ScreenFX · HUD[Offscreen · Text · Menu · Crosshair · Fade])  Player.tscn  Room.tscn  EnemyMelee.tscn  EnemyGunner.tscn  Effects.tscn   (적 배치는 Room.tscn 의 Enemies 아래)
   tiles/terrain.tres           TileSet: (0,0) 지형 윗면, (1,0) 지형 속 = 물리 레이어 0 (지형, 비트 1)
                                (2,0) 일방향 발판 = 물리 레이어 1 (발판, 비트 16) — 몸은 올라서지만 총알·시야는 통과
   art/tiles.png                8×8 타일 3장
@@ -72,7 +84,7 @@ blank/
 | 4 | 히트스캔 총잡이 (조준선 + 줄어드는 원 + 판정 창 띠 + 발사 간격) + 타이밍 패링 | ✅ |
 | 5 | 패링 슬로우 시퀀스 (time_return 길이에 맞춘 처치) + 화면 효과 셰이더 (채도·비네트·섬광) | ✅ |
 | 6 | 16프레임 킬 연출, 빛줄기, 화면 흔들림, 피·파편·자국, 두 조각 | ✅ |
-| 7 | 배경 시차, 스캔라인 셰이더, 머플러·잔상, "시우 공방" 로고, 옵션 메뉴, 디버그 키 | |
+| 7 | 배경 시차, 스캔라인 셰이더, 머플러·잔상, "시우 공방" 로고, 옵션 메뉴, 디버그 키 | ✅ |
 
 ### 1단계 확인 (Godot 4.5.1, 60fps 물리)
 | 항목 | 결과 | 프로토타입 |
@@ -168,7 +180,7 @@ k = 패링한 틱부터 센 실제 틱 (60fps). `time_return.wav` 0.935초 → 5
 - 시간 속도는 `Engine.time_scale` (= `TimeManager.set_slow`). 다음 틱부터 적용되므로 ParrySeq 가 틱 k 에 `scale_at(k + 1)` 을 넣는다.
   ParrySeq 는 TimeManager 다음, 플레이어·적보다 먼저 틱을 받아 명중이 그 틱의 월드 갱신 전에 일어난다.
 - Godot 는 한 렌더 프레임에 물리 틱이 여러 번 돌면 그 틱들에 같은 time_scale 을 쓴다. 렌더가 60fps 아래로 밀리면
-  속도 곡선이 한 틱 밀릴 수 있다 (전체 길이·명중 틱·히트스톱 틱 수는 그대로).
+  속도 곡선이 한 틱 밀릴 수 있었다 → 7단계에서 렌더 프레임당 물리 1틱으로 제한해 해결 (7단계 확인 참고).
 - 흔들림·줌은 카메라 `offset` / `zoom`. 흔들림 강도는 `Config.settings.shake` (7단계 옵션 메뉴).
 
 ### 6단계 확인
@@ -191,3 +203,30 @@ f = 처치한 틱부터 센 실제 틱 (처치 틱 = 0).
   `Geometry2D.intersect_polygons` 로 절단선 반평면과 교차. 테두리(림)도 같은 방식으로 잘라 그린다.
 - 조각·핏방울은 물리 엔진 대신 타일 격자로 직접 충돌 (`Room.move_box` — 프로토타입 moveBody 와 같은 4px 분할 이동).
 - 자국은 방 크기 `Image` 에 찍고 바뀐 틱에만 텍스처 갱신.
+
+### 7단계 확인
+| 항목 | 결과 |
+|---|---|
+| 로고 | 검은 화면에 "시우 공방" (0.6초 나타남 · 0.8초 유지 · 0.6초 사라짐, 밑줄이 그어짐) → 121틱 뒤 게임. R 재시작 땐 안 나옴 |
+| 화면 배치 | 1920×1080 창 → 배율 4, 위치 (0, 0), 게임 화면 480×270. 다른 창 크기는 가장 큰 정수 배율로 가운데 |
+| 스캔라인 | 확대된 픽셀 4줄 중 맨 아래 줄 밝기 0.8배 (프로토타입 alpha 0.2) |
+| 배경 | 하늘(고정) + 먼 도시(×0.15, 568px) + 가까운 도시(×0.45, 712px, 창문) — 흔들림·줌도 같이 받음 |
+| 머플러 | 마디 7개 verlet 로프, 달리면 등 뒤로 날림 (끝이 목보다 16px 뒤) |
+| 잔상 | 전력 질주 4틱마다 옅게(22%), 돌진은 매 틱 진하게(45%), 0.16초 |
+| 옵션 메뉴 (ESC) | 게임·월드 시간 정지, 소리 일시정지. → 110% + 흔들림 미리보기, ↓ Space 로 원 끄기("숙련자용 하드 모드"), 닫을 때 저장 |
+| 원 끄기 | 조준 중에도 발사 타이밍 원·화면 밖 표시·번쩍/성공 연출 없음 (조준선은 그대로) |
+| F2 | 1 = 타임스톱 끔 → 처치해도 월드가 안 멈춤. `-` = 전부 켜져 있으면 전부 끔, 아니면 전부 켬 |
+| F3 | 물리 틱 6회/초 + time_scale 0.1 → 틱당 월드 1/60초 그대로, 6틱에 실제 약 1초. 다시 F3 → 60 |
+| F4 | 멈춘 채 대기, F4 한 번 = 정확히 1틱(월드 1/60초), 세 번 = 3틱. Enter 해제 |
+| F5 | 조준선 옆 판정 창 바, 패링하면 "+17ms 성공", 안 누르고 맞으면 "입력 없음" → 0.5초 안에 누르면 "+250ms 늦음" |
+| F1 | ±35° 실선 / ±50° 점선 부채꼴, 근접 패링 확대 원, 쏜 적 점선 상자, 선택될 대상 모서리 |
+
+- **Stretch 를 `viewport` → `disabled` 로 바꾼 이유**: 루트를 480×270 으로 렌더하면 확대된 화면의 한 줄(게임 픽셀 1/4)보다
+  얇은 스캔라인을 그릴 수 없다. 그래서 게임은 480×270 SubViewport 에 그대로 렌더하고(최근접 필터·픽셀 스냅),
+  `Boot.gd` 가 그것을 정수 배율로 키워 가운데 놓는다 — 보이는 결과는 `viewport` + `keep` + `integer` 와 같고,
+  그 위에 창 해상도로 스캔라인을 그린다.
+- **렌더 프레임당 물리 1틱**: Godot 는 한 렌더 프레임에 물리 틱이 여러 번 돌면 그 틱들에 같은 `time_scale` 을 쓴다
+  (프레임 시작 때 한 번 읽음). 히트스톱·패링 시퀀스의 틱 단위 속도 곡선이 어긋나지 않게 프레임당 1틱으로 제한했다.
+  화면이 60fps 아래로 떨어지면 따라잡지 않고 그만큼 게임이 느려진다 (판정은 월드 시간이라 일관됨).
+- 일시정지(옵션 메뉴 · F4)는 `SceneTree.paused`. 방·플레이어·연출 노드는 PAUSABLE, Main(흔들림 미리보기·입력)·HUD·메뉴는 ALWAYS.
+- 5·6단계 테스트를 다시 돌려 같은 결과 확인 (반사탄 명중 틱은 6단계부터 월드가 멈춤 → 패링~명중 월드 시간 0.4318 − 1/60 = 0.4151초).

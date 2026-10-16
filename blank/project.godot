@@ -12,12 +12,14 @@ config_version=5
 
 config/name="공백 (BLANK)"
 config/description="패링 특화 2D 원히트 액션 — 시우 공방"
-run/main_scene="res://scenes/Main.tscn"
+run/main_scene="res://scenes/Boot.tscn"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 
 [autoload]
 
 Config="*res://scripts/autoload/Config.gd"
+Settings="*res://scripts/autoload/Settings.gd"
+Debug="*res://scripts/autoload/Debug.gd"
 TimeManager="*res://scripts/autoload/TimeManager.gd"
 Audio="*res://scripts/autoload/Audio.gd"
 
@@ -27,9 +29,7 @@ window/size/viewport_width=480
 window/size/viewport_height=270
 window/size/window_width_override=1920
 window/size/window_height_override=1080
-window/stretch/mode="viewport"
-window/stretch/aspect="keep"
-window/stretch/scale_mode="integer"
+window/stretch/mode="disabled"
 
 [input]
 
@@ -74,6 +74,7 @@ menu={
 [physics]
 
 common/physics_ticks_per_second=60
+common/max_physics_steps_per_frame=1
 
 [rendering]
 

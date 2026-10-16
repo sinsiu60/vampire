@@ -32,7 +32,7 @@ func _ready() -> void:
 
 ## 재생. 반환값 = 재생 중인 플레이어 (fade_out / stop 에 사용). 못 찾으면 null
 func play(name: String, volume := 1.0, pitch := 1.0) -> AudioStreamPlayer:
-	if not streams.has(name):
+	if not streams.has(name) or not Settings.on("sound"):
 		return null
 	var p := _free_player()
 	p.stream = streams[name]
@@ -62,8 +62,15 @@ func toggle_mute() -> void:
 	AudioServer.set_bus_mute(AudioServer.get_bus_index("Master"), muted)
 
 
+## 옵션 메뉴: 재생 중인 소리 일시정지 / 이어서
+func pause_all(paused: bool) -> void:
+	for p in _pool:
+		p.stream_paused = paused
+
+
 func stop_all() -> void:
 	for p in _pool:
+		p.stream_paused = false
 		p.stop()
 
 
@@ -91,7 +98,7 @@ func clear() -> void:
 
 func _free_player() -> AudioStreamPlayer:
 	for p in _pool:
-		if not p.playing:
+		if not p.playing and not p.stream_paused:
 			return p
 	# 다 쓰고 있으면 가장 먼저 만든 것을 끊고 재사용
 	var p: AudioStreamPlayer = _pool.pop_front()

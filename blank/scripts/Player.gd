@@ -34,6 +34,9 @@ var _lean := 0.0
 var _sx := 1.0
 var _sy := 1.0
 var _run_phase := 0.0
+var _tick := 0
+var _ghosts: Array = []          # 잔상 { pos(전역 발 위치), parts, t, strong }
+var _scarf: Array = []           # 머플러 마디 { p, pp } (전역, verlet)
 
 
 func _ready() -> void:
@@ -51,6 +54,15 @@ func _ready() -> void:
 ## 몸 중심 (베기·조준 기준점, 전역 좌표)
 func center() -> Vector2:
 	return global_position + _center_local()
+
+
+## F4 프레임 진행 중 멈춘 사이 누른 입력 (Debug 가 넘겨줌)
+func queue_slash() -> void:
+	_queued_slash = true
+
+
+func queue_jump() -> void:
+	_jump_buf = Config.player.jump_buffer
 
 
 ## 칼 끝 (베는 방향 radius × 0.8) — 근접 패링 불꽃·링 위치
@@ -256,13 +268,85 @@ func _animate(delta: float, was_on_floor: bool, vy_before: float, jumped: bool) 
 	_sy = lerpf(_sy, 1.0, a.spring_back)
 	if is_on_floor():
 		_run_phase += absf(velocity.x) * delta * 0.28
+	_tick += 1
+	# 잔상: 돌진(또는 아주 빠를 때)은 매 틱 진하게, 전력 질주는 몇 틱마다 옅게
+	var sp := velocity.length()
+	var dashing: bool = _dash_t > 0.0 or sp > c.run_speed * 1.4
+	if dashing or (is_on_floor() and absf(velocity.x) > c.run_speed * 0.9 and _tick % int(a.ghost_every_run) == 0):
+		_ghosts.append({ "pos": global_position, "parts": body_parts(), "t": 0.0, "strong": dashing })
+	for gh in _ghosts:
+		gh.t += delta
+	_ghosts = _ghosts.filter(func(gh): return gh.t < a.ghost_time)
+	_update_scarf(delta, sp)
+
+
+## 머플러 목 위치 (전역)
+func neck() -> Vector2:
+	return global_position + Vector2(-facing + sin(_lean) * 12.0, -12.0 * _sy)
+
+
+## 머플러 (verlet 로프): 목에 고정, 나머지는 관성 + 중력 + 펄럭임, 3번 길이 맞춤
+func _update_scarf(dt: float, sp: float) -> void:
+	var a: Dictionary = Config.anim
+	var nk := neck()
+	if _scarf.is_empty() or _scarf[0].p.distance_to(nk) > 40.0:
+		# 처음이거나 순간이동했으면 목 아래로 늘어뜨린 채 다시 만듦
+		_scarf = []
+		for i in int(a.scarf_nodes):
+			var q := Vector2(nk.x, global_position.y - Config.player.h + 4.0 + i)
+			_scarf.append({ "p": q, "pp": q })
+	_scarf[0].p = nk
+	var moving := clampf(sp / Config.player.run_speed, 0.2, 1.0)    # 서 있어도 살짝 펄럭임
+	var k := dt * dt * 60.0
+	var n := _scarf.size()
+	for i in range(1, n):
+		var nd: Dictionary = _scarf[i]
+		var v: Vector2 = (nd.p - nd.pp) * a.scarf_drag
+		nd.pp = nd.p
+		nd.p += v + Vector2(-facing * a.scarf_trail * k,
+			a.scarf_gravity * k + sin(_tick * 0.35 + i * 0.9) * a.scarf_wave * moving * k * (float(i) / n))
+	for it in 3:
+		for i in range(1, n):
+			var na: Dictionary = _scarf[i - 1]
+			var nb: Dictionary = _scarf[i]
+			var d: Vector2 = nb.p - na.p
+			var dl := maxf(d.length(), 1e-6)
+			var diff: float = (dl - a.scarf_seg) / dl
+			if i == 1:
+				nb.p -= d * diff
+			else:
+				na.p += d * diff * 0.5
+				nb.p -= d * diff * 0.5
 
 
 func _draw() -> void:
 	if dead:
 		return
+	var col: Color = Config.colors.player
+	# 잔상 (흰 실루엣이 옅게 남음)
+	for gh in _ghosts:
+		var k: float = 1.0 - gh.t / Config.anim.ghost_time
+		var c := Color(col, k * (0.45 if gh.strong else 0.22))
+		var off: Vector2 = gh.pos - global_position
+		for part in gh.parts:
+			draw_set_transform_matrix(Transform2D(0.0, off) * part.xf)
+			for sh in part.shapes:
+				draw_rect(sh[1], c)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	_draw_scarf()
 	_draw_body()
 	_draw_trail()
+
+
+func _draw_scarf() -> void:
+	var n := _scarf.size()
+	for i in range(1, n):
+		var a := to_local(_scarf[i - 1].p)
+		var b := to_local(_scarf[i].p)
+		var w := 2.0 if i < n * 0.5 else 1.0
+		draw_line(a, b, Config.colors.player, w)
+		if w > 1.0:
+			draw_circle(b, w * 0.5, Config.colors.player)     # 둥근 이음매
 
 
 # 흰 실루엣. 발을 기준으로 기울이고(lean) 늘이고 줄임(sx, sy). 방향은 x 배율 부호로
@@ -325,10 +409,12 @@ func _draw_trail() -> void:
 	var k: float = 0.0 if _trail.ticks <= J.SLASH_TRAIL_HOLD else (_trail.ticks - J.SLASH_TRAIL_HOLD) / fade_ticks
 	if k >= 1.0:
 		return
-	var r: float = J.SLASH_TRAIL_RADIUS + k * 4.0              # 사라지며 살짝 퍼짐
-	var thick: float = r * J.SLASH_TRAIL_THICK * (1.0 - k)
-	var half: float = deg_to_rad(J.SLASH_TRAIL_ARC)
+	# F2 에서 끄면 작고 얇은 기본 궤적
+	var big := Settings.on("slash_trail")
+	var r: float = (J.SLASH_TRAIL_RADIUS if big else float(Config.slash.radius)) + k * 4.0   # 사라지며 살짝 퍼짐
+	var thick: float = r * (J.SLASH_TRAIL_THICK if big else 0.3) * (1.0 - k)
+	var half: float = deg_to_rad(J.SLASH_TRAIL_ARC) if big else float(Config.slash.arc_half)
 	var col: Color = Config.colors.player
 	col.a = 1.0 - k * k
 	DrawUtil.crescent(self, _center_local(), r, _trail.angle - half * _trail.flip, half * 2.0 * _trail.flip,
-		0.0, 1.0, thick, col, 6.0)
+		0.0, 1.0, thick, col, 6.0 if big else 4.0)

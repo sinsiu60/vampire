@@ -10,7 +10,9 @@ extends Node2D
 @onready var effects: Effects = $Effects
 @onready var seq: ParrySeq = $ParrySeq
 @onready var screen_fx: ScreenFX = $ScreenFX/Rect
-@onready var state_label: Label = $HUD/State
+@onready var hud: HUD = $HUD/Text
+@onready var menu: Menu = $HUD/Menu
+@onready var debug_draw: DebugDraw = $DebugDraw
 @onready var fade: ColorRect = $HUD/Fade
 
 var game_state := "play"          # play | dead | clear
@@ -22,10 +24,19 @@ var _shake := { "amp": 0.0, "time": 0.0, "t": 0.0, "angle": 0.0 }   # 방향성 
 var _kill_shake := { "f": 0, "total": 0, "angle": 0.0 }               # 킬 흔들림 (매 프레임 랜덤, 공격 방향 치우침)
 var _shake_frame := -1            # 이번 틱 흔들림을 이미 갱신했으면 그 틱 번호
 var gore: Gore
+var kill_frame := -1              # 마지막 처치 후 실제 틱 수 (F3/F4 표시, 처치 없으면 -1)
+# F5 패링 입력 오차 표시: { text, ok, t } — 성공은 월드 시간, 실패 원인은 실제 시간 클릭 기준
+var timing_msg := {}
+var _last_click_real := -INF
+var _late_watch := {}             # 아직 안 누른 채 맞음 → 0.5초 안에 누르면 '+xxms 늦음'
 
 
 func _ready() -> void:
 	add_to_group("game")
+	# Main 은 일시정지 중에도 돌고(흔들림 미리보기·입력), 월드는 멈춤
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	room.process_mode = Node.PROCESS_MODE_PAUSABLE
+	player.process_mode = Node.PROCESS_MODE_PAUSABLE
 	process_physics_priority = 100
 	TimeManager.reset()
 	player.global_position = room.spawn_position()
@@ -49,7 +60,9 @@ func _ready() -> void:
 	camera.position_smoothing_enabled = true
 	camera.position_smoothing_speed = Config.camera.lerp * Config.fps
 	camera.reset_smoothing()
-	state_label.text = ""
+	hud.main = self
+	menu.main = self
+	debug_draw.main = self
 	# 재시작 직후 짧게 밝아지는 페이드 (실제 시간, 입력은 바로 받음)
 	fade.color = Color(0, 0, 0, 1)
 	var tw := create_tween()
@@ -62,18 +75,42 @@ func enemies() -> Array:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if Debug.menu_open:
+		return
+	if event.is_action_pressed("slash"):
+		_note_click()
 	if event.is_action_pressed("restart"):
-		# 방 처음부터 즉시 다시 (씬이 작아 로딩 없이 바로)
-		Audio.stop_all()
-		get_tree().reload_current_scene()
+		restart()
 	elif event.is_action_pressed("mute"):
 		Audio.toggle_mute()
 
 
+## 방 처음부터 즉시 다시 (씬이 작아 로딩 없이 바로). Boot 안이면 게임만 새로 만들고, 단독 실행이면 씬 다시 읽기
+func restart() -> void:
+	var boot := get_tree().get_first_node_in_group("boot")
+	if boot != null:
+		boot.restart()
+	else:
+		Audio.stop_all()
+		get_tree().reload_current_scene()
+
+
 func _physics_process(_delta: float) -> void:
+	# 일시정지(옵션 메뉴 / F4): 메뉴면 흔들림 미리보기만 재생
+	if get_tree().paused:
+		if Debug.menu_open:
+			_update_shake(1.0 / Config.fps)
+		return
 	if _shake_frame != Engine.get_physics_frames():
 		_update_shake(1.0 / Config.fps)
 	_update_zoom()
+	# 실제 시간으로 흐르는 표시들 (히트스톱·킬 스톱 중에도)
+	if kill_frame >= 0:
+		kill_frame += 1
+	if not timing_msg.is_empty():
+		timing_msg.t += TimeManager.real_delta()
+	if not _late_watch.is_empty() and TimeManager.real_time > _late_watch.until:
+		_late_watch = {}
 	if TimeManager.frozen:
 		return
 	_resolve_shots()
@@ -81,7 +118,41 @@ func _physics_process(_delta: float) -> void:
 	if game_state == "play" and enemies().is_empty():
 		game_state = "clear"
 		Audio.clear()
-		state_label.text = "CLEAR\n방의 적을 모두 처치했다 · R 다시 하기"
+
+
+# ================================================================ F5 패링 입력 오차
+## 클릭 시각 (실제 시간 — 히트스톱으로 월드가 멈춘 동안 누른 것도 정확하게)
+func _note_click() -> void:
+	_last_click_real = TimeManager.real_time
+	# 패링 실패 후 늦게 누른 클릭 → '+xxms 늦음'
+	if not _late_watch.is_empty() and TimeManager.real_time <= _late_watch.until:
+		report_timing(TimeManager.real_time - _late_watch.fire_real, "late")
+		_late_watch = {}
+
+
+## err = 베기 시작 - 발사 (초)
+func report_timing(err: float, kind: String) -> void:
+	var ms := roundi(err * 1000.0)
+	var label: String = { "ok": "성공", "early": "이름", "late": "늦음", "locked": "헛스윙 잠금", "none": "입력 없음" }[kind]
+	var txt := label if kind == "none" else "%s%dms %s" % ["+" if ms > 0 else "", ms, label]
+	timing_msg = { "text": txt, "ok": kind == "ok", "t": 0.0 }
+
+
+## 패링 실패: 가장 가까운 클릭으로 원인 표시. 아직 안 눌렀으면 잠시 기다렸다가 '늦음'
+func _report_shot_fail(s: Dictionary) -> void:
+	var Sh: Dictionary = Config.shot
+	var f: float = s.fire_real
+	var c := _last_click_real
+	var eps := 1e-9
+	if c > f + Sh.PARRY_LATE + eps:
+		report_timing(c - f, "late")                # 이번 틱에 늦게 누름
+	elif c >= f - Sh.PARRY_EARLY - eps:
+		report_timing(c - f, "locked")              # 창 안에 눌렀지만 헛스윙 잠금 등으로 베기 못 함
+	elif c > f - 0.5:
+		report_timing(c - f, "early")
+	else:
+		_late_watch = { "fire_real": f, "until": f + 0.5 }
+		report_timing(0.0, "none")
 
 
 # ================================================================ 흔들림 · 줌 (실제 시간)
@@ -92,6 +163,8 @@ func _shake_envelope(k: float) -> float:
 
 ## 방향성 흔들림 (이미 더 센 흔들림이 진행 중이면 그대로)
 func add_shake(amp: float, time: float, angle: float) -> void:
+	if not Settings.on("shake"):
+		return
 	var sh := _shake
 	if sh.t > 0.0 and sh.amp * _shake_envelope(1.0 - sh.t / sh.time) > amp:
 		return
@@ -99,7 +172,7 @@ func add_shake(amp: float, time: float, angle: float) -> void:
 	sh.time = time
 	sh.t = time
 	sh.angle = angle
-	camera.offset = Vector2.from_angle(angle) * amp * float(Config.settings.shake)   # 첫 프레임에 바로 밀림
+	camera.offset = Vector2.from_angle(angle) * amp * Settings.shake   # 첫 프레임에 바로 밀림
 
 
 ## 화면 흔들림 = 방향성 흔들림(패링/사망) + 킬 흔들림. 옵션의 강도 배율 적용. 실제 시간 한 틱에 한 번
@@ -121,11 +194,13 @@ func _update_shake(dt: float) -> void:
 			v = Vector2.RIGHT
 		o += v.normalized() * amp * randf_range(0.6, 1.0)
 		ks.f += 1
-	camera.offset = o * float(Config.settings.shake)
+	camera.offset = o * Settings.shake
 
 
 ## 킬 흔들림 시작 (처치한 프레임부터 바로 흔들림)
 func start_kill_shake(angle: float, stop_frames: int) -> void:
+	if not Settings.on("shake"):
+		return
 	_kill_shake = { "f": 0, "total": stop_frames + Config.kill.SHAKE_TAIL_FRAMES, "angle": angle }
 	_update_shake(0.0)
 
@@ -242,7 +317,7 @@ func fire_shot(g: EnemyGunner) -> void:
 	if hit.wall:
 		effects.burst(hit.pos, 7, col, 110.0, g.aim + PI, 1.1, 0.2, { "glow": true, "streak": true })
 	if hit.player:
-		pending_shots.append({ "shooter": g, "muzzle": m, "fire_t": TimeManager.world_time,
+		pending_shots.append({ "shooter": g, "muzzle": m, "fire_t": TimeManager.world_time, "fire_real": TimeManager.real_time,
 			"angle": g.aim, "parryable": g.next_parryable, "done": false })
 
 
@@ -262,10 +337,12 @@ func _resolve_shots() -> void:
 		if s.parryable and not p.slash_used and ts >= s.fire_t - Sh.PARRY_EARLY - eps and ts <= s.fire_t + Sh.PARRY_LATE + eps:
 			s.done = true
 			p.slash_used = true
+			report_timing(ts - s.fire_t, "ok")
 			_parry_shot(s)
 			continue
 		if TimeManager.world_time > s.fire_t + Sh.PARRY_LATE + eps:
 			s.done = true
+			_report_shot_fail(s)
 			_kill_player(s.angle)
 	pending_shots = pending_shots.filter(func(s): return not s.done)
 
@@ -301,7 +378,8 @@ func parry_fx(pos: Vector2, angle: float) -> void:
 	var C: Dictionary = Config.colors
 	var J: Dictionary = Config.juice
 	TimeManager.hitstop(J.HITSTOP_PARRY_FRAMES)
-	screen_fx.flash()
+	if Settings.on("screen_flash"):
+		screen_fx.flash()
 	effects.ring(pos, F.ring_radius, F.ring_time, F.ring_width, C.parry)
 	effects.ring(pos, F.ring_radius * 0.55, F.ring_time * 0.7, F.ring_width - 1.0, C.parry_hot)
 	add_shake(J.SHAKE_PARRY, J.SHAKE_TIME, angle)
@@ -322,7 +400,7 @@ func _parry_shot(s: Dictionary) -> void:
 	var spark: Vector2 = p.center() + Vector2.from_angle(back) * float(Config.slash.radius) * 0.6
 	parry_fx(spark, back)
 	effects.approach_success(s.muzzle)    # 원이 노랗게 바뀌며 바깥으로 퍼짐
-	seq.start(target, aim, p.center().distance_to(ray_end), Config.juice.HITSTOP_PARRY_FRAMES)
+	seq.start(target, aim, p.center().distance_to(ray_end), Config.juice.HITSTOP_PARRY_FRAMES if Settings.on("hitstop") else 0)
 	p.input_locked = Config.parry_seq.LOCK_INPUT_DURING_SLOWMO
 
 
@@ -405,19 +483,24 @@ func _kill_enemy(e: Enemy, angle: float, cause := "slash") -> void:
 	# 두 조각: 속도는 지금 정해지지만 킬 스톱이 끝나야 움직이기 시작
 	gore.split(e.capture_silhouette(), e.global_position, c, angle, C.parry if by_parry else C.player, 1.0, true)
 	# 1) 킬 스톱
-	var stop: int = K.KILL_HITSTOP_FRAMES
+	var stop: int = K.KILL_HITSTOP_FRAMES if Settings.on("hitstop") else 0
 	TimeManager.kill_stop(stop)
-	if cause == "reflect":
+	if cause == "reflect" and stop > 0:
 		TimeManager.freeze_now()
 	# 2) 빛줄기: 타격 지점(적 중심)을 지나 화면 밖에서 화면 밖으로
-	effects.beam(c, angle, view_rect())
+	if Settings.on("beam"):
+		effects.beam(c, angle, view_rect())
 	# 3) 3겹 궤적 (칼로 벤 경우 — 흰 반달 대신) + 반동
 	if cause != "reflect" and not p.dead:
-		var tr := p.take_trail()
-		gore.kill_trail(p.center(), tr.get("angle", angle), tr.get("flip", 1))
-		p.recoil(angle)
+		if Settings.on("slash_trail"):
+			var tr := p.take_trail()
+			gore.kill_trail(p.center(), tr.get("angle", angle), tr.get("flip", 1))
+			if stop <= 0:
+				gore.release_trail()
+		if Settings.on("recoil"):
+			p.recoil(angle)
 	# 4) 피: 공격 방향 앞쪽 원뿔로 빨간 덩어리 구름 (킬 스톱 중엔 천천히 퍼짐 → 해제 후 떨어져 자국)
-	var n: int = randi_range(K.BLOOD_MIN, K.BLOOD_MAX)
+	var n: int = randi_range(K.BLOOD_MIN, K.BLOOD_MAX) if Settings.on("gore") else 0
 	var cone := deg_to_rad(K.BLOOD_CONE)
 	for i in n:
 		var a := angle + randf_range(-1.0, 1.0) * cone * (0.55 if randf() < 0.65 else 1.0)   # 가운데가 짙은 구름
@@ -428,6 +511,7 @@ func _kill_enemy(e: Enemy, angle: float, cause := "slash") -> void:
 	effects.burst(c, 8, C.parry if by_parry else C.player, 260.0, angle, 0.35, 0.18, { "glow": true, "streak": true })
 	# 5) 킬 흔들림
 	start_kill_shake(angle, stop)
+	kill_frame = 0
 	Audio.kill()
 	e.die(angle)
 
@@ -453,4 +537,3 @@ func _on_player_died() -> void:
 	game_state = "dead"
 	TimeManager.hitstop(roundi(Config.fx.death_hitstop * Config.fps))
 	Audio.death()
-	state_label.text = "R  —  재시작"

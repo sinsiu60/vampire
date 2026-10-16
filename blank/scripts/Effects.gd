@@ -19,7 +19,7 @@ var _rings: Array = []           # { pos, radius, time, t, width, color }
 
 
 func _ready() -> void:
-	process_mode = Node.PROCESS_MODE_ALWAYS
+	process_mode = Node.PROCESS_MODE_PAUSABLE   # 옵션 메뉴·F4 프레임 진행이면 멈춤 (히트스톱은 time_scale 이라 상관없음)
 	z_index = 10
 
 
@@ -75,6 +75,11 @@ static func beam_span(b: Dictionary) -> Vector2:
 	return Vector2(b.len * (1.0 - pow(1.0 - u, 3.0)), b.len * u * u * u)
 
 
+## 첫 빛줄기의 프레임 (없으면 -1) — F3/F4 디버그 표시
+func first_beam_frame() -> int:
+	return _beams[0].f if not _beams.is_empty() else -1
+
+
 func beam_count() -> int:
 	return _beams.size()
 
@@ -93,11 +98,13 @@ func ring(pos: Vector2, radius: float, time: float, width: float, color: Color) 
 
 
 func approach_flash(pos: Vector2) -> void:
-	_approach_fx.append({ "kind": "flash", "pos": pos, "f": 0 })
+	if Settings.approach:
+		_approach_fx.append({ "kind": "flash", "pos": pos, "f": 0 })
 
 
 func approach_success(pos: Vector2) -> void:
-	_approach_fx.append({ "kind": "success", "pos": pos, "f": 0 })
+	if Settings.approach:
+		_approach_fx.append({ "kind": "success", "pos": pos, "f": 0 })
 
 
 func _physics_process(delta: float) -> void:
@@ -270,7 +277,7 @@ func _draw() -> void:
 	# 발사 타이밍 원: 화면 안의 조준 중인 총잡이 (다음 발사만 100%, 나머지 50%)
 	var next := next_shooter(get_tree())
 	for g in get_tree().get_nodes_in_group("gunners"):
-		if g.is_aiming() and not is_offscreen(g.muzzle()):
+		if Settings.approach and g.is_aiming() and not is_offscreen(g.muzzle()):
 			draw_approach(self, g.muzzle(), g, 1.0, 1.0 if g == next else A.DIM_ALPHA)
 	# 발사 순간 흰 번쩍 / 패링 성공 노란 원 퍼짐
 	var rt: float = A.APPROACH_TARGET_RADIUS

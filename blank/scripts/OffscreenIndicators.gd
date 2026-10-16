@@ -13,6 +13,8 @@ func _process(_delta: float) -> void:
 
 
 func _draw() -> void:
+	if not Settings.approach:
+		return
 	var A: Dictionary = Config.approach
 	var W: float = Config.view.w
 	var H: float = Config.view.h
