@@ -24,6 +24,18 @@ const CONFIG = {
     jumpBuffer: 0.1,                  // 착지 직전 누른 점프를 기억하는 시간
   },
 
+  slash: {
+    duration: 0.22,                   // 베기 모션 전체 길이
+    parryWindow: 0.12,                // 베기 시작 후 패링 판정 창
+    cooldown: 0.3,                    // 다음 베기까지 (베기 시작 기준)
+    radius: 26,                       // 칼이 닿는 거리 (플레이어 중심 기준)
+    arcHalf: 1.15,                    // 부채꼴 반각 (라디안, ≈66°)
+    dashSpeed: 330,                   // 베는 방향 돌진 속도
+    dashTime: 0.085,                  // 돌진 지속 (이동 입력/중력 무시)
+    dashKeep: 0.35,                   // 돌진 종료 후 남기는 속도 비율
+    airUpOnce: true,                  // 공중에서 위로 돌진은 착지 전까지 1회만
+  },
+
   colors: {
     bg: '#05060d',
     terrain: '#000000',
@@ -43,6 +55,7 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
 const approach = (v, target, d) => (v < target ? Math.min(v + d, target) : Math.max(v - d, target));
 const rand = (a, b) => a + Math.random() * (b - a);
+const angDiff = (a, b) => { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
 const overlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
 // -------------------------------------------------------------
@@ -170,14 +183,81 @@ class Player {
     this.jumpBuf = 0;
     this.jumping = false;     // 점프로 상승 중 (점프 컷 대상)
     this.facing = 1;
+    // 베기
+    this.slashT = -1;         // 베기 경과 시간 (-1 = 베는 중 아님)
+    this.slashAngle = 0;
+    this.slashFlip = 1;       // 베는 방향(위→아래 / 아래→위)을 번갈아
+    this.slashCd = 0;
+    this.dashT = 0;
+    this.airUpUsed = false;
   }
   get cx() { return this.x + this.w / 2; }
   get cy() { return this.y + this.h / 2; }
+  get slashing() { return this.slashT >= 0; }
+  get inParryWindow() { return this.slashT >= 0 && this.slashT < CONFIG.slash.parryWindow; }
+  // 칼 끝 위치 (충격파 링 등 연출 기준점)
+  get tipX() { return this.cx + Math.cos(this.slashAngle) * CONFIG.slash.radius * 0.8; }
+  get tipY() { return this.cy + Math.sin(this.slashAngle) * CONFIG.slash.radius * 0.8; }
 
-  update(dt) {
-    const c = CONFIG.player;
+  // 점(반지름 r)이 현재 칼 부채꼴 안에 있는가
+  slashHits(px, py, r = 0) {
+    if (!this.slashing) return false;
+    const S = CONFIG.slash;
+    const dx = px - this.cx, dy = py - this.cy;
+    const d = Math.hypot(dx, dy);
+    if (d > S.radius + r) return false;
+    if (d < 6 + r) return true;
+    return Math.abs(angDiff(Math.atan2(dy, dx), this.slashAngle)) <= S.arcHalf + Math.asin(Math.min(1, r / d));
+  }
+
+  startSlash(aimX, aimY) {
+    const S = CONFIG.slash;
+    const a = Math.atan2(aimY - this.cy, aimX - this.cx);
+    this.slashAngle = a;
+    this.slashT = 0;
+    this.slashCd = S.cooldown;
+    this.slashFlip = -this.slashFlip;
+    let dx = Math.cos(a), dy = Math.sin(a);
+    if (Math.abs(dx) > 0.15) this.facing = Math.sign(dx);
+    // 공중 위쪽 돌진은 착지 전까지 1회 — 무한 체공 방지
+    if (!this.onGround && dy < 0) {
+      if (S.airUpOnce && this.airUpUsed) dy = 0;
+      this.airUpUsed = true;
+    }
+    if (this.onGround && dy > 0) dy = 0;
+    this.vx = dx * S.dashSpeed;
+    this.vy = dy * S.dashSpeed;
+    this.dashT = S.dashTime;
+    this.jumping = false;
+  }
+
+  update(dt, aimX, aimY) {
+    const c = CONFIG.player, S = CONFIG.slash;
     const ax = (Input.held('KeyD') ? 1 : 0) - (Input.held('KeyA') ? 1 : 0);
-    if (ax) this.facing = ax;
+
+    // 베기 타이머
+    this.slashCd = Math.max(0, this.slashCd - dt);
+    if (this.slashing) {
+      this.slashT += dt;
+      if (this.slashT >= S.duration) this.slashT = -1;
+    }
+    if (Input.mouse.clicked && this.slashCd <= 0) this.startSlash(aimX, aimY);
+
+    // 점프 입력 타이머
+    if (Input.hit('Space')) this.jumpBuf = c.jumpBuffer;
+    else this.jumpBuf = Math.max(0, this.jumpBuf - dt);
+    if (this.onGround) { this.coyote = c.coyoteTime; this.airUpUsed = false; }
+    else this.coyote = Math.max(0, this.coyote - dt);
+
+    if (this.dashT > 0) {
+      // 돌진 중: 입력·중력 무시하고 베는 방향으로 쭉
+      this.dashT -= dt;
+      if (this.dashT <= 0) { this.vx *= S.dashKeep; this.vy *= S.dashKeep; }
+      moveBody(this, dt);
+      return;
+    }
+
+    if (ax && !this.slashing) this.facing = ax;
 
     // 수평 이동
     const target = ax * c.runSpeed;
@@ -188,11 +268,6 @@ class Player {
     this.vx = approach(this.vx, target, accel * dt);
 
     // 점프 (코요테 타임 + 점프 버퍼)
-    if (Input.hit('Space')) this.jumpBuf = c.jumpBuffer;
-    else this.jumpBuf = Math.max(0, this.jumpBuf - dt);
-    if (this.onGround) this.coyote = c.coyoteTime;
-    else this.coyote = Math.max(0, this.coyote - dt);
-
     if (this.jumpBuf > 0 && this.coyote > 0) {
       this.vy = -c.jumpSpeed;
       this.jumpBuf = 0; this.coyote = 0;
@@ -215,6 +290,39 @@ class Player {
   draw(g) {
     g.fillStyle = CONFIG.colors.player;
     g.fillRect(Math.round(this.x), Math.round(this.y), this.w, this.h);
+    this.drawSlash(g);
+  }
+
+  // 칼 궤적: 부채꼴을 따라 빠르게 휘두르는 초승달
+  drawSlash(g) {
+    if (!this.slashing) return;
+    const S = CONFIG.slash;
+    const p = this.slashT / S.duration;
+    const sweep = Math.min(1, this.slashT / (S.parryWindow * 0.8)); // 판정 창 안에 휘두름 완료
+    const a0 = this.slashAngle - S.arcHalf * this.slashFlip;
+    const a1 = a0 + S.arcHalf * 2 * this.slashFlip * sweep;
+    const cx = this.cx, cy = this.cy, R = S.radius;
+    g.save();
+    g.shadowColor = CONFIG.colors.player;
+    g.shadowBlur = 8;
+    g.globalAlpha = 1 - p * p;
+    g.fillStyle = CONFIG.colors.player;
+    g.beginPath();
+    g.arc(cx, cy, R, a0, a1, this.slashFlip < 0);
+    // 안쪽 호를 중심을 칼 방향으로 밀어 그려 초승달 모양
+    const ox = Math.cos(this.slashAngle) * -R * 0.5, oy = Math.sin(this.slashAngle) * -R * 0.5;
+    g.arc(cx + ox, cy + oy, R * 0.95, a1, a0, this.slashFlip > 0);
+    g.closePath();
+    g.fill();
+    // 판정 창 동안 칼날 끝선을 더 밝게
+    if (this.inParryWindow) {
+      g.lineWidth = 1;
+      g.strokeStyle = CONFIG.colors.player;
+      g.beginPath();
+      g.arc(cx, cy, R + 1, a0, a1, this.slashFlip < 0);
+      g.stroke();
+    }
+    g.restore();
   }
 }
 
@@ -230,13 +338,18 @@ const Game = {
     this.cam.x = this.camTarget();
   },
 
+  mouseWorld() {
+    return { x: Input.mouse.x + this.cam.x, y: Input.mouse.y + this.cam.y };
+  },
+
   camTarget() {
     return clamp(this.player.cx - W / 2, 0, CONFIG.room.w - W);
   },
 
   update(dt) {
     if (Input.hit('KeyR')) this.reset();
-    this.player.update(dt);
+    const m = this.mouseWorld();
+    this.player.update(dt, m.x, m.y);
     this.cam.x = lerp(this.cam.x, this.camTarget(), CONFIG.camera.lerp);
   },
 
