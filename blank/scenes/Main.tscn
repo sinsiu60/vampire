@@ -1,0 +1,23 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/Main.gd" id="1_main"]
+[ext_resource type="PackedScene" path="res://scenes/Room.tscn" id="2_room"]
+[ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="3_player"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_main")
+
+[node name="Room" parent="." instance=ExtResource("2_room")]
+
+[node name="Player" parent="." instance=ExtResource("3_player")]
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="Hint" type="Label" parent="HUD"]
+offset_left = 8.0
+offset_top = 4.0
+offset_right = 472.0
+offset_bottom = 20.0
+theme_override_colors/font_color = Color(0.372549, 0.847059, 1, 1)
+theme_override_font_sizes/font_size = 8
+text = "1단계 — A/D 이동 · Space 점프(길게 누르면 높이) · R 재시작"

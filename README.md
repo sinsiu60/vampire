@@ -24,3 +24,8 @@
 
 # PARRY (패링 액션 프로토타입)
 같은 저장소의 `parry/` 폴더에 별도 게임이 있습니다. `parry/index.html` 을 열어 실행하세요. 자세한 내용은 [`parry/README.md`](parry/README.md).
+
+---
+
+# 공백 (BLANK) — Godot 4
+`parry/` 프로토타입을 Godot 4.x(GDScript)로 다시 만드는 프로젝트는 `blank/` 폴더에 있습니다. `blank/project.godot` 를 Godot 4.5 이상으로 여세요. 자세한 내용은 [`blank/README.md`](blank/README.md).

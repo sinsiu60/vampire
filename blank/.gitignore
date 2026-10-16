@@ -1,0 +1,4 @@
+# Godot 4 캐시/임포트 데이터 (에디터가 자동으로 다시 만듦)
+.godot/
+*.translation
+export_presets.cfg
