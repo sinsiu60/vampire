@@ -151,13 +151,14 @@ func _carve(terrain: TileMapLayer, tile: float) -> void:
 
 # ---------------------------------------------------------------- 열기
 ## 보안 잠금 해제 (출구만). Main 이 마지막 적의 킬 연출이 끝난 직후 부름
-func open() -> void:
+## boss_sound = 보스 처치 뒤 출구: 모양은 그대로, 소리만 door_boss.wav
+func open(boss_sound := false) -> void:
 	if state != LOCKED or kind != "exit":
 		return
 	state = OPENING
 	t = 0.0
 	_fired = {}
-	_sound = Audio.door(door_type == "boss")
+	_sound = Audio.door(door_type == "boss" or boss_sound)
 	queue_redraw()
 
 

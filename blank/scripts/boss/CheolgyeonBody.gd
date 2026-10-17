@@ -117,6 +117,12 @@ func _apply_aim() -> void:
 		_arms[i].rotation = la - pr - _guns[i].rotation
 
 
+## 권총 보이기 / 숨기기 (오프닝: 패링에 튕겨나간 권총을 다시 집을 때까지)
+func set_gun_visible(i: int, on: bool) -> void:
+	if _gun_shapes.size() > i and _gun_shapes[i] != null:
+		_gun_shapes[i].visible = on
+
+
 ## 권총 빨간 점멸 (공격 예고). on = false 면 원래 색
 func set_gun_flash(i: int, on: bool) -> void:
 	if i == 0:
@@ -163,10 +169,13 @@ func muzzle_angle(i: int) -> float:
 
 
 ## 처치 두 조각 · 파편용 실루엣 [{ xf, shapes, body, rim }] (origin 기준 로컬 — 보통 철견 노드의 전역 변환)
-func silhouette(origin: Transform2D) -> Array:
+## exclude = 빼낼 부위 이름 (피날레: 모자 · 권총은 따로 날아감), only = 이 부위만
+func silhouette(origin: Transform2D, exclude: Array = [], only: Array = []) -> Array:
 	var inv := origin.affine_inverse()
 	var out := []
 	for s in _shapes:
+		if s.name in exclude or (not only.is_empty() and not (s.name in only)):
+			continue
 		if s.is_visible_in_tree():
 			out.append({ "xf": inv * s.global_transform, "shapes": [["poly", s.polygon]], "body": s.color, "rim": C.COL_RIM })
 	return out

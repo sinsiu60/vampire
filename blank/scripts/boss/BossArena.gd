@@ -21,6 +21,8 @@ var lamps := [true, true, true]
 var storm := false
 var blackout := false
 var phase_hint := 1              ## 번개 간격 (페이즈 3 이면 자주)
+var lightning_on := true         ## 피날레 결투 중엔 저절로 치지 않음
+var spots: Array = []            ## 정전 속에서도 둘레가 보이는 노드 (피날레 결투: 철견 · 플레이어)
 
 var _sign_t := 0.0
 var _sign_body: StaticBody2D
@@ -207,7 +209,8 @@ func _flash_screen(strength: float) -> void:
 func _physics_process(delta: float) -> void:
 	var rd := TimeManager.real_delta()
 	# 번개 (실제 시간)
-	_next_bolt -= rd
+	if lightning_on:
+		_next_bolt -= rd
 	if _next_bolt <= 0.0:
 		_schedule_bolt()
 		lightning()
@@ -346,7 +349,13 @@ func _draw_dark() -> void:
 		return
 	var mat := _dark.material as ShaderMaterial
 	var arr := PackedVector4Array()
+	for n in spots:
+		if is_instance_valid(n) and arr.size() < 8:
+			var c: Vector2 = n.center() if n.has_method("center") else n.global_position
+			arr.append(Vector4(c.x, c.y, C.FINALE_SPOT_R, C.FINALE_SPOT))
 	for l in _lights:
+		if arr.size() >= 8:
+			break
 		var k: float = 1.0 - float(l.t) / float(l.life)
 		arr.append(Vector4(l.pos.x, l.pos.y, l.r, k))
 	while arr.size() < 8:

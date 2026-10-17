@@ -10,7 +10,7 @@ const TITLE := "하운드 제1 사냥개"
 const HP := 9                          ## 체력 칸 9개 — 반격 베기 명중마다 1
 const W := 20.0                        ## 몸통 판정 너비 (px)
 const H := 54.0                        ## 몸통 판정 높이 (모자 끝까지 약 56px)
-const FIRST_DELAY := 0.6               ## 방에 들어온 뒤 첫 이동까지
+const FIRST_DELAY := 0.5               ## (예전 값 — 지금은 OPEN_STILL / OPEN_STILL_RESTART)
 
 # ---------------------------------------------------------------- 이동 (걷기 없음)
 const DASH_PREP := 0.15                ## 대시 전 웅크림 예고
@@ -177,6 +177,36 @@ const TR3_LINE := "불 꺼. 어둠 속에서도 맞힐 수 있나 보자."
 const LINE_TIME := 2.2                 ## 대사 표시 시간 (실제 시간)
 const LINE_CPS := 18.0
 
+# ---------------------------------------------------------------- 오프닝 (짧게, 실제 시간 — 처음 들어올 때만 이름 카드 · 대사)
+const OPEN_STILL := 1.5                ## 입력 잠금 + 레터박스 + 빗소리만, 정적
+const OPEN_STILL_RESTART := 0.5        ## 재시작: 이름 카드 · 대사 없이 이 정적만
+const CARD_SCALES := [1.9, 1.35, 1.1]  ## 이름 카드가 박히는 3프레임 확대 → 1배 (첫 프레임에 boss_intro)
+const CARD_HOLD := 1.5
+const CARD_FADE := 0.3
+const CARD_SHAKE := 5.0
+const OPEN_LINE := "등록도 안 된 놈이… 칼을 들고 왔다고?"
+const OPEN_LINE_AT := 0.9              ## 카드 뒤 대사 시작
+const OPEN_DUEL_AT := 3.0              ## 카드 뒤 속사 한 판 시작 (대사가 끝날 즈음)
+const OPEN_DUEL_HOLD := 0.6            ## 오프닝 속사 정적 (가짜 움찔 없음)
+const GUN_FLY_TIME := 0.5              ## 패링하면 권총이 손에서 튕겨나가 뒤로 날아감
+const GUN_FLY_DIST := 72.0
+const GUN_FLY_HEIGHT := 46.0
+const OPEN_PICKUP := 0.28              ## 뒤로 대시해 집는 웅크림
+
+# ---------------------------------------------------------------- 피날레 (체력 0)
+const FINALE_RISE := 0.8               ## 마지막 반격 → 비틀거리며 일어남
+const FINALE_LINE := "마지막이다. 뽑아라."
+const FINALE_DIST := 140.0             ## 마주 서는 거리 (가까우면 뒤로 대시)
+const FINALE_SETUP := 0.6              ## 대사 뒤 결투 시작까지
+const FINALE_HOLD := Vector2(0.5, 0.9) ## 정적 (가짜 움찔은 여기에 더해짐)
+const FINALE_FAKES := Vector2i(1, 3)   ## 가짜 움찔 1 ~ 3번
+const FINALE_FAKE_GAP := 0.5           ## 가짜 움찔 사이
+const FINALE_HOLD_MUL := 2.0           ## 풀 패링 슬로우 유지 시간 배율
+const FINALE_SPOT_R := 72.0            ## 정전 속 결투: 두 사람 둘레만 보이는 빛
+const FINALE_SPOT := 0.85
+const CUT_DIST := 34.0                 ## 일섬: 플레이어가 철견을 지나 반대편 이 거리로
+const RETRY_DUEL := 0.5                ## 오프닝 · 피날레 결투 탄이 빗나가면 이 뒤 다시
+
 # ---------------------------------------------------------------- 무대 (BossArena)
 const RAIN_COUNT := 70                 ## 화면 안 빗줄기 수 (폭우 = 2배)
 const RAIN_SPEED := 420.0
@@ -221,12 +251,12 @@ const RAIN_VOL := 0.35                 ## 보스방 빗소리 (Config.audio.SFX_
 const RAIN_VOL_STORM := 0.6            ## 페이즈 2 폭우 (3단계)
 const RAIN_FADE := 0.6                 ## 빗소리 페이드인 (실제 시간)
 
-# ---------------------------------------------------------------- 처치 뒤 (4단계 피날레 전까지 임시: 일반 킬 연출)
+# ---------------------------------------------------------------- 처치 뒤 (피날레 일섬 → 16프레임 킬 연출)
 const KILL_SHAKE_MUL := 1.5
 const RADIO_DELAY := 1.0               ## 처치 → 잡음 무전 (실제 시간)
 const RADIO_TEXT := "철견 처리 확인. ...공백, 너 방금 웃었어?"
 const RADIO_TIME := 3.2
-const EXIT_DELAY := 2.0                ## 처치 → 출구 문 열림
+const EXIT_DELAY := 3.0                ## 처치 → 출구 문 열림 (무전 2초 뒤, door_boss.wav)
 
 # ---------------------------------------------------------------- 포즈 (CheolgyeonBody.tscn 의 AnimationPlayer 애니메이션 이름)
 ## F9 포즈 뷰어 순서 = 숫자 키 1 ~ 0, Shift+1 ~ 8

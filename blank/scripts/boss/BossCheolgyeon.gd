@@ -15,12 +15,18 @@ class_name BossCheolgyeon
 ##  ⑤ 도탄 사격      (페이즈 2부터) aim_up + 금속 "팅" → 간판 · 벽에 1번 튕기는 2연발. 방향 패링 (±60°). 2번째 패링 = 휘청
 ## 페이즈 1 (체력 9~7) ① → ② → ④ 고정 · 2 (6~4, 폭우) ①~⑤ 무작위 · 3 (3~1, 정전) 두 패턴을 휘청 없이 이어 붙임
 ## 체력 6 · 3 이 되는 반격 → 페이즈 전환 연출 (슬로우 · 레터박스 — 이 보스전에서 긴 연출은 여기만). 페이즈 시작 = 체크포인트
-## 디버그: F8 즉시 휘청 · F9 포즈 뷰어 · F10 패턴 강제 (①~⑤) · F11 페이즈 순환 (Shift+F11 = 다음 페이즈 전환 연출)
+## 오프닝 (처음 들어올 때): 레터박스 · 정적 1.5초 → 이름 카드 + boss_intro → 대사 → 속사 한 판 → 패링하면 권총이 튕겨나가고
+##  뒤로 대시해 다시 집음 → 페이즈 1. 재시작이면 카드 · 대사 없이 정적 0.5초
+## 피날레 (체력 0): 비틀거리며 일어남 + "마지막이다. 뽑아라." → 레터박스, 마주 서서 속사 최종판 (가짜 움찔 1~3번) →
+##  패링 = 풀 패링 슬로우 (유지 2배) → 일섬 (Main._final_cut) → 처치. 실패하면 피날레 시작부터
+## 디버그: F8 즉시 휘청 · F9 포즈 뷰어 · F10 패턴 강제 (①~⑤) · F11 페이즈 순환 1 → 2 → 3 → 피날레
+##  (Shift+F11 = 다음 페이즈 전환 연출 / 페이즈 3 이면 피날레 시작)
 
 const C := preload("res://scripts/boss/CheolgyeonConfig.gd")
 
 var hp := C.HP
-var phase := 1                   ## 1 · 2 · 3
+var phase := 1                   ## 1 · 2 · 3 (피날레도 무대는 3)
+var stage := "fight"             ## opening | fight | finale
 var viewer := false              ## F9 포즈 뷰어 — 로직 멈춤, 숫자 키로 포즈
 var body: CheolgyeonBody
 var arena: BossArena
@@ -57,6 +63,12 @@ var _pattern_end := -INF
 var _last_action := -INF
 var _debug_i := -1
 var _tele: Node2D                # 어둠 위 예고 층 (z 30): 조준선 · 보라 발광 · 충격파 · 권총 점멸
+var _card_intro := false         # 이번 오프닝에 이름 카드 · 대사 (처음 들어올 때만)
+var _card_f := -1                # 이름 카드 시작 뒤 틱 (-1 = 없음)
+var _card_t := 0.0               # 이름 카드 시작 뒤 실제 시간
+var _gun_prop := {}              # 오프닝: 튕겨나간 권총 { from, to, t, rot }
+var _finale_pending := false
+var dying := false               ## Main: 마지막 처치 직전 (실루엣에서 모자 · 권총을 빼고 따로 날림)
 
 
 func _ready() -> void:
@@ -71,6 +83,7 @@ func _ready() -> void:
 		for m in pn.get_children():
 			_perches.append(m.global_position)
 	var cp: Dictionary = GameState.boss_checkpoint
+	var cp_phase := -1
 	if cp.get("key", "") == GameState.room_key():
 		if cp.get("dead", false):
 			dead = true
@@ -79,18 +92,48 @@ func _ready() -> void:
 			remove_from_group("aimers")
 			queue_free()
 			return
-		phase = clampi(int(cp.get("phase", 1)), 1, 3)
-	hp = C.PHASE_HP[phase]
+		cp_phase = int(cp.get("phase", 1))
+	# 체크포인트: 없음 = 처음 (오프닝 + 이름 카드) · 0 = 오프닝 결투 · 1 ~ 3 페이즈 · 4 = 피날레
+	match cp_phase:
+		-1, 0:
+			stage = "opening"
+			_card_intro = cp_phase == -1
+			phase = 1
+		4:
+			stage = "finale"
+			phase = 3
+		_:
+			phase = clampi(cp_phase, 1, 3)
+	hp = 0 if stage == "finale" else C.PHASE_HP[phase]
 	_tele = Node2D.new()
 	_tele.name = "Telegraph"
 	_tele.z_index = 30
 	_tele.z_as_relative = false
 	_tele.draw.connect(_draw_telegraph)
 	add_child(_tele)
-	set_state("intro")
 	body.pose("idle")
+	match stage:
+		"opening":
+			set_state("op_still")
+			if cp_phase == -1:
+				GameState.boss_checkpoint = { "key": GameState.room_key(), "phase": 0 }
+		"finale":
+			set_state("f_restart")
+		_:
+			set_state("intro")
 	_find_floor.call_deferred()
 	_apply_phase_state.call_deferred()
+	_stage_begin.call_deferred()
+
+
+## 오프닝 · 피날레 재시작: 처음부터 레터박스 · 입력 잠금
+func _stage_begin() -> void:
+	var main := _main()
+	if main != null and stage != "fight":
+		main.cine_begin()
+	if stage == "finale" and arena != null:
+		arena.lightning_on = false
+		arena.spots = [self, _player()]
 
 
 func _find_floor() -> void:
@@ -127,11 +170,30 @@ func body_rect() -> Rect2:
 
 
 func capture_silhouette() -> Array:
-	return body.silhouette(global_transform)
+	return body.silhouette(global_transform, ["Hat", "GunFShape", "GunBShape"] if dying else [])
 
 
 func can_counter() -> bool:
-	return state == "stagger" and not dead and not viewer
+	return state == "stagger" and not dead and not viewer and stage == "fight"
+
+
+func in_finale() -> bool:
+	return stage == "finale"
+
+
+## 이름 카드 { scale, alpha } (HUD) — 빈 Dictionary = 안 보임
+func card_state() -> Dictionary:
+	if _card_f < 0:
+		return {}
+	var sc: Array = C.CARD_SCALES
+	var s: float = sc[_card_f] if _card_f < sc.size() else 1.0
+	var held: float = _card_t - float(sc.size()) / Config.fps
+	var a := 1.0
+	if held > C.CARD_HOLD:
+		a = 1.0 - (held - C.CARD_HOLD) / C.CARD_FADE
+	if a <= 0.0:
+		return {}
+	return { "scale": s, "alpha": clampf(a, 0.0, 1.0), "name": C.NAME, "title": C.TITLE }
 
 
 func is_staggered() -> bool:
@@ -405,7 +467,23 @@ func stagger(sec := C.STAGGER_TIME, pose := "stagger") -> void:
 		Audio.sfx("stagger")
 
 
-## 반격 베기 명중 → 체력 -1, 30px 넉백. 체력 6 · 3 이 되면 넉백 뒤 페이즈 전환. 반환 = 남은 체력
+## 오프닝 속사를 패링함: 권총이 손에서 튕겨나감 → 뒤로 대시해 다시 집음 → 페이즈 1
+func on_opening_parried() -> void:
+	_stop_pattern(false)
+	set_state("op_gunfly")
+	body.set_gun_visible(0, false)
+	body.snap("block")
+	var from := body.muzzle(0)
+	var to := Vector2(_clamp_x(global_position.x - facing * C.GUN_FLY_DIST), _floor_y - 2.0)
+	_gun_prop = { "from": from, "to": to, "t": 0.0, "rot": 0.0, "landed": false }
+
+
+## 피날레 속사를 패링함: 풀 패링 슬로우가 끝나면 Main 이 일섬으로 처치 — 그동안 뽑은 자세 그대로
+func on_finale_parried() -> void:
+	set_state("f_hit")
+
+
+## 반격 베기 명중 → 체력 -1, 30px 넉백. 체력 6 · 3 이 되면 넉백 뒤 페이즈 전환, 0 이면 피날레. 반환 = 남은 체력
 func on_counter_hit(angle: float) -> int:
 	hp -= 1
 	body.set_flash(false)
@@ -417,6 +495,9 @@ func on_counter_hit(angle: float) -> int:
 	velocity.x = _kb_v
 	if hp > 0 and phase < 3 and hp <= C.PHASE_HP[phase + 1]:
 		_transition_to = phase + 1
+	if hp <= 0:
+		hp = 0
+		_finale_pending = true
 	return hp
 
 
@@ -424,7 +505,7 @@ func on_blocked(p: Player) -> bool:
 	if p.last_slash_t == _last_block:
 		return false
 	_last_block = p.last_slash_t
-	if pattern != 0 or state in ["jump", "repo_dash", "repo_prep", "cine", "knockback"]:
+	if pattern != 0 or stage != "fight" or state in ["jump", "repo_dash", "repo_prep", "cine", "knockback"]:
 		return true
 	_move = {}
 	set_state("block")
@@ -434,9 +515,28 @@ func on_blocked(p: Player) -> bool:
 	return true
 
 
+## 디버그 키로 오프닝 · 피날레를 건너뜀 → 보통 전투로
+func _debug_to_fight() -> void:
+	if stage == "fight":
+		return
+	stage = "fight"
+	_card_f = -1
+	_gun_prop = {}
+	body.set_gun_visible(0, true)
+	if arena != null:
+		arena.spots = []
+		arena.lightning_on = true
+	if hp <= 0:
+		hp = C.PHASE_HP[phase]
+	var main := _main()
+	if main != null:
+		main.cine_end()
+
+
 func debug_stagger() -> void:
 	if state == "cine":
 		return
+	_debug_to_fight()
 	if viewer:
 		set_viewer(false)
 	stagger()
@@ -467,6 +567,7 @@ func viewer_pose(i: int) -> void:
 func debug_force_pattern() -> int:
 	if state == "cine":
 		return 0
+	_debug_to_fight()
 	_debug_i = (_debug_i + 1) % 5
 	var n: int = _debug_i + 1
 	if viewer:
@@ -479,19 +580,37 @@ func debug_force_pattern() -> int:
 	return n
 
 
-## F11: 페이즈 순환 1 → 2 → 3 → 1 (그 페이즈 시작 상태로 바로). cinematic = 다음 페이즈 전환 연출을 그대로
+## F11: 페이즈 순환 1 → 2 → 3 → 피날레(4) → 1 (그 페이즈 시작 상태로 바로).
+## cinematic = 다음 페이즈 전환 연출을 그대로 (페이즈 3 이면 피날레 시작)
 func debug_next_phase(cinematic := false) -> int:
-	if state == "cine":
+	if state == "cine" or state == "f_hit":
 		return phase
 	if viewer:
 		set_viewer(false)
 	_stop_pattern(true)
 	_chain = 0
-	if cinematic and phase < 3:
-		hp = C.PHASE_HP[phase + 1]
-		_begin_transition(phase + 1)
-		return phase + 1
-	phase = phase % 3 + 1
+	if stage == "finale":
+		_debug_to_fight()
+		phase = 1
+		hp = C.PHASE_HP[1]
+		_start_phase()
+		return 1
+	_debug_to_fight()
+	if cinematic:
+		if phase < 3:
+			hp = C.PHASE_HP[phase + 1]
+			_begin_transition(phase + 1)
+			return phase + 1
+		hp = 0
+		_begin_finale()
+		return 4
+	if phase == 3:
+		phase = 3
+		hp = 0
+		_apply_phase_state()
+		_begin_finale(false)
+		return 4
+	phase = phase + 1
 	hp = C.PHASE_HP[phase]
 	_start_phase()
 	return phase
@@ -509,6 +628,8 @@ func _start_phase() -> void:
 	_order_i = 0
 	_last_pattern = 0
 	_queued = 0
+	_pattern_end = -INF              # 연출 · 오프닝 시간은 공백으로 세지 않음
+	_last_action = -INF
 	_go_wait(_gap())
 
 
@@ -640,13 +761,93 @@ func _physics_process(delta: float) -> void:
 	if _trail_t > 0.0:
 		_trail_t -= delta
 	_waves_tick(delta)
+	_gun_prop_tick(delta)
+	if _card_f >= 0:
+		_card_f += 1
+		_card_t += TimeManager.real_delta()
 	match state:
 		"viewer":
+			velocity.x = 0.0
+		# ---- 오프닝
+		"op_still":
+			_face_player()
+			velocity.x = 0.0
+			if t >= (C.OPEN_STILL if _card_intro else C.OPEN_STILL_RESTART):
+				if _card_intro:
+					set_state("op_card")
+					_card_f = 0
+					_card_t = 0.0
+					Audio.boss_intro()
+					main.add_shake(C.CARD_SHAKE, 0.25, PI / 2.0)
+					if Settings.on("screen_flash"):
+						main.screen_fx.flash()
+				else:
+					_start_stage_duel()
+		"op_card":
+			_face_player()
+			velocity.x = 0.0
+			if _card_t >= C.OPEN_LINE_AT and _say.is_empty() and not _duel.has("said"):
+				_duel["said"] = true
+				say(C.OPEN_LINE, 2.4)
+			if _card_t >= C.OPEN_DUEL_AT:
+				_start_stage_duel()
+		"op_gunfly":
+			velocity.x = 0.0
+			if _gun_prop.get("landed", false) and t >= 0.25:
+				# 뒤로 대시해 다시 집음
+				var tx: float = _gun_prop.to.x
+				var d := 1 if tx > global_position.x else -1
+				_move = { "dir": d, "target_x": tx, "max_t": C.MOVE_MAX }
+				set_state("op_fetch")
+				body.snap("dash")
+				Audio.sfx("dash_whoosh")
+				_ghost_t = 0.0
+		"op_fetch":
+			velocity.x = _move.dir * C.DASH_SPEED
+			_dash_ghosts(delta)
+			if _arrived() or is_on_wall():
+				velocity.x = 0.0
+				set_state("op_pick")
+				body.snap("land")
+		"op_pick":
+			velocity.x = 0.0
+			if t >= C.OPEN_PICKUP:
+				_gun_prop = {}
+				body.set_gun_visible(0, true)
+				body.snap("idle")
+				Audio.sfx("gun_cock")
+				stage = "fight"
+				main.cine_end()
+				_start_phase()
+		# ---- 피날레
+		"f_rise":
+			velocity.x = move_toward(velocity.x, 0.0, 900.0 * delta)
+			if t >= C.FINALE_RISE:
+				_finale_setup(main)
+		"f_restart":
+			velocity.x = 0.0
+			_face_player()
+			if t >= C.OPEN_STILL_RESTART:
+				_finale_setup(main)
+		"f_wait":
+			_face_player()
+			velocity.x = 0.0
+			if t >= C.FINALE_SETUP:
+				_start_stage_duel()
+		"f_dash":
+			velocity.x = _move.dir * C.DASH_SPEED
+			_dash_ghosts(delta)
+			if _arrived() or is_on_wall():
+				velocity.x = 0.0
+				_face_player()
+				body.snap("idle")
+				set_state("f_wait")
+		"f_hit":
 			velocity.x = 0.0
 		"intro":
 			_face_player()
 			velocity.x = 0.0
-			if t >= C.FIRST_DELAY:
+			if t >= C.OPEN_STILL_RESTART:     # 재시작: 정적 0.5초 뒤 그 페이즈
 				_next_pattern()
 		"wait":
 			_face_player()
@@ -700,7 +901,10 @@ func _physics_process(delta: float) -> void:
 			velocity.x = move_toward(velocity.x, 0.0, absf(_kb_v) / C.KNOCKBACK_TIME * delta)
 			if t >= C.KNOCKBACK_TIME:
 				velocity.x = 0.0
-				if _transition_to > 0:
+				if _finale_pending:
+					_finale_pending = false
+					_begin_finale()
+				elif _transition_to > 0:
 					_begin_transition(_transition_to)
 				else:
 					body.pose("idle", C.BLEND_MOVE)
@@ -788,7 +992,11 @@ func _physics_process(delta: float) -> void:
 			_bullets_tick(main, p)
 		"d_end":
 			velocity.x = 0.0
-			if t >= C.DUEL_RECOVER:
+			if stage != "fight":
+				# 오프닝 · 피날레: 탄이 빗나갔으면 (플레이어가 살아 있으면) 다시 한 판
+				if t >= C.RETRY_DUEL and not p.dead:
+					_start_stage_duel()
+			elif t >= C.DUEL_RECOVER:
 				body.pose("idle", C.BLEND_MOVE * 2.0)
 				_end_pattern()
 		# ---- ⑤ 도탄 사격
@@ -955,6 +1163,8 @@ func _start_pattern(n: int) -> void:
 	_pattern_start = TimeManager.world_time
 	dbg = { "n": n, "name": pattern_name(n), "first": -1.0, "max_gap": 0.0, "since_prev": -1.0, "chain": _chain,
 		"gap": (TimeManager.world_time - _pattern_end) if _pattern_end > -INF else -1.0 }
+	if stage != "fight":
+		dbg = {}                     # 오프닝 · 피날레 결투는 타이밍 표시에서 뺌
 	var dir := 1 if p.global_position.x > global_position.x else -1
 	var wt := TimeManager.world_time
 	match n:
@@ -1002,11 +1212,21 @@ func _start_pattern(n: int) -> void:
 			body.snap("duel")
 			var hold := randf_range(C.DUEL_HOLD_MIN, C.DUEL_HOLD_MAX)
 			var fakes := 0
-			if phase >= 2 and randf() < C.FAKE_CHANCE:
+			var gap := 0.35
+			var role := "stagger"
+			if stage == "opening":
+				hold = C.OPEN_DUEL_HOLD
+				role = "opening"
+			elif stage == "finale":
+				hold = randf_range(C.FINALE_HOLD.x, C.FINALE_HOLD.y)
+				fakes = randi_range(C.FINALE_FAKES.x, C.FINALE_FAKES.y)
+				gap = C.FINALE_FAKE_GAP
+				role = "finale"
+			elif phase >= 2 and randf() < C.FAKE_CHANCE:
 				fakes = randi_range(1, C.FAKE_MAX)
-			_duel = { "hold": hold + fakes * 0.35, "fakes": [], "fake_t": INF, "punished": false }
+			_duel = { "hold": hold + fakes * gap, "fakes": [], "fake_t": INF, "punished": false, "role": role }
 			for k in fakes:
-				_duel.fakes.append(hold * 0.45 + k * 0.35)
+				_duel.fakes.append(hold * 0.45 + k * gap)
 		5:
 			# ⑤ aim_up + 금속 "팅" → 반사면에 1번 튕기는 2연발
 			_rico_ref = _pick_reflector()
@@ -1180,8 +1400,84 @@ func _duel_tick(p: Player) -> void:
 		set_state("d_twitch")
 		body.snap("twitch")
 		var fire_t := TimeManager.world_time + C.DUEL_TWITCH + C.DUEL_DRAW
-		bullets = [_bullet(0, fire_t, C.DUEL_DRAW, "stagger")]
+		bullets = [_bullet(0, fire_t, C.DUEL_DRAW, String(_duel.get("role", "stagger")))]
 		Audio.play_synced("quickdraw", fire_t)
+
+
+# ---------------------------------------------------------------- 오프닝 · 피날레
+## 오프닝 / 피날레 속사 한 판: 레터박스는 그대로, 입력만 풀어 줌
+func _start_stage_duel() -> void:
+	var main := _main()
+	if main != null:
+		main.cine_input(true)
+	_card_f = -1 if _card_t > C.CARD_HOLD + C.CARD_FADE else _card_f
+	_start_pattern(4)
+
+
+## 피날레 시작 (마지막 반격 베기로 체력 0): rise = 비틀거리며 일어나는 연출부터 (아니면 바로 대사 · 결투 준비)
+func _begin_finale(rise := true) -> void:
+	_stop_pattern(false)
+	_chain = 0
+	_move = {}
+	waves.clear()
+	stage = "finale"
+	hp = 0
+	GameState.boss_checkpoint = { "key": GameState.room_key(), "phase": 4 }
+	var main := _main()
+	if main != null:
+		main.cine_begin()
+	if arena != null:
+		arena.lightning_on = false
+		arena.spots = [self, _player()]
+	if rise:
+		set_state("f_rise")
+		body.snap("stagger")
+		body.set_flash(false)
+		Audio.sfx("stagger")
+	else:
+		_finale_setup(main)
+
+
+## 일어나 대사 → 거리가 가까우면 뒤로 대시 → 마주 섬
+func _finale_setup(main: Node) -> void:
+	_face_player()
+	body.snap("idle")
+	say(C.FINALE_LINE)
+	var p := _player()
+	var dist := absf(p.global_position.x - global_position.x)
+	if dist < C.FINALE_DIST - 10.0:
+		var dir := 1 if p.global_position.x > global_position.x else -1
+		var tx := _clamp_x(p.global_position.x - dir * C.FINALE_DIST)
+		if absf(tx - p.global_position.x) < C.FINALE_DIST * 0.7:
+			tx = _clamp_x(p.global_position.x + dir * C.FINALE_DIST)
+		var d := 1 if tx > global_position.x else -1
+		_move = { "dir": d, "target_x": tx, "max_t": C.MOVE_MAX }
+		_set_facing(d)
+		set_state("f_dash")
+		body.snap("dash")
+		_ghost_t = 0.0
+	else:
+		set_state("f_wait")
+
+
+## 오프닝: 튕겨나간 권총 (포물선, 빙글빙글)
+func _gun_prop_tick(delta: float) -> void:
+	if _gun_prop.is_empty() or _gun_prop.landed:
+		return
+	_gun_prop.t += delta
+	_gun_prop.rot += 18.0 * delta
+	if _gun_prop.t >= C.GUN_FLY_TIME:
+		_gun_prop.landed = true
+		_gun_prop.rot = 0.2
+		Audio.boss_armor(0.7)
+		_dust(_gun_prop.to, 4, 0)
+
+
+func _gun_prop_pos() -> Vector2:
+	var u := clampf(float(_gun_prop.t) / C.GUN_FLY_TIME, 0.0, 1.0)
+	var from: Vector2 = _gun_prop.from
+	var to: Vector2 = _gun_prop.to
+	return from.lerp(to, u) + Vector2(0, -C.GUN_FLY_HEIGHT * 4.0 * u * (1.0 - u))
 
 
 # ---------------------------------------------------------------- 이동 도우미
@@ -1209,6 +1505,17 @@ func _dust(at: Vector2, n: int, dir: int) -> void:
 func _draw_pose() -> void:
 	if capturing():
 		return
+	if not _gun_prop.is_empty():
+		var g := body.part("GunFShape")
+		if g != null:
+			draw_set_transform(to_local(_gun_prop_pos()), float(_gun_prop.rot), Vector2(facing, 1))
+			for off in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+				var pts := PackedVector2Array()
+				for q in g.polygon:
+					pts.append(q + off)
+				draw_colored_polygon(pts, C.COL_RIM)
+			draw_colored_polygon(g.polygon, C.COL_GUN)
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if _trail_t > 0.0 and state == "w_combo":
 		var u := 1.0 - _trail_t / C.WHIP_TRAIL_TIME
 		var tc: Color = C.WHIP_TRAIL

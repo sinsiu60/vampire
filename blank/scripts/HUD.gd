@@ -100,6 +100,20 @@ func _draw_boss() -> void:
 			draw_rect(r.grow(1.0), Color(ui, 0.25), false, 1.0)
 		else:
 			draw_rect(r, Color(ui, 0.4), false, 1.0)
+	# 이름 카드: 박히는 3프레임 동안 확대 → 원래 크기, 유지 뒤 페이드아웃
+	var cs: Dictionary = b.card_state()
+	if not cs.is_empty():
+		var H2: float = Config.view.h
+		var a: float = cs.alpha
+		var sc: float = cs.scale
+		var c := Vector2(W / 2.0, H2 / 2.0 - 8.0)
+		draw_rect(Rect2(0, c.y - 26, W, 48), Color(0, 0, 0, 0.55 * a))
+		draw_rect(Rect2(0, c.y - 26, W, 1), Color(ui, 0.5 * a))
+		draw_rect(Rect2(0, c.y + 21, W, 1), Color(ui, 0.5 * a))
+		draw_set_transform(c, 0.0, Vector2(sc, sc))
+		Fonts.text(self, String(cs.name), Vector2(0, -6), 30, Color(1, 1, 1, a), "center", false, true)
+		Fonts.text(self, String(cs.title), Vector2(0, 14), 10, Color(ui, a), "center", false, true)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	# 대사 (화면 아래, 한 자씩)
 	var ls: Dictionary = b.line_state()
 	if not ls.is_empty():

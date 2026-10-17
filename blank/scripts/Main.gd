@@ -200,7 +200,7 @@ func _boss_outro_tick() -> void:
 		_boss_outro = -1.0
 		var d := room.exit_door()
 		if d != null:
-			d.open()
+			d.open(true)                  # 보스방 출구: door_boss.wav
 			open_msg_t = 0.0
 
 
@@ -606,6 +606,12 @@ func cine_end() -> void:
 	_letterbox_to = 0.0
 
 
+## 레터박스는 그대로 두고 입력만 (오프닝 · 피날레 속사 — 플레이어가 받아쳐야 함)
+func cine_input(on: bool) -> void:
+	cinematic = not on
+	player.input_locked = not on
+
+
 ## 연출 사격: 철견 앞 권총에서 그 지점으로 (물탱크 · 조명)
 func cine_shot(b: BossCheolgyeon, to: Vector2) -> void:
 	var m := b.body.muzzle(0)
@@ -624,9 +630,24 @@ func _parry_boss_shot(s: Dictionary) -> void:
 	var b: BossCheolgyeon = s.shooter
 	var back: float = s.angle + PI
 	var spark: Vector2 = p.center() + Vector2.from_angle(back) * float(Config.slash.radius) * 0.6
-	boss_parry_fx(spark, back)
+	if s.role != "finale":
+		boss_parry_fx(spark, back)
 	effects.approach_success(s.muzzle)
 	if not is_instance_valid(b) or b.dead:
+		return
+	if s.role == "opening":
+		# 오프닝: 권총이 손에서 튕겨나감
+		Audio.boss_armor()
+		effects.burst(b.body.muzzle(0), 10, Config.colors.parry, 200.0, (b.center() - p.center()).angle(), 1.2, 0.25, { "glow": true, "streak": true })
+		b.on_opening_parried()
+		return
+	if s.role == "finale":
+		# 피날레: 풀 패링 슬로우 (유지 2배) → 끝나는 틱에 일섬 (_reflect_hit → _final_cut)
+		var aim := (b.center() - p.center()).angle()
+		parry_fx(spark, back)
+		seq.start(b, aim, p.center().distance_to(b.center()), Config.juice.HITSTOP_PARRY_FRAMES if Settings.on("hitstop") else 0, CG.FINALE_HOLD_MUL)
+		p.input_locked = Config.parry_seq.LOCK_INPUT_DURING_SLOWMO
+		b.on_finale_parried()
 		return
 	if s.role == "stagger":
 		var c := b.center()
@@ -675,8 +696,34 @@ func _counter_hit(b: BossCheolgyeon) -> void:
 		var v := randf_range(120.0, 260.0)
 		var o := c + Vector2(randf_range(-5, 5), randf_range(-4, 10))
 		gore.toss([part], o, o, Vector2(cos(a) * v, sin(a) * v - 140.0), randf_range(-18, 18))
-	if b.on_counter_hit(angle) <= 0:
-		_kill_enemy(b, angle, "slash")       # 4단계 피날레 전까지: 마지막 반격 = 일반 킬 연출
+	b.on_counter_hit(angle)                  # 체력 0 이면 철견이 피날레를 시작 (처치는 피날레 일섬)
+
+
+## 피날레 일섬: 풀 패링 슬로우가 끝나는 틱 — 플레이어가 철견을 지나 반대편으로 번쩍 →
+## execute.wav + kill_sound → 16프레임 킬 연출 (흔들림 1.5배) → 번개 한 번 + thunder → 모자가 날아가고 쌍권총이 떨어짐
+func _final_cut(b: BossCheolgyeon) -> void:
+	var p := player
+	var o := p.center()
+	var side := signf(b.global_position.x - p.global_position.x)
+	if side == 0.0:
+		side = 1.0
+	var land := Vector2(b.global_position.x + side * CG.CUT_DIST, p.global_position.y)
+	land.x = clampf(land.x, 16.0, room.size_px().x - 16.0)
+	p.global_position = land
+	p.velocity = Vector2.ZERO
+	p.facing = int(-side)
+	var angle := (b.center() - o).angle()
+	effects.add_tracer(o, p.center(), 4.0, Config.colors.player, 6)
+	effects.add_tracer(o, p.center(), 8.0, Color(Config.colors.player, 0.35), 6)
+	Audio.sfx("execute")
+	b.dying = true
+	_kill_enemy(b, angle, "slash")
+	var a := room.get_node_or_null("Arena")
+	if a != null:
+		a.spots = []
+		a.lightning_on = true
+		a.lightning()
+	cine_end()
 
 
 ## 휘청 아닐 때 철견을 벰: 권총으로 막음 — boss_armor + 불꽃, 피해 없음, 플레이어 0.2초 경직 (살짝 밀려남)
@@ -751,7 +798,10 @@ func _reflect_hit(target: Enemy, aim: float) -> void:
 			effects.burst(hit_pos, 8, Config.colors.parry, 120.0, aim + PI, 1.1, 0.22, { "glow": true, "streak": true })
 	effects.add_tracer(o, hit_pos, Sh.REFLECT_TRACER_WIDTH, Config.colors.parry, Sh.TRACER_FRAMES)
 	if victim is BossCheolgyeon:
-		victim.stagger()                  # 철견은 반사탄에 맞으면 휘청 (반격 기회)
+		if victim.in_finale():
+			_final_cut(victim)            # 피날레: 일섬
+		else:
+			victim.stagger()              # 철견은 반사탄에 맞으면 휘청 (반격 기회)
 	elif victim != null:
 		_kill_enemy(victim, angle, "reflect")
 
@@ -853,6 +903,16 @@ func _kill_enemy(e: Enemy, angle: float, cause := "slash") -> void:
 	var shake_mul := 1.0
 	if e is BossCheolgyeon:
 		shake_mul = CG.KILL_SHAKE_MUL
+		# 모자는 위로 날아가고 쌍권총은 떨어짐 (킬 스톱이 끝나면 움직임)
+		var bb: BossCheolgyeon = e
+		for nm in ["Hat", "GunFShape", "GunBShape"]:
+			var parts: Array = bb.body.silhouette(bb.global_transform, [], [nm])
+			var sh := bb.body.part(nm)
+			if parts.is_empty() or sh == null:
+				continue
+			var pc: Vector2 = sh.global_transform * _centroid(sh.polygon)
+			var vel := Vector2(cos(angle) * 90.0 + randf_range(-30, 30), -320.0) if nm == "Hat" else Vector2(randf_range(-50, 50), randf_range(-120, -60))
+			gore.toss(parts, bb.global_position, pc, vel, randf_range(-14, 14))
 		GameState.boss_checkpoint = { "key": GameState.room_key(), "dead": true }
 		boss = null
 		_boss_outro = 0.0
@@ -887,3 +947,10 @@ func _on_player_died() -> void:
 	game_state = "dead"
 	TimeManager.hitstop(roundi(Config.fx.death_hitstop * Config.fps))
 	Audio.death()
+
+
+static func _centroid(pts: PackedVector2Array) -> Vector2:
+	var c := Vector2.ZERO
+	for q in pts:
+		c += q
+	return c / maxf(1.0, pts.size())

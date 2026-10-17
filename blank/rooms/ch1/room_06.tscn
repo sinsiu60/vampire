@@ -49,4 +49,4 @@ script = ExtResource("4_nf00t")
 [node name="Enemies" type="Node2D" parent="."]
 
 [node name="Cheolgyeon" type="CharacterBody2D" parent="Enemies" instance=ExtResource("5_dkhhi")]
-position = Vector2(256, 128)
+position = Vector2(330, 240)
