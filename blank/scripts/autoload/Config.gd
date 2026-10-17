@@ -57,6 +57,8 @@ var roll := {
 	"ROLL_COOLDOWN": 0.40,            # 구르기가 끝난 뒤 다음 구르기까지
 	"GHOST_EVERY": 0.04,              # 잔상 간격
 	"DUST_EVERY": 0.05,               # 바닥 먼지 간격
+	"ROLL_BUFFER": 0.1,
+	"ROLL_GROUND_SNAP": 4.0,          # 바닥에서 이 높이 안이면 바닥으로 침 (베기 돌진으로 살짝 뜬 경우)               # 베기 돌진 중 · 착지 직전에 누른 구르기를 이 시간 동안 기억 (헛스윙 직후 구르기)
 	"SPIN": 1.0,                      # 구르는 동안 회전 수
 	"FALLBACK_PITCH": 1.3,            # roll.wav 가 없으면 dash_whoosh 를 이 피치로 (그것도 없으면 무음)
 }

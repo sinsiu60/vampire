@@ -8,11 +8,11 @@ class_name BossCheolgyeon
 ##  - 반사탄에 맞으면 휘청
 ##
 ## 패턴
-##  ① 슬라이드 사격  웅크림 0.2초 + gun_cock → 플레이어를 지나쳐 미끄러지며 3연발 (페이즈 2부터 4연발). 마지막 탄 패링 = 휘청
-##  ② 돌진 건카타    대시 → 3연타 (0.25초 · 0.5초 멈칫 지연). 페이즈 2부터 2타 대신 보라 발차기 (패링 불가, 점프). 3타 패링 = 휘청
-##  ③ 점프 사격      (페이즈 2부터) 높이 뛰어 공중 2연발 → 착지 보라 충격파 (점프로 피함) → 0.5초 경직 = 반격 기회
-##  ④ 속사          duel 정적 → 움찔 0.1초 → 0.3초 만에 뽑아 쏨. 페이즈 2부터 가짜 움찔 (베면 헛스윙 → 즉시 사격). 패링 = 휘청
-##  ⑤ 도탄 사격      (페이즈 2부터) aim_up + 금속 "팅" → 간판 · 벽에 1번 튕기는 2연발. 방향 패링 (±60°). 2번째 패링 = 휘청
+##  ① 슬라이드 사격  웅크림 0.2초 + gun_cock → 플레이어를 지나쳐 미끄러지며 3연발 (페이즈 2부터 4연발). 모두 NORMAL — 휘청 없음, 굴러 파고들어 피함. 끝나면 플레이어 뒤에서 0.4초 정지
+##  ② 돌진 건카타    대시 → 3연타 (0.25초 · 0.5초 멈칫 지연). 1·2타 NORMAL, 페이즈 2부터 2타 대신 보라 발차기 (EVADE). 3타 OPPORTUNITY 패링 = 휘청
+##  ③ 점프 사격      (페이즈 2부터) 높이 뛰어 공중 2연발 → 착지 보라 충격파 (EVADE, 점프 · 구르기) → 0.7초 "빈틈" = 반격 기회
+##  ④ 속사          duel 정적 → 움찔 0.1초 → 0.3초 만에 뽑아 쏨. 페이즈 2부터 가짜 움찔 (베면 헛스윙 → 즉시 사격 NORMAL, 구르기로 피함). 진짜 탄 OPPORTUNITY 패링 = 휘청
+##  ⑤ 도탄 사격      (페이즈 2부터) aim_up + 금속 "팅" → 간판 · 벽에 1번 튕기는 2연발. 방향 패링 (±60°). 1번째 NORMAL · 2번째 OPPORTUNITY 패링 = 휘청
 ## 페이즈 1 (체력 9~7) ① → ② → ④ 고정 · 2 (6~4, 폭우) ①~⑤ 무작위 · 3 (3~1, 정전) 두 패턴을 휘청 없이 이어 붙임
 ## 체력 6 · 3 이 되는 반격 → 페이즈 전환 연출 (슬로우 · 레터박스 — 이 보스전에서 긴 연출은 여기만). 페이즈 시작 = 체크포인트
 ## 오프닝 (처음 들어올 때): 레터박스 · 정적 1.5초 → 이름 카드 + boss_intro → 대사 → 속사 한 판 → 패링하면 권총이 튕겨나가고
@@ -959,10 +959,11 @@ func _physics_process(delta: float) -> void:
 			if _next_bullet().is_empty():
 				set_state("s_end")
 		"s_end":
+			_face_player()
 			velocity.x = move_toward(velocity.x, 0.0, 1400.0 * delta)
 			if t >= C.SLIDE_SHOT_RECOVER:
 				body.pose("idle", C.BLEND_MOVE * 2.0)
-				_end_pattern()
+				_end_pattern(true)
 		# ---- ② 돌진 건카타
 		"w_prep":
 			velocity.x = 0.0
@@ -1200,7 +1201,7 @@ func _start_pattern(n: int) -> void:
 			bullets.clear()
 			for i in count:
 				var ft: float = slide_start + C.SLIDE_SHOT_FIRST + i * C.SLIDE_SHOT_GAP
-				bullets.append(_bullet(0, ft, minf(C.SLIDE_SHOT_AIM, ft - wt), "stagger" if i == count - 1 else "normal"))
+				bullets.append(_bullet(0, ft, minf(C.SLIDE_SHOT_AIM, ft - wt), "normal"))   # 모두 NORMAL — 휘청 없음, 굴러서 파고드는 패턴
 		2:
 			var tx := _clamp_x(p.global_position.x - dir * C.WHIP_STOP)
 			if (tx - global_position.x) * dir < 0.0:
@@ -1267,21 +1268,22 @@ func _start_pattern(n: int) -> void:
 
 
 ## 패턴 끝 → 공백 뒤 다음. 페이즈 3 이어 붙인 첫 패턴이면 공백 없이 바로 두 번째
-func _end_pattern() -> void:
+## no_gap = 패턴 끝 정지가 이미 공백 몫 (① 슬라이드 사격 뒤 0.4초) → 바로 다음 패턴
+func _end_pattern(no_gap := false) -> void:
 	_stop_pattern(false)
 	if _chain == 1:
 		_next_pattern()
 		return
 	_chain = 0
-	_after_pattern()
+	_after_pattern(no_gap)
 
 
 ## 패턴 사이: 다음 패턴을 미리 정하고, 자리 잡는 대시가 필요하면 그 대시가 공백 대신 (0.4초 이내)
-func _after_pattern() -> void:
+func _after_pattern(no_gap := false) -> void:
 	if phase >= 2 and forced == 0 and _queued == 0:
 		_queued = _pick_random([_last_pattern])
 	var nx := _peek_next()
-	if nx != 0 and _reposition_needed(nx):
+	if (nx != 0 and _reposition_needed(nx)) or no_gap:
 		_next_pattern()
 	else:
 		_go_wait(_gap())
@@ -1378,7 +1380,7 @@ func _land_shockwave(main: Node) -> void:
 	_action(TimeManager.world_time)
 	bullets.clear()
 	if _finisher():
-		# 착지 후 0.5초 경직 = 휘청과 같이 반격 가능 (land 포즈 그대로, 흰 테두리 깜빡임)
+		# 착지 후 0.7초 "빈틈" = 휘청과 같이 반격 가능 (land 포즈 그대로, 흰 테두리 깜빡임)
 		_stop_pattern(false)
 		stagger(C.JS_OPEN, "land")
 	else:
@@ -1554,6 +1556,11 @@ func _draw_telegraph() -> void:
 	var ci := _tele
 	var col: Color = Config.colors.attack
 	var wt := TimeManager.world_time
+	# ③ 착지 빈틈: 머리 위 "빈틈" (흰 테두리 깜빡임과 함께 — 베면 반격 베기)
+	if state == "stagger" and body.pose_name == "land" and stage == "fight":
+		var lp := Vector2(0, -C.H * 0.62 - 9.0)
+		Fonts.text(ci, C.JS_OPEN_LABEL, lp + Vector2(1, 1), 9, Color(0, 0, 0, 0.8), "center", false, true)
+		Fonts.text(ci, C.JS_OPEN_LABEL, lp, 9, Color.WHITE, "center", false, true)
 	for b in bullets:
 		if b.fired:
 			continue

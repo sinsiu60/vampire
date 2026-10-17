@@ -68,11 +68,11 @@ const SLIDE_SHOT_MIN_DIST := 120.0     ## 이 거리 이상일 때만 (가까우
 const SLIDE_SHOT_PREP := 0.2           ## 몸을 낮추는 예고 (gun_cock.wav 와 동시에 시작)
 const SLIDE_SHOT_COUNT := 3            ## 연발 수 (페이즈 2: 4 — 3단계)
 const SLIDE_SHOT_FIRST := 0.25         ## 슬라이드 시작 → 첫 발
-const SLIDE_SHOT_GAP := 0.30           ## 탄 간격
+const SLIDE_SHOT_GAP := 0.42           ## 탄 간격 — 구르기(0.30초, 끝날 때까지 점프 · 베기 불가) 뒤 다음 탄을 점프 · 패링할 틈 (4단계 NORMAL 값)
 const SLIDE_SHOT_AIM := 0.45           ## 탄마다 원이 줄어드는 시간 (패턴 시작보다 일찍 시작하지는 않음)
 const SLIDE_SHOT_PASS := 80.0          ## 플레이어를 지나쳐 이만큼 반대편까지 미끄러짐
 const SLIDE_SHOT_MAX := 1.4            ## 슬라이드 최대 시간
-const SLIDE_SHOT_RECOVER := 0.15       ## 마지막 탄 뒤 여운
+const SLIDE_SHOT_RECOVER := 0.4        ## 마지막 탄 뒤 플레이어 뒤쪽에서 정지 → 곧바로 다음 패턴 (이 정지가 패턴 사이 공백 대신)
 
 # ---------------------------------------------------------------- 패턴 ② 돌진 건카타
 const WHIP_STOP := 30.0                ## 플레이어 앞 이 거리까지 대시 (몸 중심끼리)
@@ -119,7 +119,8 @@ const JS_WAVE_RANGE := 300.0           ## 충격파가 사라지는 거리
 const JS_LAND_PITCH := 1.4             ## 착지 쿵: explosion.wav 피치
 const JS_LAND_VOL := 0.5
 const JS_LAND_SHAKE := 5.0
-const JS_OPEN := 0.5                   ## 착지 후 경직 = 휘청과 같이 반격 가능
+const JS_OPEN := 0.7                   ## 착지 후 "빈틈" = 휘청과 같이 반격 가능 (흰 테두리 + 머리 위 글자)
+const JS_OPEN_LABEL := "빈틈"
 
 # ---------------------------------------------------------------- 패턴 ⑤ 도탄 사격 (페이즈 2부터)
 const RS_PREP := 0.2                   ## aim_up 예고 + boss_armor.wav (피치 1.5, 금속 "팅")

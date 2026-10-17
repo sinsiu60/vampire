@@ -36,7 +36,7 @@ var _roll_dir := 1
 var _roll_cd := 0.0              # 다음 구르기까지 (구르기가 끝난 뒤부터 셈)
 var _roll_ghost := 0.0
 var _roll_dust := 0.0
-var _queued_roll := false        # 히트스톱 중 누른 구르기
+var _roll_buf := 0.0             # 구르기 입력 버퍼 (베기 돌진 · 히트스톱 중에 눌러도 ROLL_BUFFER 초 동안 기억)
 
 # ---- 이동
 var _coyote := 0.0
@@ -151,7 +151,7 @@ func _physics_process(delta: float) -> void:
 	var ctl := not input_locked and _stun <= 0.0
 	if TimeManager.frozen:
 		if ctl and Input.is_action_just_pressed("roll"):
-			_queued_roll = true
+			_roll_buf = Config.roll.ROLL_BUFFER
 		if ctl and Input.is_action_just_pressed("slash") and not is_rolling():
 			_queued_slash = true
 		if ctl and Input.is_action_just_pressed("jump"):
@@ -167,9 +167,14 @@ func _physics_process(delta: float) -> void:
 	if is_rolling():
 		_roll_tick(delta, was_on_floor)
 		return
-	var want_roll := (Input.is_action_just_pressed("roll") or _queued_roll) and ctl
-	_queued_roll = false
-	if want_roll and roll_enabled and was_on_floor and _roll_cd <= 0.0 and _dash_t <= 0.0:
+	if Input.is_action_just_pressed("roll") and ctl:
+		_roll_buf = Config.roll.ROLL_BUFFER
+	var want_roll := _roll_buf > 0.0 and ctl
+	_roll_buf = maxf(0.0, _roll_buf - delta)
+	# 바닥 위 또는 바닥에서 ROLL_GROUND_SNAP px 안 (베기 돌진으로 살짝 뜬 순간 — 헛스윙 직후 구르기). 점프 중엔 불가
+	var grounded := was_on_floor or (velocity.y >= -60.0 and test_move(global_transform, Vector2(0, Config.roll.ROLL_GROUND_SNAP)))
+	if want_roll and roll_enabled and grounded and _roll_cd <= 0.0 and _dash_t <= 0.0:
+		_roll_buf = 0.0
 		var rx := int(Input.is_action_pressed("move_right")) - int(Input.is_action_pressed("move_left"))
 		_start_roll(rx)
 		_roll_tick(delta, was_on_floor)

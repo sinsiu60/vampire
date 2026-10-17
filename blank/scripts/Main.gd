@@ -648,7 +648,7 @@ func cine_shot(b: BossCheolgyeon, to: Vector2) -> void:
 	_boss_light(m)
 
 
-## 철견 탄 패링: 모두 일반 패링 연출 (슬로우 시퀀스 없음). 콤보 마지막 탄(role = stagger)이면
+## 철견 탄 패링: 슬로우 시퀀스 없음 (피날레만). OPPORTUNITY 탄 (role = stagger: ④ 진짜 탄 · ⑤ 2번째 도탄)이면
 ## 반사탄이 철견에 맞고 (boss_armor) 철견 휘청 → 반격 기회
 func _parry_boss_shot(s: Dictionary) -> void:
 	var p := player
