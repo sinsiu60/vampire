@@ -34,6 +34,8 @@ var muted := false
 var _pool: Array[AudioStreamPlayer] = []
 var _synced: Array = []           # 예약된 play_synced { name, impact, volume, pitch, clear, cancelled }
 var _loops: Array[AudioStreamPlayer] = []
+var _ambience: AudioStreamPlayer = null   # 방 배경음 (재시작 · stop_all 에도 계속 — 다른 방으로 가면 바뀜)
+var _ambience_name := ""
 
 
 func _ready() -> void:
@@ -55,7 +57,7 @@ func _ready() -> void:
 		AudioServer.set_bus_name(bi, WORLD_BUS)
 		AudioServer.set_bus_send(bi, "Master")
 		var lp := AudioEffectLowPassFilter.new()
-		lp.cutoff_hz = Config.boss.MUFFLE_CUTOFF
+		lp.cutoff_hz = Config.audio.MUFFLE_CUTOFF
 		AudioServer.add_bus_effect(bi, lp)
 		AudioServer.set_bus_effect_enabled(bi, 0, false)
 	streams["swing"] = SynthLib.swing()
@@ -166,6 +168,28 @@ func play_loop(name: String, volume := -1.0, fade := 0.0) -> AudioStreamPlayer:
 	return p
 
 
+## 방 배경음: 이름이 같으면 이어서 (볼륨만 맞춤), 다르면 바꿈, "" 이면 페이드아웃해서 멈춤
+## volume < 0 = 기본 볼륨 (VOLUME_KEYS). 재시작(stop_all)에도 끊기지 않음
+func set_ambience(name: String, volume := -1.0, fade := 0.6) -> void:
+	var v := volume_of(name) if volume < 0.0 else volume
+	if name == _ambience_name and _ambience != null and is_instance_valid(_ambience):
+		set_loop_volume(_ambience, v, 0.3)
+		return
+	if _ambience != null and is_instance_valid(_ambience):
+		_loops.append(_ambience)
+		stop_loop(_ambience, 0.3)
+	_ambience = null
+	_ambience_name = name
+	if name == "":
+		return
+	_ambience = play_loop(name, v, fade)
+	_loops.erase(_ambience)
+
+
+func ambience_player() -> AudioStreamPlayer:
+	return _ambience
+
+
 ## 반복 소리 볼륨 바꾸기 (실제 시간 sec 동안)
 func set_loop_volume(p: AudioStreamPlayer, volume: float, sec := 0.0) -> void:
 	if p == null or not is_instance_valid(p):
@@ -220,6 +244,8 @@ func pause_all(paused: bool) -> void:
 		p.stream_paused = paused
 	for p in _loops:
 		p.stream_paused = paused
+	if _ambience != null and is_instance_valid(_ambience):
+		_ambience.stream_paused = paused
 
 
 func stop_all() -> void:

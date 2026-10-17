@@ -17,6 +17,7 @@ var kill_stopped := false        ## 이번 틱이 킬 스톱인가 — 월드는
 
 var _hitstop := 0                # 남은 정지 틱
 var _slow := 1.0                 # 슬로우 배율 (패링 시퀀스가 세팅)
+var _slow_left := 0.0            # slow_for: 남은 실제 시간 (0 = 끝나면 1.0 으로 돌아가는 타이머 없음)
 var _killstop := 0               # 남은 킬 스톱 틱
 var _last_delta := 0.0
 
@@ -31,6 +32,7 @@ func reset() -> void:
 	_killstop = 0
 	kill_stopped = false
 	_slow = 1.0
+	_slow_left = 0.0
 	world_time = 0.0
 	_apply()
 	frozen = false
@@ -68,6 +70,16 @@ func kill_stop_left() -> int:
 ## 슬로우모션 배율 (1 = 정상). 히트스톱이 끝나면 이 배율로 돌아감
 func set_slow(scale: float) -> void:
 	_slow = clampf(scale, 0.0, 1.0)
+	_slow_left = 0.0
+	_apply()
+
+
+## 잠깐 느리게: 실제 sec 초 동안 scale 배 (히트스톱 중엔 세지 않음) → 1.0. 패링 시퀀스(set_slow) 중이면 무시
+func slow_for(scale: float, sec: float) -> void:
+	if _slow < 1.0 and _slow_left <= 0.0:
+		return
+	_slow = clampf(scale, 0.0, 1.0)
+	_slow_left = sec
 	_apply()
 
 
@@ -105,6 +117,13 @@ func _physics_process(delta: float) -> void:
 			if _killstop == 0:
 				kill_stop_released.emit()
 		_apply()       # 0 이 되면 다음 틱부터 다시 흐름
+	elif _slow_left > 0.0 and delta < real_delta() * Debug.time_mul() - 1e-9:
+		# 이번 틱이 실제로 느렸을 때만 셈 (slow_for 를 부른 바로 그 틱은 아직 보통 속도일 수 있음)
+		_slow_left -= real_delta()
+		if _slow_left <= 1e-6:
+			_slow_left = 0.0
+			_slow = 1.0
+			_apply()
 	real_tick.emit()
 
 

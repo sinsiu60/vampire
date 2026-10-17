@@ -1,0 +1,158 @@
+extends Node2D
+class_name CheolgyeonBody
+## 철견의 겉모습 (전투 로직과 분리 — 나중에 스프라이트로 바꿀 때 이 씬만 갈아 끼우면 됨).
+## scenes/CheolgyeonBody.tscn: Group(CanvasGroup, 실루엣 테두리 셰이더) / Rig(뼈대) / 부위별 Polygon2D, Anim(포즈 키프레임).
+## 로직이 쓰는 것은 아래 API 뿐: pose · snap · ghost · facing · muzzle · muzzle_angle · silhouette · set_flash · part.
+##
+## 키포즈 시스템 — 공격 포즈 전환:
+##   예고 정지 (pose 로 예고 포즈를 잡고 기다림) → snap(다음 포즈): 1프레임에 바로 바뀜 +
+##   이전 포즈 잔상 + 이전·다음 포즈를 잇는 스미어 덩어리 (SMEAR_FRAMES 틱) → 여운 정지 (그 포즈 그대로 기다림)
+## 원점 = 발 중앙. 오른쪽을 보는 포즈로 만들었고 facing = -1 이면 Rig 를 좌우로 뒤집음.
+
+const C := preload("res://scripts/boss/CheolgyeonConfig.gd")
+
+var facing := 1:
+	set(v):
+		facing = 1 if v >= 0 else -1
+		if _rig != null:
+			_rig.scale.x = facing
+var pose_name := ""
+
+var _anim: AnimationPlayer
+var _group: CanvasGroup
+var _rig: Node2D
+var _shapes: Array[Polygon2D] = []
+var _muzzles: Array[Node2D] = []
+var _ghosts: Array = []          # 잔상 { polys: [{ xf, pts }], t, life, alpha }
+var _smears: Array = []          # 스미어 { polys: [PackedVector2Array (전역)], ticks }
+
+
+func _ready() -> void:
+	_anim = $Anim
+	_group = $Group
+	_rig = $Group/Rig
+	_anim.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_PHYSICS   # 월드 시간 (히트스톱이면 멈춤)
+	_collect(_rig)
+	_muzzles = [_rig.find_child("MuzzleF", true, false), _rig.find_child("MuzzleB", true, false)]
+	facing = facing
+	pose("idle")
+
+
+func _collect(n: Node) -> void:
+	for c in n.get_children():
+		if c is Polygon2D:
+			_shapes.append(c)
+		_collect(c)
+
+
+func has_pose(name: String) -> bool:
+	return _anim != null and _anim.has_animation(name)
+
+
+## 포즈로 (blend 초 동안 부드럽게, 0 이면 즉시). 이동 · 대기처럼 공격이 아닌 전환
+func pose(name: String, blend := 0.0) -> void:
+	if not has_pose(name):
+		return
+	pose_name = name
+	_anim.play(name, blend)
+	if blend <= 0.0:
+		_anim.advance(0.0)
+
+
+## 키포즈 전환: 1프레임에 다음 포즈로 + 이전 포즈 잔상 + 스미어
+func snap(name: String) -> void:
+	if not has_pose(name):
+		return
+	var before := _polys()
+	pose(name)
+	var after := _polys()
+	_ghosts.append({ "polys": before, "t": 0.0, "life": C.SNAP_GHOST_TIME, "alpha": C.SNAP_GHOST_ALPHA })
+	var sm := []
+	for i in mini(before.size(), after.size()):
+		var a: PackedVector2Array = before[i].xf * before[i].pts
+		var b: PackedVector2Array = after[i].xf * after[i].pts
+		if _centroid(a).distance_to(_centroid(b)) < C.SMEAR_MIN_MOVE:
+			continue
+		sm.append(Geometry2D.convex_hull(a + b))
+	if not sm.is_empty():
+		_smears.append({ "polys": sm, "ticks": C.SMEAR_FRAMES })
+	queue_redraw()
+
+
+## 지금 포즈의 잔상 하나 (대시 등)
+func ghost(alpha := C.GHOST_ALPHA, life := C.GHOST_TIME) -> void:
+	_ghosts.append({ "polys": _polys(), "t": 0.0, "life": life, "alpha": alpha })
+
+
+## 흰 테두리 (휘청 깜빡임)
+func set_flash(on: bool) -> void:
+	(_group.material as ShaderMaterial).set_shader_parameter("flash", 1.0 if on else 0.0)
+
+
+## 총구 (전역). i = 0 앞 권총 · 1 뒷 권총
+func muzzle(i: int) -> Vector2:
+	return _muzzles[i].global_position if _muzzles[i] != null else global_position
+
+
+## 총구 방향 (전역 각도)
+func muzzle_angle(i: int) -> float:
+	return _muzzles[i].global_transform.x.angle() if _muzzles[i] != null else 0.0
+
+
+## 처치 두 조각 · 파편용 실루엣 [{ xf, shapes, body, rim }] (origin 기준 로컬 — 보통 철견 노드의 전역 변환)
+func silhouette(origin: Transform2D) -> Array:
+	var inv := origin.affine_inverse()
+	var out := []
+	for s in _shapes:
+		if s.is_visible_in_tree():
+			out.append({ "xf": inv * s.global_transform, "shapes": [["poly", s.polygon]], "body": s.color, "rim": C.COL_RIM })
+	return out
+
+
+## 부위 이름 → Polygon2D (모자 날리기 등)
+func part(name: String) -> Polygon2D:
+	return _rig.find_child(name, true, false) as Polygon2D
+
+
+func _polys() -> Array:
+	var out := []
+	for s in _shapes:
+		if s.is_visible_in_tree():
+			out.append({ "xf": s.global_transform, "pts": s.polygon })
+	return out
+
+
+static func _centroid(pts: PackedVector2Array) -> Vector2:
+	var c := Vector2.ZERO
+	for p in pts:
+		c += p
+	return c / maxf(1.0, pts.size())
+
+
+func _physics_process(delta: float) -> void:
+	if _ghosts.is_empty() and _smears.is_empty():
+		return
+	for g in _ghosts:
+		g.t += delta
+	_ghosts = _ghosts.filter(func(g): return g.t < g.life)
+	if not TimeManager.frozen:
+		for s in _smears:
+			s.ticks -= 1
+		_smears = _smears.filter(func(s): return s.ticks > 0)
+	queue_redraw()
+
+
+## 잔상 · 스미어 (몸 뒤에 — 이 노드의 그리기는 자식인 Group 보다 먼저)
+func _draw() -> void:
+	var inv := global_transform.affine_inverse()
+	for s in _smears:
+		draw_set_transform_matrix(inv)
+		for pts in s.polys:
+			if pts.size() >= 3:
+				draw_colored_polygon(pts, Color(C.COL_GHOST, C.SMEAR_ALPHA))
+	for g in _ghosts:
+		var a: float = g.alpha * (1.0 - g.t / g.life)
+		for p in g.polys:
+			draw_set_transform_matrix(inv * p.xf)
+			draw_colored_polygon(p.pts, Color(C.COL_GHOST, a))
+	draw_set_transform_matrix(Transform2D.IDENTITY)

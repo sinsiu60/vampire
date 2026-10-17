@@ -32,7 +32,7 @@ func _draw() -> void:
 	var flags := []
 	if Debug.aim_debug: flags.append("AIM DEBUG")
 	if Debug.timing: flags.append("TIMING")
-	if main.boss != null and main.boss.invincible: flags.append("철견 무적")
+	if main.boss != null and is_instance_valid(main.boss) and main.boss.viewer: flags.append("포즈 뷰어")
 	if Audio.muted: flags.append("MUTE")
 	if not flags.is_empty():
 		Fonts.text(self, "  ".join(flags), Vector2(W - 8, 10), 10, Color(ui, 0.85), "right", true, true)
@@ -72,66 +72,45 @@ func _draw() -> void:
 		Fonts.text(self, GameState.label(), Vector2(8, H - 22), 9, Color(ui, 0.7), "left", false, true)
 
 
-## 철견: 화면 위 체력 칸 3개 (하늘색) · 등장 이름 카드 "쾅" · 대사 한 줄
+## 철견: 화면 위 하늘색 체력 칸 9개 (반격 베기 명중마다 하나씩 빔) · 휘청 중이면 칸이 깜빡임
+## F9 포즈 뷰어: 왼쪽에 포즈 목록 (숫자 키)
 func _draw_boss() -> void:
 	var b: BossCheolgyeon = main.boss
 	if b == null or not is_instance_valid(b) or b.dead:
 		return
-	var B: Dictionary = Config.boss
 	var W: float = Config.view.w
-	var H: float = Config.view.h
 	var ui: Color = Config.colors.ui
-	if b.fight:
-		var n: int = B.BOSS_CHEOLGYEON_HP
-		var cw := 22.0
-		var gap := 4.0
-		var x0 := roundf(W / 2.0 - (cw * n + gap * (n - 1)) / 2.0)
-		Fonts.text(self, String(B.NAME), Vector2(W / 2.0, 9), 9, Color(ui, 0.85), "center", false, true)
-		for i in n:
-			var r := Rect2(x0 + i * (cw + gap), 16, cw, 5)
-			if i < b.hp:
-				draw_rect(r, ui)
-				draw_rect(r.grow(1.0), Color(ui, 0.25), false, 1.0)
-			else:
-				draw_rect(r, Color(ui, 0.45), false, 1.0)
-		# 자세 게이지 (체력 칸 아래, 하늘색). 가득 차면 그로기 — 그동안 깜빡임
-		var bw := cw * n + gap * (n - 1)
-		var pr := Rect2(x0, 25, bw, 3)
-		var u: float = clampf(b.posture / float(B.POSTURE_MAX), 0.0, 1.0)
-		draw_rect(pr.grow(1.0), Color(0, 0, 0, 0.5))
-		draw_rect(pr, Color(ui, 0.15))
-		var pc := Color(ui, 0.9)
-		if b.is_groggy():
-			u = 1.0
-			pc = Color.WHITE if fmod(HUD.play_t, 0.3) < 0.2 else Color(ui, 0.9)
-		if u > 0.0:
-			draw_rect(Rect2(pr.position, Vector2(roundf(bw * u), pr.size.y)), pc)
-		if Debug.debug_mode():
-			var pn: String = BossCheolgyeon.PATTERN_NAMES[b.pattern] if b.pattern > 0 else "-"
-			Fonts.text(self, "자세 %d  ·  %s  ·  %s" % [roundi(b.posture), "결전" if b.phase == 4 else "P%d" % b.phase, pn],
-				Vector2(W / 2.0, 35), 9, Color(ui, 0.7), "center", false, true)
-	# 이름 카드: 박히는 3프레임 동안 확대 → 원래 크기, 1.5초 유지 뒤 페이드아웃
-	var cs: Dictionary = b.card_state()
-	if not cs.is_empty():
-		var a: float = cs.alpha
-		var s: float = cs.scale
-		var c := Vector2(W / 2.0, H / 2.0 - 8.0)
-		draw_rect(Rect2(0, c.y - 26, W, 48), Color(0, 0, 0, 0.55 * a))
-		draw_rect(Rect2(0, c.y - 26, W, 1), Color(ui, 0.5 * a))
-		draw_rect(Rect2(0, c.y + 21, W, 1), Color(ui, 0.5 * a))
-		draw_set_transform(c, 0.0, Vector2(s, s))
-		Fonts.text(self, String(B.NAME), Vector2(0, -6), 30, Color(1, 1, 1, a), "center", false, true)
-		Fonts.text(self, String(B.TITLE), Vector2(0, 14), 10, Color(ui, a), "center", false, true)
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	# 대사 (화면 아래, 한 자씩)
-	var ls: Dictionary = b.line_state()
-	if not ls.is_empty():
-		var full: String = ls.text
-		var k := clampi(int(ls.t * ls.cps), 0, full.length())
-		var y := H - 36.0
-		draw_rect(Rect2(0, y - 8, W, 16), Color(0, 0, 0, 0.55))
-		Fonts.text(self, String(B.NAME), Vector2(10, y), 9, Color(ui, 0.8), "left", false, true)
-		Fonts.text(self, full.substr(0, k), Vector2(W / 2.0, y), 11, Color.WHITE, "center", false, true)
+	var n: int = CheolgyeonConfig.HP
+	var cw := 12.0
+	var gap := 3.0
+	var x0 := roundf(W / 2.0 - (cw * n + gap * (n - 1)) / 2.0)
+	Fonts.text(self, CheolgyeonConfig.NAME, Vector2(W / 2.0, 9), 9, Color(ui, 0.85), "center", false, true)
+	var blink: bool = b.is_staggered() and fmod(HUD.play_t, 0.12) < 0.06
+	for i in n:
+		var r := Rect2(x0 + i * (cw + gap), 16, cw, 4)
+		if i < b.hp:
+			var c: Color = Color.WHITE if blink and i == b.hp - 1 else ui
+			draw_rect(r, c)
+			draw_rect(r.grow(1.0), Color(ui, 0.25), false, 1.0)
+		else:
+			draw_rect(r, Color(ui, 0.4), false, 1.0)
+	if b.viewer:
+		_draw_pose_viewer(b)
+
+
+func _draw_pose_viewer(b: BossCheolgyeon) -> void:
+	var ui: Color = Config.colors.ui
+	var poses: Array = b.pose_list()
+	var x := 8.0
+	var y0 := 30.0
+	var lh := 10.0
+	draw_rect(Rect2(x - 4, y0 - 8, 132, lh * (poses.size() + 2) + 4), Color(0, 0, 0, 0.7))
+	Fonts.text(self, "F9 포즈 뷰어 (숫자 키)", Vector2(x, y0), 10, ui, "left", false, true)
+	for i in poses.size():
+		var key := str((i + 1) % 10) if i < 10 else "Shift+%d" % (i - 9)
+		var on: bool = b.body.pose_name == poses[i]
+		Fonts.text(self, "%s  %s" % [key, poses[i]], Vector2(x, y0 + lh * (i + 1)), 9, Color(ui, 1.0 if on else 0.55))
+	Fonts.text(self, "같은 키 = 다시 전환", Vector2(x, y0 + lh * (poses.size() + 1)), 9, Color(ui, 0.55))
 
 
 ## 보스방 문이 열리는 동안: 화면 아래 잡음 섞인 무전 한 줄 (글자가 한 자씩 들어오고, 잡음 글자 · 지직 줄 · 흔들림)

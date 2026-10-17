@@ -1,5 +1,6 @@
 extends CharacterBody2D
 class_name Player
+const CG := preload("res://scripts/boss/CheolgyeonConfig.gd")   # 반격 베기 자동 돌진 수치
 ## 플레이어: 이동 · 가변 점프(코요테 타임 + 점프 버퍼) · 마우스 방향 베기 + 돌진 · 흰 실루엣 그리기
 ## 노드 원점 = 발 중앙. 충돌 박스는 Config.player 의 w×h 로 _ready 에서 맞춤.
 
@@ -23,6 +24,9 @@ var _dash_t := 0.0               # 돌진 남은 시간
 var _air_up_used := false        # 공중 위쪽 돌진을 이미 썼나
 var _trail := {}                 # 반달 베기 궤적 { ticks, angle, flip } (비어 있으면 없음)
 var _queued_slash := false       # 히트스톱 중 누른 클릭 (월드가 다시 흐를 때 처리)
+var _lunge := false              # 지금 돌진이 반격 베기 자동 돌진인가 (끝나면 멈춤)
+var _stun := 0.0                 # 경직 남은 시간 (철견이 막으면 0.2초) — 그동안 조작 불가
+var counter_lunges := 0          ## 반격 베기 자동 돌진 횟수 (테스트 · 디버그)
 
 # ---- 이동
 var _coyote := 0.0
@@ -134,7 +138,7 @@ func _physics_process(delta: float) -> void:
 	var c: Dictionary = Config.player
 	var S: Dictionary = Config.slash
 	# 히트스톱 중: 아무것도 하지 않고 입력만 모아 둠 (프로토타입처럼 멈춘 동안 누른 클릭도 살림)
-	var ctl := not input_locked
+	var ctl := not input_locked and _stun <= 0.0
 	if TimeManager.frozen:
 		if ctl and Input.is_action_just_pressed("slash"):
 			_queued_slash = true
@@ -143,8 +147,9 @@ func _physics_process(delta: float) -> void:
 		return
 	var was_on_floor := is_on_floor()
 
-	# ---- 베기 타이머 · 헛스윙
+	# ---- 베기 타이머 · 헛스윙 · 경직
 	_slash_cd = maxf(0.0, _slash_cd - delta)
+	_stun = maxf(0.0, _stun - delta)
 	if is_slashing():
 		slash_t += delta
 		# 패링 창(PARRY_EARLY)과 직접 베기 판정(hit_time)이 끝날 때까지 아무것도 못 쳤으면 잠시 베기 불가
@@ -174,7 +179,8 @@ func _physics_process(delta: float) -> void:
 	if _dash_t > 0.0:
 		_dash_t -= delta
 		if _dash_t <= 0.0:
-			velocity *= S.dash_keep
+			velocity *= 0.0 if _lunge else S.dash_keep
+			_lunge = false
 		var vy_dash := velocity.y
 		move_and_slide()
 		_animate(delta, was_on_floor, vy_dash, false)
@@ -219,10 +225,38 @@ func _physics_process(delta: float) -> void:
 	queue_redraw()
 
 
+## 반격 베기 자동 돌진 { angle, speed } — 휘청 중인 철견이 없거나 멀면 빈 Dictionary
+func _counter_lunge() -> Dictionary:
+	var b = get_tree().get_first_node_in_group("boss")
+	if b == null or b.dead or not b.has_method("can_counter") or not b.can_counter():
+		return {}
+	var to: Vector2 = b.center() - center()
+	if to.length() > CG.COUNTER_LUNGE_RANGE:
+		return {}
+	var dist := maxf(0.0, to.length() - CG.COUNTER_STOP)
+	return { "angle": to.angle(), "speed": dist / CG.COUNTER_LUNGE_TIME }
+
+
+## 경직: sec 초 동안 조작 불가 + push 속도로 밀려남 (철견이 칼을 막았을 때)
+func stun(sec: float, push: Vector2) -> void:
+	_stun = maxf(_stun, sec)
+	_dash_t = 0.0
+	_lunge = false
+	velocity = push
+
+
+func is_stunned() -> bool:
+	return _stun > 0.0
+
+
 ## 마우스 방향으로 베기 시작 + 같은 방향으로 짧게 돌진
 func _start_slash(aim: Vector2) -> void:
 	var S: Dictionary = Config.slash
 	var a := (aim - center()).angle()
+	# 반격 베기: 휘청 중인 철견이 COUNTER_LUNGE_RANGE 안이면 철견에게 자동 돌진하며 벰
+	var lunge := _counter_lunge()
+	if not lunge.is_empty():
+		a = lunge.angle
 	slash_angle = a
 	slash_t = 0.0
 	slash_used = false
@@ -239,10 +273,15 @@ func _start_slash(aim: Vector2) -> void:
 		if S.air_up_once and _air_up_used:
 			d.y = 0.0
 		_air_up_used = true
-	if is_on_floor() and d.y > 0.0:
+	if is_on_floor() and d.y > 0.0 and lunge.is_empty():
 		d.y = 0.0
 	velocity = d * S.dash_speed
 	_dash_t = S.dash_time
+	_lunge = not lunge.is_empty()
+	if _lunge:
+		velocity = Vector2.from_angle(a) * float(lunge.speed)
+		_dash_t = CG.COUNTER_LUNGE_TIME
+		counter_lunges += 1
 	_jumping = false
 	# 돌진 방향으로 늘어남
 	_sx = 1.0 + Config.anim.dash_stretch

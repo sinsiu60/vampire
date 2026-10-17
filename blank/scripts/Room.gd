@@ -8,6 +8,8 @@ class_name Room
 ## 방 크기는 Terrain 에 칠한 칸 범위로 정해짐 (카메라 한계·자국 이미지·배경 폭).
 
 @export var room_title := ""     ## 방 설명 (디버그 표시용, 예: "기본 베기 연습")
+@export var ambience := ""       ## 배경음 반복 (sounds/ 의 이름, 예: "rain_loop") — 없으면 ""
+@export var ambience_volume := -1.0   ## 배경음 볼륨 (-1 = Config.audio 기본값)
 
 @onready var terrain: TileMapLayer = $Terrain
 

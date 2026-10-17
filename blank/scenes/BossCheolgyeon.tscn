@@ -1,8 +1,11 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
-[ext_resource type="Script" path="res://scripts/enemies/BossCheolgyeon.gd" id="1_boss"]
+[ext_resource type="Script" path="res://scripts/boss/BossCheolgyeon.gd" id="1_boss"]
+[ext_resource type="PackedScene" path="res://scenes/CheolgyeonBody.tscn" id="2_body"]
 
 [node name="Cheolgyeon" type="CharacterBody2D"]
 script = ExtResource("1_boss")
 
 [node name="Collision" type="CollisionShape2D" parent="."]
+
+[node name="Body" parent="." instance=ExtResource("2_body")]

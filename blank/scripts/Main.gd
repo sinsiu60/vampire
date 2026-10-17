@@ -4,14 +4,12 @@ extends Node2D
 ## 총잡이는 group "game" 으로 이 노드를 찾아 raycast_wall / should_hold_aim / fire_shot 을 부른다.
 ## 화면 흔들림·줌·섬광은 실제 시간 (히트스톱·슬로우 중에도 재생).
 
+const CG := preload("res://scripts/boss/CheolgyeonConfig.gd")   # 철견 수치
+
 var room: Room                    # GameState 의 지금 방 씬 (_ready 에서 불러옴, 노드 이름 "Room")
 var boss: BossCheolgyeon          # 보스방이면 철견 (처치되면 null)
 var _boss_outro := -1.0           # 철견 처치 뒤 실제 시간 (무전 1초 · 출구 2초), -1 = 없음
 var _outro_radio := false
-var whiteout := 0.0               # 섬광탄 하얀 화면 세기 0~1 (철견이 읽어 원 · 조준선을 숨김)
-var _white_start := -1.0          # 섬광이 터진 월드 시각 (-1 = 없음)
-var _rally_back := -1.0           # 핑퐁: 철견이 받아친 탄을 되받아칠 월드 시각 (-1 = 없음)
-var _whiteout_fx: WhiteoutFX
 @onready var player: Player = $Player
 @onready var camera: Camera2D = $Player/Camera
 @onready var effects: Effects = $Effects
@@ -68,10 +66,8 @@ func _ready() -> void:
 	effects.room = room
 	effects.gore = gore
 	screen_fx.seq = seq
-	_whiteout_fx = WhiteoutFX.new()
-	_whiteout_fx.name = "Whiteout"
-	_whiteout_fx.main = self
-	add_child(_whiteout_fx)
+	# 방 배경음 (보스방 = 빗소리 반복). 재시작해도 끊기지 않고, 배경음이 없는 방이면 멈춤
+	Audio.set_ambience(room.ambience, room.ambience_volume)
 	var size := room.size_px()
 	camera.limit_left = 0
 	camera.limit_top = 0
@@ -155,10 +151,8 @@ func _physics_process(_delta: float) -> void:
 			_radio = {}
 	_try_open_exit()
 	_boss_outro_tick()
-	_whiteout_tick()
 	if TimeManager.frozen:
 		return
-	_rally_tick()
 	_resolve_shots()
 	_resolve_combat()
 	if game_state == "play" and enemies().is_empty():
@@ -193,12 +187,11 @@ func _try_open_exit() -> void:
 func _boss_outro_tick() -> void:
 	if _boss_outro < 0.0:
 		return
-	var B: Dictionary = Config.boss
 	_boss_outro += TimeManager.real_delta()
-	if not _outro_radio and _boss_outro >= B.RADIO_DELAY:
+	if not _outro_radio and _boss_outro >= CG.RADIO_DELAY:
 		_outro_radio = true
-		show_radio(B.RADIO_TEXT, B.RADIO_TIME)
-	if _boss_outro >= B.EXIT_DELAY:
+		show_radio(CG.RADIO_TEXT, CG.RADIO_TIME)
+	if _boss_outro >= CG.EXIT_DELAY:
 		_boss_outro = -1.0
 		var d := room.exit_door()
 		if d != null:
@@ -484,16 +477,13 @@ func _resolve_shots() -> void:
 		if s.parryable and not p.slash_used and ts >= s.fire_t - Sh.PARRY_EARLY - eps and ts <= s.fire_t + Sh.PARRY_LATE + eps:
 			s.done = true
 			# 도탄: 탄이 날아오는 쪽 ±DIRECTIONAL_PARRY_ANGLE 로 베어야 함. 다른 방향 = 실패
-			if s.has("incoming") and absf(angle_difference(p.slash_angle, s.incoming)) > deg_to_rad(Config.boss.DIRECTIONAL_PARRY_ANGLE):
+			if s.has("incoming") and absf(angle_difference(p.slash_angle, s.incoming)) > deg_to_rad(Config.shot.DIRECTIONAL_PARRY_ANGLE):
 				report_timing(ts - s.fire_t, "dir")
 				_kill_player(s.angle)
 				continue
 			p.mark_used()
 			report_timing(ts - s.fire_t, "ok")
-			if s.get("boss", false):
-				_parry_boss(s)
-			else:
-				_parry_shot(s)
+			_parry_shot(s)
 			continue
 		if TimeManager.world_time > s.fire_t + Sh.PARRY_LATE + eps:
 			s.done = true
@@ -526,316 +516,59 @@ func pick_reflect_target(origin: Vector2, aim_angle: float, shooter: Enemy) -> E
 	return best
 
 
-# ================================================================ 철견
-## 철견 사격 (연사 · 섬광 3연발 · 핑퐁): 기존 히트스캔과 같음 (MIN_SHOT_GAP 규칙 제외)
-## bl = 철견의 탄 { gun, aim, aim_time, kind, final, rally }
-func fire_boss_shot(b: BossCheolgyeon, bl: Dictionary) -> void:
-	var Sh: Dictionary = Config.shot
-	var col: Color = Config.colors.attack
-	var g: int = bl.gun
-	var aim: float = bl.aim
-	var m := b.muzzle(g)
-	var hit := hitscan(m, aim, Sh.RANGE, true, false)
-	effects.add_tracer(m, hit.pos, Sh.TRACER_WIDTH, col, Sh.TRACER_FRAMES, true)
-	effects.burst(m, 5, col, 90.0, aim, 0.5, 0.12, { "glow": true })
-	if bl.kind != "flash":
-		effects.approach_flash(m)
-	Audio.shot(Config.boss.SHOT_PITCH)
-	if hit.wall:
-		effects.burst(hit.pos, 7, col, 110.0, aim + PI, 1.1, 0.2, { "glow": true, "streak": true })
-	if hit.player:
-		pending_shots.append({ "shooter": b, "muzzle": m, "fire_t": TimeManager.world_time, "fire_real": TimeManager.real_time,
-			"angle": aim, "parryable": true, "done": false, "aim_time": bl.aim_time, "boss": true,
-			"kind": bl.kind, "final": bl.final, "rally": bl.rally })
-
-
-## ④ 도탄 사격: 총구 → 벽 (튕김) → 플레이어. 두 번째 줄은 튕긴 점에서 히트스캔
-## 판정은 방향 패링: incoming = 플레이어에서 튕긴 점 쪽 (그쪽 ±60° 로 베어야 성공)
-func fire_boss_ricochet(b: BossCheolgyeon, bl: Dictionary) -> void:
-	var Sh: Dictionary = Config.shot
-	var col: Color = Config.colors.attack
-	var m := b.muzzle(bl.gun)
-	var bounce: Vector2 = bl.bounce
-	var dir2: Vector2 = bl.dir2
-	effects.add_tracer(m, bounce, Sh.TRACER_WIDTH, col, Sh.TRACER_FRAMES, true)
-	effects.burst(m, 5, col, 90.0, bl.aim, 0.5, 0.12, { "glow": true })
-	effects.burst(bounce, 8, col, 120.0, dir2.angle(), 1.2, 0.2, { "glow": true, "streak": true })
-	Audio.shot(Config.boss.SHOT_PITCH)
-	var o := bounce + dir2 * 0.5
-	var hit := hitscan(o, dir2.angle(), Sh.RANGE, true, false)
-	effects.add_tracer(bounce, hit.pos, Sh.TRACER_WIDTH, col, Sh.TRACER_FRAMES)
-	if not player.dead:
-		effects.approach_flash(player.center())
-	if hit.wall:
-		effects.burst(hit.pos, 7, col, 110.0, dir2.angle() + PI, 1.1, 0.2, { "glow": true, "streak": true })
-	if hit.player:
-		pending_shots.append({ "shooter": b, "muzzle": player.center(), "fire_t": TimeManager.world_time, "fire_real": TimeManager.real_time,
-			"angle": dir2.angle(), "parryable": true, "done": false, "aim_time": bl.aim_time, "boss": true,
-			"kind": "ricochet", "final": true, "rally": -1, "incoming": (bounce - player.center()).angle() })
-
-
-## 철견 탄 패링 성공: 종류별로
-##  연사 중간 탄 · 섬광 3연발 = 미니 패링 (자세 +10, 섬광 중엔 화면이 노랗게 번쩍)
-##  연사 마지막 탄 · 도탄 = 풀 패링 (반사 명중 시 자세 +30)
-##  핑퐁 = 철견이 되받아침 (마지막 랠리는 풀 패링 → 최종 처치)
-func _parry_boss(s: Dictionary) -> void:
-	var b: BossCheolgyeon = s.shooter
-	var alive := is_instance_valid(b) and not b.dead
-	match String(s.kind):
-		"rally":
-			if s.final:
-				_parry_boss_final(s)
-			else:
-				_parry_rally(s)
-		"ricochet":
-			_parry_boss_final(s)
-		"flash":
-			_parry_boss_mini(s)
-			if Settings.on("screen_flash"):
-				screen_fx.flash(Config.colors.parry)
-			if alive:
-				b.add_posture(Config.boss.POSTURE_MINI)
-		_:
-			if s.final:
-				_parry_boss_final(s)
-			else:
-				_parry_boss_mini(s)
-				if alive:
-					b.add_posture(Config.boss.POSTURE_MINI)
-
-
-## 미니 패링 (철견 연사 중간 탄): parry_chang 피치 1.2 · 볼륨 70% + 히트스톱 4프레임 + 노란 불꽃.
-## 반사탄은 철견 가슴 장갑판에 맞고 튕김 (피해 없음) — 맞는 순간 boss_armor.wav + 장갑판에서 노란 불꽃. 슬로우 없음
-func _parry_boss_mini(s: Dictionary) -> void:
-	var B: Dictionary = Config.boss
-	var C: Dictionary = Config.colors
-	var p := player
-	var b: BossCheolgyeon = s.shooter
-	var back: float = s.angle + PI
-	var spark: Vector2 = p.center() + Vector2.from_angle(back) * float(Config.slash.radius) * 0.6
-	TimeManager.hitstop(B.MINI_HITSTOP)
-	effects.burst(spark, 10, C.parry, 220.0, back, 1.2, 0.24, { "glow": true, "streak": true })
-	effects.approach_success(s.muzzle)
-	Audio.parry(B.MINI_PARRY_PITCH, B.MINI_PARRY_VOL)
-	if is_instance_valid(b) and not b.dead:
-		var plate := b.plate_pos()
-		effects.add_tracer(p.center(), plate, Config.shot.REFLECT_TRACER_WIDTH, C.parry, Config.shot.TRACER_FRAMES)
-		var away := (plate - p.center()).angle() + PI
-		effects.burst(plate, 9, C.parry, 200.0, away, 0.9, 0.22, { "glow": true, "streak": true })
-		Audio.boss_armor()
-
-
-## 풀 패링 (연사 마지막 탄 · 도탄 · 핑퐁 마지막 랠리): 기존 패링 성공 시퀀스 그대로 — 반사 대상은 철견.
-## 최종 처치면 슬로우 유지 2배
-func _parry_boss_final(s: Dictionary) -> void:
-	var p := player
-	var b: BossCheolgyeon = s.shooter
-	var aim := (get_global_mouse_position() - p.center()).angle()
-	var back: float = s.get("incoming", s.angle + PI)
-	var spark: Vector2 = p.center() + Vector2.from_angle(back) * float(Config.slash.radius) * 0.6
-	parry_fx(spark, back)
-	effects.approach_success(s.muzzle)
-	var target: Enemy = b if is_instance_valid(b) and not b.dead else null
-	var hold: float = Config.boss.FINAL_HOLD_MUL if target != null and b.is_final_hit() else 1.0
-	seq.start(target, aim, p.center().distance_to(raycast_wall(p.center(), aim, Config.shot.RANGE)),
-		Config.juice.HITSTOP_PARRY_FRAMES if Settings.on("hitstop") else 0, hold)
-	p.input_locked = Config.parry_seq.LOCK_INPUT_DURING_SLOWMO
-
-
-## 핑퐁 랠리 (마지막 전): 받아친 탄이 철견의 권총으로 날아감 → RALLY_RETURN_DELAY 뒤 철견이 되받아침
-func _parry_rally(s: Dictionary) -> void:
-	var B: Dictionary = Config.boss
-	var C: Dictionary = Config.colors
+# ================================================================ 철견 (CheolgyeonConfig)
+## 일반 패링 (콤보 중간 공격): parry_chang + 히트스톱 5프레임 + 노란 불꽃 + 실제 0.1초 동안 시간 50%
+## 풀 패링 슬로우 시퀀스 (seq) 는 이 보스전에서 페이즈 전환 · 피날레에만
+func boss_parry_fx(pos: Vector2, angle: float) -> void:
+	var CC: Dictionary = Config.colors
 	var F: Dictionary = Config.fx
-	var p := player
-	var b: BossCheolgyeon = s.shooter
-	var back: float = s.angle + PI
-	var spark: Vector2 = p.center() + Vector2.from_angle(back) * float(Config.slash.radius) * 0.6
-	TimeManager.hitstop(B.MINI_HITSTOP)
-	effects.ring(spark, F.ring_radius * 0.7, F.ring_time * 0.7, F.ring_width - 1.0, C.parry)
-	effects.burst(spark, 12, C.parry, 240.0, back, 1.2, 0.24, { "glow": true, "streak": true })
-	effects.approach_success(s.muzzle)
-	add_shake(Config.juice.SHAKE_PARRY * 0.6, Config.juice.SHAKE_TIME, back)
+	TimeManager.hitstop(CG.PARRY_HITSTOP)
+	TimeManager.slow_for(CG.PARRY_SLOW, CG.PARRY_SLOW_TIME)
+	effects.ring(pos, F.ring_radius * 0.7, F.ring_time * 0.7, F.ring_width - 1.0, CC.parry)
+	effects.burst(pos, 12, CC.parry, 240.0, angle, 1.2, 0.24, { "glow": true, "streak": true })
+	effects.burst(pos, 5, CC.parry_hot, 120.0, 0.0, PI, 0.3, { "glow": true })
 	Audio.parry()
-	if is_instance_valid(b) and not b.dead:
-		effects.add_tracer(p.center(), b.muzzle(0), Config.shot.REFLECT_TRACER_WIDTH, C.parry, Config.shot.TRACER_FRAMES)
-		_rally_back = TimeManager.world_time + float(B.RALLY_RETURN_DELAY)
 
 
-## 핑퐁: 철견이 권총으로 되받아침 (parry_chang 피치 0.9 + 장갑 불꽃) → 다음 랠리
-func _rally_tick() -> void:
-	if _rally_back < 0.0 or TimeManager.world_time < _rally_back:
-		return
-	_rally_back = -1.0
-	if boss == null or not is_instance_valid(boss) or boss.dead or player.dead:
-		return
-	var m := boss.muzzle(0)
-	var toward := (player.center() - m).angle()
-	effects.burst(m, 10, Config.colors.parry, 200.0, toward, 1.0, 0.22, { "glow": true, "streak": true })
-	effects.burst(boss.plate_pos(), 5, Config.colors.parry, 140.0, toward + PI, 1.2, 0.2, { "glow": true })
-	Audio.parry(Config.boss.RALLY_RETURN_PITCH)
-	Audio.boss_armor(1.1)
-	boss.rally_return()
-
-
-## 풀 패링 반사탄이 철견에 명중. 체력은 줄지 않음 (처형으로만) → 자세 +30 + 움찔
-## 결전 마지막 랠리면 최종 처치 (킬 16프레임 + 흔들림 1.5배 + 쌍권총이 날아감)
-func _boss_full_hit(b: BossCheolgyeon, angle: float) -> void:
-	var B: Dictionary = Config.boss
-	var C: Dictionary = Config.colors
-	if b.is_final_hit():
-		b.hp = 0
-		_kill_enemy(b, angle, "reflect")
-		return
-	var plate := b.plate_pos()
-	TimeManager.hitstop(B.FULL_HIT_HITSTOP)
-	add_shake(B.FULL_HIT_SHAKE, 0.2, angle)
-	effects.burst(plate, 16, C.parry, 240.0, angle, 0.8, 0.28, { "glow": true, "streak": true })
-	effects.burst(plate, 6, C.player, 150.0, angle, 1.4, 0.26, { "glow": true })
-	Audio.boss_armor()
-	b.on_reflect_hit()
-
-
-## ② 권총 난타 근접 패링: parry_chang + 히트스톱 6 + 자세 +10 (3타는 크게 튕겨남 + 자세 +25)
-func _parry_whip(b: BossCheolgyeon, i: int) -> void:
-	var B: Dictionary = Config.boss
+## 휘청 중 베기가 철견에 닿음 = 반격 베기 (플레이어는 Player._start_slash 에서 이미 자동 돌진)
+##  execute.wav + 히트스톱 8 + 흰 섬광 1프레임 + 흔들림 6px + 코트 조각 파편 + 철견 30px 넉백 → 체력 -1. 컷인 · 긴 슬로우 없음
+func _counter_hit(b: BossCheolgyeon) -> void:
+	var CC: Dictionary = Config.colors
 	var p := player
 	p.mark_used()
-	parry_fx(p.tip(), p.slash_angle, B.WHIP_PARRY_HITSTOP)
-	if i == 2:
-		add_shake(Config.juice.SHAKE_PARRY * 1.5, Config.juice.SHAKE_TIME * 1.5, p.slash_angle)
-		effects.burst(b.center(), 10, Config.colors.parry, 220.0, p.slash_angle, 0.7, 0.3, { "glow": true, "streak": true })
-		Audio.boss_armor(0.9)
-	b.on_whip_parried(i)
-	b.add_posture(B.POSTURE_WHIP_FINAL if i == 2 else B.POSTURE_MINI)
+	var angle := (b.center() - p.center()).angle()
+	var c := b.center()
+	Audio.sfx("execute")
+	TimeManager.hitstop(CG.COUNTER_HITSTOP)
+	if Settings.on("screen_flash"):
+		screen_fx.flash()
+	add_shake(CG.COUNTER_SHAKE, CG.COUNTER_SHAKE_TIME, angle)
+	effects.burst(c, 14, CC.player, 280.0, angle, 0.7, 0.26, { "glow": true, "streak": true })
+	effects.burst(c, 6, CG.COL_RIM, 180.0, angle, 1.2, 0.3, { "glow": true })
+	# 코트 조각: 작은 삼각형들이 베는 방향으로 튀어 떨어짐
+	for i in CG.COAT_SHARDS:
+		var sz := randf_range(2.5, 4.5)
+		var tri := PackedVector2Array([Vector2(-sz, -sz * 0.4), Vector2(sz, -sz * 0.7), Vector2(randf_range(-1, 1), sz)])
+		var part := { "xf": Transform2D.IDENTITY, "shapes": [["poly", tri]], "body": CG.COL_COAT, "rim": CG.COL_RIM }
+		var a := angle + randf_range(-0.9, 0.9)
+		var v := randf_range(120.0, 260.0)
+		var o := c + Vector2(randf_range(-5, 5), randf_range(-4, 10))
+		gore.toss([part], o, o, Vector2(cos(a) * v, sin(a) * v - 140.0), randf_range(-18, 18))
+	if b.on_counter_hit(angle) <= 0:
+		_kill_enemy(b, angle, "slash")       # 4단계 피날레 전까지: 마지막 반격 = 일반 킬 연출
 
 
-## 그로기 중 베기 = 처형. phase: 체력 -1 (히트스톱 12 · 흰 섬광 · 흔들림 8 · kill 0.8 · armor 0.7 · 장갑 금)
-## finale: 체력 1 처형을 권총으로 막아냄 → "아직이다!" 결전 / blocked: F9 무적
-func _execute_boss(b: BossCheolgyeon) -> void:
-	var B: Dictionary = Config.boss
-	var C: Dictionary = Config.colors
-	var F: Dictionary = Config.fx
+## 휘청 아닐 때 철견을 벰: 권총으로 막음 — boss_armor + 불꽃, 피해 없음, 플레이어 0.2초 경직 (살짝 밀려남)
+func _boss_block(b: BossCheolgyeon) -> void:
+	var CC: Dictionary = Config.colors
 	var p := player
-	var angle := p.slash_angle
-	p.mark_used()
-	pending_shots.clear()
-	match b.execute():
-		"phase":
-			var plate := b.plate_pos()
-			TimeManager.hitstop(B.EXECUTE_HITSTOP)
-			if Settings.on("screen_flash"):
-				screen_fx.flash()
-			add_shake(B.EXECUTE_SHAKE, 0.35, angle)
-			if Settings.on("beam"):
-				effects.beam(plate, angle, view_rect())
-			effects.burst(plate, 22, C.parry, 280.0, angle, 0.8, 0.32, { "glow": true, "streak": true })
-			effects.burst(plate, 10, C.player, 180.0, angle, 1.4, 0.3, { "glow": true })
-			Audio.kill(B.EXECUTE_KILL_PITCH)
-			Audio.boss_armor(B.EXECUTE_ARMOR_PITCH)
-			Audio.sfx("execute", "SFX_EXECUTE")
-			if Settings.on("recoil"):
-				p.recoil(angle)
-		"finale":
-			# 권총으로 칼을 막음
-			var m := b.muzzle(0)
-			TimeManager.hitstop(Config.juice.HITSTOP_PARRY_FRAMES)
-			add_shake(B.BLOCK_SHAKE, 0.25, angle)
-			effects.ring(m, F.ring_radius, F.ring_time, F.ring_width, C.parry)
-			effects.burst(m, 14, C.parry, 240.0, angle + PI, 1.2, 0.28, { "glow": true, "streak": true })
-			Audio.parry()
-			Audio.boss_armor(0.8)
-			if Settings.on("recoil"):
-				p.recoil(angle + PI)
-		_:
-			effects.burst(p.tip(), 6, C.player, 160.0, angle + PI, 0.9, 0.18, { "glow": true, "streak": true })
-			Audio.boss_armor(1.15)
-
-
-## ⑤ 수류탄 · ⑥ 섬광탄 던지기
-func spawn_grenade(kind: String, from: Vector2, to: Vector2, flight: float) -> Grenade:
-	var g := Grenade.new()
-	g.kind = kind
-	g.room = room
-	g.z_index = 6
-	g.add_to_group("grenades")
-	room.add_child(g)
-	g.launch(from, to, flight)
-	g.exploded.connect(_on_grenade_exploded)
-	return g
-
-
-## 수류탄을 벰 → 마우스 방향으로 되치기 (철견 쪽이면 조준 스냅)
-func _bat_grenade(g: Grenade) -> void:
-	var F: Dictionary = Config.fx
-	var p := player
-	p.mark_used()
-	var o := g.global_position
-	var aim := (get_global_mouse_position() - p.center()).angle()
-	if boss != null and is_instance_valid(boss) and not boss.dead:
-		var d := boss.center() - o
-		var A: Dictionary = Config.aim_assist
-		if d.length() <= A.AIM_SNAP_RANGE and absf(angle_difference(aim, d.angle())) <= deg_to_rad(A.AIM_SNAP_ANGLE):
-			aim = d.angle()
-	g.bat(Vector2.from_angle(aim))
-	TimeManager.hitstop(Config.boss.MINI_HITSTOP)
-	effects.ring(o, F.ring_radius * 0.6, F.ring_time * 0.7, F.ring_width - 1.0, Config.colors.parry)
-	effects.burst(o, 10, Config.colors.parry, 220.0, aim, 0.9, 0.22, { "glow": true, "streak": true })
-	add_shake(Config.juice.SHAKE_PARRY * 0.6, Config.juice.SHAKE_TIME, aim)
-	Audio.parry(1.1, 0.8)
-
-
-## 수류탄 폭발 (반경 안 플레이어 즉사) / 섬광탄이 터짐 (하얀 화면 + 3연발)
-func _on_grenade_exploded(g: Grenade) -> void:
-	var B: Dictionary = Config.boss
-	var C: Dictionary = Config.colors
-	var pos := g.global_position
-	if g.kind == "flash":
-		start_whiteout()
-		if boss != null and is_instance_valid(boss) and not boss.dead:
-			boss.on_flash_pop()
-		return
-	var R: float = B.GRENADE_RADIUS
-	effects.ring(pos, R, 0.3, 3.0, C.attack)
-	effects.ring(pos, R * 0.6, 0.22, 2.0, C.parry_hot)
-	effects.burst(pos, 26, C.parry_hot, 260.0, -PI / 2.0, PI, 0.45, { "glow": true, "streak": true })
-	effects.burst(pos, 14, C.attack, 180.0, -PI / 2.0, PI, 0.55, { "glow": true })
-	add_shake(B.EXPLOSION_SHAKE, 0.3, randf() * TAU)
-	Audio.sfx("explosion", "SFX_EXPLOSION")
-	# 되친 수류탄이 철견 근처에서 폭발 → 자세 +40 + 경직 1초 (되친 건 플레이어를 해치지 않음)
-	if g.batted:
-		if boss != null and is_instance_valid(boss) and not boss.dead and boss.center().distance_to(pos) <= R:
-			boss.add_posture(B.POSTURE_GRENADE)
-			boss.on_grenade_hit()
-		return
-	if not player.dead and player.center().distance_to(pos) <= R:
-		_kill_player((player.center() - pos).angle())
-
-
-## ⑥ 섬광: 화면이 FLASH_DURATION 초 하얗게 (월드 시간). 그동안 다른 효과음은 먹먹하게 (장전음만 선명)
-func start_whiteout() -> void:
-	_white_start = TimeManager.world_time
-	Audio.sfx("flashbang", "SFX_FLASHBANG", 1.0, true)
-	Audio.set_muffled(true)
-	add_shake(3.0, 0.25, -PI / 2.0)
-
-
-func _whiteout_tick() -> void:
-	if _white_start < 0.0:
-		return
-	var B: Dictionary = Config.boss
-	var e := TimeManager.world_time - _white_start
-	var hold: float = B.FLASH_DURATION
-	if e < B.FLASH_FADE_IN:
-		whiteout = e / B.FLASH_FADE_IN
-	elif e < hold:
-		whiteout = 1.0
-	elif e < hold + B.FLASH_FADE_OUT:
-		whiteout = 1.0 - (e - hold) / B.FLASH_FADE_OUT
-	else:
-		whiteout = 0.0
-		_white_start = -1.0
-		Audio.set_muffled(false)
+	var g := b.block_point()
+	var away := (p.center() - b.center()).angle()
+	Audio.boss_armor(CG.BLOCK_PITCH)
+	effects.burst(g, 10, CC.parry, 220.0, away, 0.9, 0.2, { "glow": true, "streak": true })
+	effects.burst(g, 4, CC.player, 140.0, away, 1.2, 0.16, { "glow": true })
+	add_shake(2.0, 0.12, away)
+	p.stun(CG.BLOCK_PLAYER_STUN, Vector2(signf(cos(away)) if absf(cos(away)) > 0.1 else -float(b.facing), -0.15).normalized() * CG.BLOCK_PUSH)
 
 
 ## 패링 성공 공통 연출 (pos = 칼에 맞부딪힌 지점, angle = 불꽃·흔들림 방향)
@@ -897,7 +630,7 @@ func _reflect_hit(target: Enemy, aim: float) -> void:
 			effects.burst(hit_pos, 8, Config.colors.parry, 120.0, aim + PI, 1.1, 0.22, { "glow": true, "streak": true })
 	effects.add_tracer(o, hit_pos, Sh.REFLECT_TRACER_WIDTH, Config.colors.parry, Sh.TRACER_FRAMES)
 	if victim is BossCheolgyeon:
-		_boss_full_hit(victim, angle)
+		victim.stagger()                  # 철견은 반사탄에 맞으면 휘청 (반격 기회)
 	elif victim != null:
 		_kill_enemy(victim, angle, "reflect")
 
@@ -915,29 +648,17 @@ func _resolve_combat() -> void:
 			if e is EnemyMelee and e.parry_vulnerable():
 				if p.slash_hits_rect(e.threat_box(), reach) or p.slash_hits_rect(e.body_rect(), reach):
 					_parry_melee(e)
-		# 철견 권총 난타
-		if boss != null and is_instance_valid(boss) and not boss.dead and not p.slash_used:
-			var wi := boss.whip_vulnerable()
-			if wi >= 0 and (p.slash_hits_rect(boss.threat_box(), reach) or p.slash_hits_rect(boss.body_rect(), reach)):
-				_parry_whip(boss, wi)
-	# 수류탄을 벰 → 되치기
-	if p.is_slashing() and p.slash_t < S.hit_time and not p.slash_used:
-		for g in get_tree().get_nodes_in_group("grenades"):
-			if g.kind == "grenade" and not g.batted and not g.done and p.slash_hits(g.global_position, 5.0, 1.15):
-				_bat_grenade(g)
-				break
 	# 2) 칼이 적 몸통에 직접 닿음 → 즉사
 	if S.direct_kill and p.is_slashing() and p.slash_t < S.hit_time:
 		for e in enemies():
 			if p.slash_hits_rect(e.body_rect()):
 				if e is BossCheolgyeon:
-					# 그로기 중이면 처형. 아니면 칼로 벨 수 없음 — 장갑에 막혀 '깡'
-					if e.is_groggy() and not p.slash_used:
-						_execute_boss(e)
-						continue
-					if e.on_slashed(p) and not p.slash_used:
-						effects.burst(p.tip(), 6, Config.colors.player, 160.0, p.slash_angle + PI, 0.9, 0.18, { "glow": true, "streak": true })
-						Audio.boss_armor(1.15)
+					# 휘청 중이면 반격 베기, 아니면 권총으로 막음 (한 번 베기에 한 번)
+					if not p.slash_used:
+						if e.can_counter():
+							_counter_hit(e)
+						elif e.on_blocked(p):
+							_boss_block(e)
 					continue
 				p.mark_used()
 				_kill_enemy(e, p.slash_angle)
@@ -998,14 +719,10 @@ func _kill_enemy(e: Enemy, angle: float, cause := "slash") -> void:
 			K.BLOOD_LIFE * randf_range(0.75, 1.0), C.blood[i % C.blood.size()],
 			{ "size": 3.0 if randf() < 0.45 else 2.0, "grav": K.BLOOD_GRAVITY, "stain": true, "slow": true })
 	effects.burst(c, 8, C.parry if by_parry else C.player, 260.0, angle, 0.35, 0.18, { "glow": true, "streak": true })
-	# 철견: 쌍권총이 공중으로 날아감 + 흔들림 1.5배, 처치 뒤 무전 · 출구 (_boss_outro_tick)
+	# 철견: 흔들림 1.5배, 처치 뒤 무전 · 출구 (_boss_outro_tick). 모자 · 쌍권총 연출은 4단계 피날레에서
 	var shake_mul := 1.0
 	if e is BossCheolgyeon:
-		shake_mul = Config.boss.KILL_SHAKE_MUL
-		for g in 2:
-			var gp: Vector2 = e.pivot(g) + Vector2.from_angle(e.gun_aim[g]) * 6.0
-			gore.toss(e.gun_parts(g), e.global_position, gp,
-				Vector2(randf_range(-60, 60) + cos(angle) * 80.0, randf_range(-330, -260)), randf_range(-14, 14))
+		shake_mul = CG.KILL_SHAKE_MUL
 		GameState.boss_checkpoint = { "key": GameState.room_key(), "dead": true }
 		boss = null
 		_boss_outro = 0.0
@@ -1027,7 +744,6 @@ func _kill_player(angle: float) -> void:
 	if player.dead:
 		return
 	pending_shots.clear()
-	_rally_back = -1.0
 	seq.cancel()
 	player.input_locked = false
 	add_shake(Config.fx.death_shake, 0.2, angle)

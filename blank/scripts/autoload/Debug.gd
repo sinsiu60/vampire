@@ -7,7 +7,7 @@ extends Node
 ##  F4 프레임 진행: 게임을 멈추고 F4 를 누를 때마다 정확히 한 틱. Enter 로 해제
 ##  F5 패링 타이밍 디버그 (조준선 옆 판정 창 바 + 입력 오차 ms)
 ##  F6 다음 방으로 바로 · F7 지금 방 즉시 클리어 — 디버그 빌드(에디터 실행 · 디버그 내보내기)에서만
-##  F8 철견 페이즈 바로 바꾸기 (1 → 2 → 3 → 결전) · F9 철견 무적 (패턴 관찰용) · F10 철견 패턴 강제 (① ~ ⑦ 차례로)
+##  F8 철견 즉시 휘청 (반격 베기 감각 테스트) · F9 철견 포즈 뷰어 (숫자 키로 포즈, Shift+숫자 = 11번째부터)
 ##     — 디버그 빌드에서만
 
 signal changed
@@ -76,20 +76,42 @@ func _input(event: InputEvent) -> void:
 				main.debug_next_room()
 			else:
 				main.debug_clear_room()
-		KEY_F8, KEY_F9, KEY_F10:
-			var main := get_tree().get_first_node_in_group("game")
-			if not debug_mode() or main == null or menu_open or main.boss == null:
+		KEY_F8, KEY_F9:
+			var b = _boss()
+			if not debug_mode() or b == null or menu_open:
 				return
 			if event.physical_keycode == KEY_F8:
-				main.boss.debug_next_phase()
-			elif event.physical_keycode == KEY_F10:
-				main.boss.debug_force_pattern()
+				b.debug_stagger()
 			else:
-				main.boss.invincible = not main.boss.invincible
+				b.set_viewer(not b.viewer)
 		_:
-			if juice_panel and not menu_open:
+			var b = _boss()
+			if b != null and b.viewer and not menu_open and not juice_panel:
+				_viewer_key(event, b)
+			elif juice_panel and not menu_open:
 				_juice_key(event.physical_keycode)
 			return
+	changed.emit()
+
+
+## 지금 방의 철견 (없으면 null) — 오토로드라 타입 이름을 쓰지 않음
+func _boss():
+	var main := get_tree().get_first_node_in_group("game")
+	if main == null:
+		return null
+	var b = main.boss
+	return b if b != null and is_instance_valid(b) and not b.dead else null
+
+
+## F9 포즈 뷰어: 1 ~ 9, 0 = 포즈 1 ~ 10, Shift+1 ~ 7 = 포즈 11 ~ 17
+func _viewer_key(event: InputEventKey, b) -> void:
+	var digits := [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_0]
+	var i := digits.find(event.physical_keycode)
+	if i < 0:
+		return
+	if event.shift_pressed:
+		i += 10
+	b.viewer_pose(i)
 	changed.emit()
 
 
