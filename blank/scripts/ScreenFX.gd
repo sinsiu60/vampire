@@ -8,6 +8,7 @@ class_name ScreenFX
 @export var seq: ParrySeq
 
 var _flash_left := 0.0
+var _flash_alpha := -1.0         # 이번 섬광 세기 (-1 = Config.fx.flash_alpha)
 var _flash_shown := false
 var _last_us := 0
 
@@ -23,10 +24,12 @@ func _ready() -> void:
 	_update()
 
 
-## 한 프레임 섬광 (color: 기본 흰색, 섬광탄 중 패링 성공은 노랑)
-func flash(color := Color.WHITE) -> void:
+## 한 프레임 섬광 (color: 기본 흰색). alpha < 0 = Config.fx.flash_alpha (번개 두 번째는 약하게)
+## hold = 섬광 유지 시간 (실제 시간, 기본 1프레임 — 정전 순간 하얀 화면 0.2초 등)
+func flash(color := Color.WHITE, alpha := -1.0, hold := -1.0) -> void:
+	_flash_alpha = alpha
 	(material as ShaderMaterial).set_shader_parameter("flash_color", Vector3(color.r, color.g, color.b))
-	_flash_left = Config.fx.flash_time
+	_flash_left = Config.fx.flash_time if hold <= 0.0 else hold
 	_flash_shown = false
 	_update()
 
@@ -55,7 +58,7 @@ func _process(_delta: float) -> void:
 func _update() -> void:
 	var P: Dictionary = Config.parry_seq
 	var a := seq.fx_amount() if seq != null else 0.0
-	var f: float = Config.fx.flash_alpha if _flash_left > 0.0 else 0.0
+	var f: float = (Config.fx.flash_alpha if _flash_alpha < 0.0 else _flash_alpha) if _flash_left > 0.0 else 0.0
 	var m := material as ShaderMaterial
 	m.set_shader_parameter("desat", P.DESATURATE * a)
 	m.set_shader_parameter("vignette", P.VIGNETTE * a)

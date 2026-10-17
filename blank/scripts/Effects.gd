@@ -16,11 +16,18 @@ var _sparks: Array = []          # { pos, vel, life, max, color, size, grav, glo
 var _beams: Array = []           # { o, d, len, f, dust: [{ t, pos, done }], born }
 var _approach_fx: Array = []     # { kind: "flash" | "success" | "scatter", pos, f, r }
 var _rings: Array = []           # { pos, radius, time, t, width, color }
+var _top: Node2D                 # 발사 타이밍 원 층 (z 30 — 철견 정전 어둠(z 20) 위에서도 항상 보임)
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE   # 옵션 메뉴·F4 프레임 진행이면 멈춤 (히트스톱은 time_scale 이라 상관없음)
 	z_index = 10
+	_top = Node2D.new()
+	_top.name = "Approach"
+	_top.z_index = 30
+	_top.z_as_relative = false
+	_top.draw.connect(_draw_top)
+	add_child(_top)
 
 
 func add_tracer(a: Vector2, b: Vector2, width: float, color: Color, frames: int, muzzle := false) -> void:
@@ -133,6 +140,7 @@ func _physics_process(delta: float) -> void:
 		_update_particles(delta, false)
 		_update_rings(delta)
 	queue_redraw()
+	_top.queue_redraw()
 
 
 ## 다음에 발사할 총잡이 (가장 이른 발사 예정)
@@ -308,6 +316,12 @@ func _draw() -> void:
 		c.a = 1.0 - u * u
 		draw_arc(r.pos, rad, 0.0, TAU, 48, Color(c, c.a * 0.3), w + 3.0)   # 빛 번짐
 		draw_arc(r.pos, rad, 0.0, TAU, 48, c, w)
+
+
+## 발사 타이밍 원 층 (_top 에 그림)
+func _draw_top() -> void:
+	var A: Dictionary = Config.approach
+	var ci := _top
 	# 발사 타이밍 원: 화면 안의 조준 중인 총잡이 (다음 발사만 100%, 나머지 50%)
 	# (철견 연사: 탄마다 원이 시간차를 두고 함께 줄어듦 — 늦은 탄부터 그려 다음 탄 원이 맨 위에)
 	var infos := approach_infos(get_tree())
@@ -315,14 +329,14 @@ func _draw() -> void:
 	infos.sort_custom(func(a, b): return a.fire_t > b.fire_t)
 	for info in infos:
 		if Settings.approach and not is_offscreen(info.pos):
-			draw_approach(self, info.pos, info, 1.0, 1.0 if info == next else A.DIM_ALPHA)
+			draw_approach(ci, info.pos, info, 1.0, 1.0 if info == next else A.DIM_ALPHA)
 	# 발사 순간 흰 번쩍 / 패링 성공 노란 원 퍼짐
 	var rt: float = A.APPROACH_TARGET_RADIUS
 	for fx in _approach_fx:
 		var c: Vector2 = fx.pos.round()
 		if fx.kind == "flash":
-			draw_circle(c, rt, Color(1, 1, 1, 0.85))
-			draw_arc(c, rt, 0.0, TAU, 32, Color.WHITE, 2.0)
+			ci.draw_circle(c, rt, Color(1, 1, 1, 0.85))
+			ci.draw_arc(c, rt, 0.0, TAU, 32, Color.WHITE, 2.0)
 		elif fx.kind == "scatter":
 			# 원이 8조각으로 깨져 바깥으로 흩어지며 사라짐
 			var u: float = float(fx.f) / maxf(1.0, A.SCATTER_TIME * Config.fps)
@@ -331,10 +345,10 @@ func _draw() -> void:
 			var rr: float = fx.r + 10.0 * (1.0 - (1.0 - u) * (1.0 - u))
 			for i in 8:
 				var a0 := TAU * i / 8.0 + u * 0.6
-				draw_arc(c + Vector2.from_angle(a0 + 0.2) * 6.0 * u, rr, a0, a0 + 0.45, 6, col, 1.0)
+				ci.draw_arc(c + Vector2.from_angle(a0 + 0.2) * 6.0 * u, rr, a0, a0 + 0.45, 6, col, 1.0)
 		else:
 			var u: float = float(fx.f) / maxf(1.0, A.SUCCESS_TIME * Config.fps)
 			var col: Color = Config.colors.parry
 			col.a = 1.0 - u
 			var r: float = rt + (rt * A.SUCCESS_SCALE - rt) * (1.0 - (1.0 - u) * (1.0 - u))
-			draw_arc(c, r, 0.0, TAU, 40, col, maxf(1.0, 2.0 * (1.0 - u)))
+			ci.draw_arc(c, r, 0.0, TAU, 40, col, maxf(1.0, 2.0 * (1.0 - u)))

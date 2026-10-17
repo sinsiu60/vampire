@@ -9,6 +9,9 @@ const CG := preload("res://scripts/boss/CheolgyeonConfig.gd")   # 철견 수치
 var room: Room                    # GameState 의 지금 방 씬 (_ready 에서 불러옴, 노드 이름 "Room")
 var boss: BossCheolgyeon          # 보스방이면 철견 (처치되면 null)
 var _boss_outro := -1.0           # 철견 처치 뒤 실제 시간 (무전 1초 · 출구 2초), -1 = 없음
+var letterbox := 0.0              # 레터박스 0~1 (철견 페이즈 전환 연출 — HUD 가 그림)
+var _letterbox_to := 0.0
+var cinematic := false            # 연출 중 (입력 잠금, 피격 없음)
 var _outro_radio := false
 @onready var player: Player = $Player
 @onready var camera: Camera2D = $Player/Camera
@@ -151,6 +154,8 @@ func _physics_process(_delta: float) -> void:
 			_radio = {}
 	_try_open_exit()
 	_boss_outro_tick()
+	if _letterbox_to != letterbox:
+		letterbox = move_toward(letterbox, _letterbox_to, TimeManager.real_delta() / CG.TR_LETTERBOX)
 	if TimeManager.frozen:
 		return
 	_resolve_shots()
@@ -523,6 +528,7 @@ func pick_reflect_target(origin: Vector2, aim_angle: float, shooter: Enemy) -> E
 ## 일반 패링 (콤보 중간 공격): parry_chang + 히트스톱 5프레임 + 노란 불꽃 + 실제 0.1초 동안 시간 50%
 ## 풀 패링 슬로우 시퀀스 (seq) 는 이 보스전에서 페이즈 전환 · 피날레에만
 func boss_parry_fx(pos: Vector2, angle: float) -> void:
+	_boss_light(pos, 60.0)
 	var CC: Dictionary = Config.colors
 	var F: Dictionary = Config.fx
 	TimeManager.hitstop(CG.PARRY_HITSTOP)
@@ -544,11 +550,71 @@ func fire_boss_shot(b: BossCheolgyeon, bl: Dictionary) -> void:
 	effects.burst(m, 5, col, 90.0, aim, 0.5, 0.12, { "glow": true })
 	effects.approach_flash(m)
 	Audio.shot(CG.SHOT_PITCH)
+	_boss_light(m)
 	if hit.wall:
 		effects.burst(hit.pos, 7, col, 110.0, aim + PI, 1.1, 0.2, { "glow": true, "streak": true })
 	if hit.player:
 		pending_shots.append({ "shooter": b, "muzzle": m, "fire_t": TimeManager.world_time, "fire_real": TimeManager.real_time,
 			"angle": aim, "parryable": true, "done": false, "aim_time": bl.aim_time, "boss": true, "role": bl.role })
+
+
+## ⑤ 도탄: 총구 → 반사면 (튕김) → 플레이어. 두 번째 줄은 튕긴 점에서 히트스캔. 판정은 방향 패링
+## (incoming = 플레이어에서 튕긴 점 쪽 — 그쪽 ±DIRECTIONAL_PARRY_ANGLE 로 베어야 성공)
+func fire_boss_ricochet(b: BossCheolgyeon, bl: Dictionary) -> void:
+	var Sh: Dictionary = Config.shot
+	var col: Color = Config.colors.attack
+	var m := b.body.muzzle(bl.gun)
+	var bounce: Vector2 = bl.bounce
+	var dir2: Vector2 = bl.dir2
+	effects.add_tracer(m, bounce, Sh.TRACER_WIDTH, col, Sh.TRACER_FRAMES, true)
+	effects.burst(m, 5, col, 90.0, bl.aim, 0.5, 0.12, { "glow": true })
+	effects.burst(bounce, 8, Config.colors.parry_hot, 130.0, dir2.angle(), 1.2, 0.2, { "glow": true, "streak": true })
+	Audio.shot(CG.SHOT_PITCH)
+	Audio.boss_armor(CG.RS_TING_PITCH * 1.2)
+	_boss_light(m)
+	_boss_light(bounce, 50.0)
+	var hit := hitscan(bounce + dir2 * 1.5, dir2.angle(), Sh.RANGE, true, false)
+	effects.add_tracer(bounce, hit.pos, Sh.TRACER_WIDTH, col, Sh.TRACER_FRAMES)
+	if not player.dead:
+		effects.approach_flash(player.center())
+	if hit.wall:
+		effects.burst(hit.pos, 7, col, 110.0, dir2.angle() + PI, 1.1, 0.2, { "glow": true, "streak": true })
+	if hit.player:
+		pending_shots.append({ "shooter": b, "muzzle": player.center(), "fire_t": TimeManager.world_time, "fire_real": TimeManager.real_time,
+			"angle": dir2.angle(), "parryable": true, "done": false, "aim_time": bl.aim_time, "boss": true, "role": bl.role,
+			"incoming": (bounce - player.center()).angle() })
+
+
+## 정전 중 순간 빛 (보스방 무대가 있으면)
+func _boss_light(pos: Vector2, r := -1.0) -> void:
+	var a := room.get_node_or_null("Arena")
+	if a != null:
+		a.flash_light(pos, CG.MUZZLE_LIGHT_R if r < 0.0 else r)
+
+
+## 페이즈 전환 연출 시작 / 끝: 입력 잠금 · 레터박스 · 남은 탄 정리
+func cine_begin() -> void:
+	cinematic = true
+	pending_shots.clear()
+	player.input_locked = true
+	_letterbox_to = 1.0
+
+
+func cine_end() -> void:
+	cinematic = false
+	player.input_locked = false
+	_letterbox_to = 0.0
+
+
+## 연출 사격: 철견 앞 권총에서 그 지점으로 (물탱크 · 조명)
+func cine_shot(b: BossCheolgyeon, to: Vector2) -> void:
+	var m := b.body.muzzle(0)
+	var a := (to - m).angle()
+	effects.add_tracer(m, to, Config.shot.TRACER_WIDTH, Config.colors.attack, Config.shot.TRACER_FRAMES, true)
+	effects.burst(m, 5, Config.colors.attack, 90.0, a, 0.5, 0.12, { "glow": true })
+	effects.burst(to, 12, Config.colors.parry, 200.0, a + PI, 1.3, 0.3, { "glow": true, "streak": true })
+	Audio.shot(CG.SHOT_PITCH)
+	_boss_light(m)
 
 
 ## 철견 탄 패링: 모두 일반 패링 연출 (슬로우 시퀀스 없음). 콤보 마지막 탄(role = stagger)이면
@@ -723,7 +789,11 @@ func _resolve_combat() -> void:
 				p.mark_used()
 				_kill_enemy(e, p.slash_angle)
 	# 3) 근접 공격 명중 → 플레이어 즉사 (패링 시퀀스로 입력이 잠긴 동안은 맞지 않음)
-	if p.input_locked:
+	if p.input_locked or cinematic:
+		return
+	# 철견 착지 충격파 (보라, 패링 불가 — 점프로 피함)
+	if boss != null and is_instance_valid(boss) and not boss.dead and boss.wave_hits(p.body_rect()):
+		_kill_player(-PI / 2.0)
 		return
 	for e in enemies():
 		var box: Rect2 = e.attack_box()

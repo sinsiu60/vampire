@@ -119,8 +119,32 @@ func _apply_aim() -> void:
 
 ## 권총 빨간 점멸 (공격 예고). on = false 면 원래 색
 func set_gun_flash(i: int, on: bool) -> void:
+	if i == 0:
+		gun_flash = on
 	if _gun_shapes.size() > i and _gun_shapes[i] != null:
 		_gun_shapes[i].color = C.COL_GUN_FLASH if on else C.COL_GUN
+
+
+## 앞다리 보라색 발광 (발차기 예고 — 패링 불가). on = false 면 원래 색
+var leg_glow := false
+var gun_flash := false
+
+func set_leg_glow(on: bool, pulse := 1.0) -> void:
+	leg_glow = on
+	for n in ["ThighFShape", "LegFShape"]:
+		var sh := part(n)
+		if sh != null:
+			sh.color = C.COL_LIMB_FRONT.lerp(C.COL_KICK, 0.75 * pulse) if on else C.COL_LIMB_FRONT
+
+
+## 부위들의 전역 다각형 [{ xf, pts }] — 어둠 위 예고 층이 같은 모양을 다시 그릴 때
+func part_polys(names: Array) -> Array:
+	var out := []
+	for n in names:
+		var sh := part(n)
+		if sh != null and sh.is_visible_in_tree():
+			out.append({ "xf": sh.global_transform, "pts": sh.polygon })
+	return out
 
 
 ## 흰 테두리 (휘청 깜빡임)

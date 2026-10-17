@@ -106,6 +106,92 @@ const P1_GAP := 0.3                    ## 패턴 사이 공백 (자리 잡는 �
 const REPOSITION_MAX := 0.23           ## 자리 잡는 대시 최대 시간 (웅크림 0.15 + 이것 ≤ 0.4)
 const PATTERN_NAMES := { 1: "① 슬라이드 사격", 2: "② 돌진 건카타", 3: "③ 점프 사격", 4: "④ 속사", 5: "⑤ 도탄 사격" }
 
+# ---------------------------------------------------------------- 패턴 ③ 점프 사격 (페이즈 2부터)
+const JS_PREP := 0.15                  ## 웅크림
+const JS_TIME := 0.85                  ## 체공 (포물선)
+const JS_HEIGHT := 92.0                ## 높이 뛰어오름 (px)
+const JS_LAND_OFFSET := 56.0           ## 플레이어에서 이만큼 떨어진 곳에 착지 (내 쪽)
+const JS_SHOTS := [0.3, 0.55]          ## 뛰어오른 뒤 발사 시각 (간격 0.25초) — 공중에서 아래 대각선
+const JS_AIM := 0.3                    ## 원이 줄어드는 시간
+const JS_WAVE_SPEED := 300.0           ## 착지 충격파 (보라색, 패링 불가 — 점프로 피함) 좌우로 퍼지는 속도
+const JS_WAVE_H := 8.0                 ## 충격파 높이 (바닥에서)
+const JS_WAVE_RANGE := 300.0           ## 충격파가 사라지는 거리
+const JS_LAND_PITCH := 1.4             ## 착지 쿵: explosion.wav 피치
+const JS_LAND_VOL := 0.5
+const JS_LAND_SHAKE := 5.0
+const JS_OPEN := 0.5                   ## 착지 후 경직 = 휘청과 같이 반격 가능
+
+# ---------------------------------------------------------------- 패턴 ⑤ 도탄 사격 (페이즈 2부터)
+const RS_PREP := 0.2                   ## aim_up 예고 + boss_armor.wav (피치 1.5, 금속 "팅")
+const RS_TING_PITCH := 1.5
+const RS_FIRST := 0.5                  ## 예고 시작 → 1번째 발사
+const RS_GAP := 0.4                    ## 2연발 간격
+const RS_AIM := 0.5                    ## 원이 줄어드는 시간 (원은 플레이어 몸 둘레 + 날아오는 방향 화살표)
+const RS_MIN_ANGLE := 10.0             ## 반사면에 너무 비스듬하면 안 씀 (°)
+const RS_RECOVER := 0.2
+## 방향 패링 각도 = Config.shot.DIRECTIONAL_PARRY_ANGLE (60°)
+
+# ---------------------------------------------------------------- 건카타 발차기 (페이즈 2부터 2타 대신 섞임)
+const KICK_CHANCE := 0.5               ## 2타가 발차기로 바뀔 확률
+const KICK_READY := 0.3                ## kick_ready — 다리 보라색 발광 (패링 불가, 점프로 피함)
+const KICK_ACTIVE := 0.1
+const KICK_BOX := Vector2(34, 20)      ## 발차기 판정 (바닥 근처 — 점프하면 넘음)
+const KICK_LUNGE := 16.0
+
+# ---------------------------------------------------------------- 속사 가짜 움찔 (페이즈 2부터)
+const FAKE_CHANCE := 0.6               ## 정적 중 가짜 움찔이 나올 확률 (한 판에 최대 FAKE_MAX 번)
+const FAKE_MAX := 1
+const FAKE_WINDOW := 0.3               ## 가짜 움찔 뒤 이 시간 안에 베면 (헛스윙) → 즉시 사격
+const FAKE_PUNISH := 0.12              ## 헛스윙 벌: 이 시간 뒤 바로 쏨 (원도 이 길이)
+
+# ---------------------------------------------------------------- 페이즈 (체력: 1 = 9 ~ 7 · 2 = 6 ~ 4 폭우 · 3 = 3 ~ 1 정전)
+const PHASE_HP := { 1: 9, 2: 6, 3: 3 } ## 페이즈 시작 체력
+const P2_PATTERNS := [1, 2, 3, 4, 5]   ## 무작위, 같은 패턴 연속 금지
+const P2_GAP := 0.3
+const P2_SLIDE_SHOTS := 4              ## 슬라이드 사격 4연발
+const P3_GAP := 0.2
+const P3_CHAIN := true                 ## 패턴 두 개를 휘청 없이 이어 붙임 — 두 번째 패턴 끝에만 휘청
+
+# ---------------------------------------------------------------- 페이즈 전환 연출 (실제 시간, 여기서만 긴 슬로우 · 레터박스)
+const TR_SLOW := 0.3                   ## 전환 중 시간 속도
+const TR_SLOW_IN := 0.3                ## 1.0 → TR_SLOW
+const TR_LETTERBOX := 0.25             ## 레터박스 들어오는 / 나가는 시간
+const LETTERBOX_H := 24.0              ## 레터박스 높이 (px, 위 · 아래)
+const TR_ROAR_AT := 0.3                ## roar 포즈 + boss_intro 60%
+const TR_ROAR_VOL := 0.6
+## 1 → 2: 물탱크를 쏨 → 폭발 → 폭우 → 네온 간판 떨어짐
+const TR2_SHOOT_AT := 1.0
+const TR2_RAIN_AT := 1.35
+const TR2_SIGN_AT := 1.6
+const TR2_RETURN_AT := 2.3             ## time_return
+const TR2_END := 2.9
+const TR2_LINE := "…재밌군."
+const TR_TANK_SHAKE := 8.0
+## 2 → 3: 조명 3개를 차례로 쏨 → 마지막이 깨지며 flashbang + 하얀 화면 0.2초 → 정전
+const TR3_LIGHTS_AT := [0.9, 1.25, 1.6]
+const TR3_WHITE := 0.2
+const TR3_MUFFLE := 0.8                ## flashbang "삐-" 여운 동안 다른 효과음 로우패스
+const TR3_RETURN_AT := 2.4
+const TR3_END := 3.0
+const TR3_LINE := "불 꺼. 어둠 속에서도 맞힐 수 있나 보자."
+const LINE_TIME := 2.2                 ## 대사 표시 시간 (실제 시간)
+const LINE_CPS := 18.0
+
+# ---------------------------------------------------------------- 무대 (BossArena)
+const RAIN_COUNT := 70                 ## 화면 안 빗줄기 수 (폭우 = 2배)
+const RAIN_SPEED := 420.0
+const RAIN_LEN := 7.0
+const RAIN_COLOR := Color(0.55, 0.65, 0.85, 0.22)
+const DARKNESS := 0.9                  ## 정전 어둠 (0 ~ 1)
+const MUZZLE_LIGHT_R := 80.0           ## 총구 섬광 빛 반지름 (정전 중 주변이 보임)
+const MUZZLE_LIGHT_TIME := 0.14
+const LIGHTNING_P12 := Vector2(8.0, 15.0)   ## 번개 간격 (초) — 페이즈 1·2 (분위기용)
+const LIGHTNING_P3 := Vector2(4.0, 6.0)     ## 페이즈 3
+const LIGHTNING_SECOND := 0.1          ## 1프레임 하얗게 → 이 뒤 약하게 한 번 더
+const LIGHTNING_THUNDER := 0.5         ## → 이 뒤 thunder.wav
+const LIGHTNING_REVEAL := 0.35         ## 번개 뒤 어둠이 돌아오는 시간
+const SIGN_SIZE := Vector2(10, 30)     ## 떨어진 네온 간판 (바닥 장애물 + 도탄 반사판)
+
 # ---------------------------------------------------------------- 키포즈 (예고 정지 → 1프레임 전환 → 여운 정지)
 const SNAP_GHOST_TIME := 0.16          ## 전환 순간 남는 이전 포즈 잔상 수명
 const SNAP_GHOST_ALPHA := 0.55
@@ -128,6 +214,7 @@ const COL_RIM_FLASH := Color("#ffffff") ## 휘청 중 깜빡이는 흰 테두리
 const COL_GHOST := Color("#7aa6e6")    ## 잔상 · 스미어 색
 const COL_DUST := [Color("#3a4058"), Color("#545a72"), Color("#2a2f44")]
 const COL_GUN_FLASH := Color("#ff2b3d") ## 권총 빨간 점멸 (공격 예고 — 몸 색이 아님)
+const COL_KICK := Color("#b14dff")     ## 발차기 · 충격파 보라 (패링 불가 예고)
 
 # ---------------------------------------------------------------- 배경음
 const RAIN_VOL := 0.35                 ## 보스방 빗소리 (Config.audio.SFX_RAIN 과 같게)

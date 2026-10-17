@@ -27,6 +27,12 @@ func _draw() -> void:
 	var W: float = Config.view.w
 	var H: float = Config.view.h
 	var ui: Color = C.ui
+	# 레터박스 (철견 페이즈 전환 연출)
+	var lb: float = main.letterbox
+	if lb > 0.0:
+		var bh: float = roundf(CheolgyeonConfig.LETTERBOX_H * (1.0 - pow(1.0 - lb, 2.0)))
+		draw_rect(Rect2(0, 0, W, bh), Color.BLACK)
+		draw_rect(Rect2(0, H - bh, W, bh), Color.BLACK)
 	# 남은 적 수 · 켜진 디버그
 	Fonts.text(self, "남은 적 %d" % main.enemies().size(), Vector2(8, 10), 10, Color(ui, 0.85), "left", true, true)
 	var flags := []
@@ -94,6 +100,16 @@ func _draw_boss() -> void:
 			draw_rect(r.grow(1.0), Color(ui, 0.25), false, 1.0)
 		else:
 			draw_rect(r, Color(ui, 0.4), false, 1.0)
+	# 대사 (화면 아래, 한 자씩)
+	var ls: Dictionary = b.line_state()
+	if not ls.is_empty():
+		var H: float = Config.view.h
+		var full: String = ls.text
+		var k := clampi(int(ls.t * ls.cps), 0, full.length())
+		var y := H - 36.0
+		draw_rect(Rect2(0, y - 8, W, 16), Color(0, 0, 0, 0.55))
+		Fonts.text(self, CheolgyeonConfig.NAME, Vector2(10, y), 9, Color(ui, 0.8), "left", false, true)
+		Fonts.text(self, full.substr(0, k), Vector2(W / 2.0, y), 11, Color.WHITE, "center", false, true)
 	if b.viewer:
 		_draw_pose_viewer(b)
 	elif Debug.debug_mode():
@@ -108,7 +124,7 @@ func _draw_boss_timing(b: BossCheolgyeon) -> void:
 	var W: float = Config.view.w
 	var ui: Color = Config.colors.ui
 	var red: Color = Config.colors.attack
-	var parts := [[d.name, ui]]
+	var parts := [["P%d %s%s" % [b.phase, d.name, " (이어 붙임 %d)" % d.chain if d.get("chain", 0) > 0 else ""], ui]]
 	if d.gap >= 0.0:
 		parts.append(["공백 %dms" % roundi(d.gap * 1000.0), red if d.gap > 0.4 + 1e-3 else Color(ui, 0.75)])
 	if d.first >= 0.0:

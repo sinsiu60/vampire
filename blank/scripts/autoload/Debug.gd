@@ -8,7 +8,7 @@ extends Node
 ##  F5 패링 타이밍 디버그 (조준선 옆 판정 창 바 + 입력 오차 ms)
 ##  F6 다음 방으로 바로 · F7 지금 방 즉시 클리어 — 디버그 빌드(에디터 실행 · 디버그 내보내기)에서만
 ##  F8 철견 즉시 휘청 (반격 베기 감각 테스트) · F9 철견 포즈 뷰어 (숫자 키로 포즈, Shift+숫자 = 11번째부터)
-##  F10 철견 패턴 강제 (① 슬라이드 사격 → ② 돌진 건카타 → ④ 속사 차례로)
+##  F10 철견 패턴 강제 (① ~ ⑤ 차례로) · F11 철견 페이즈 순환 (1 → 2 → 3, Shift+F11 = 다음 페이즈 전환 연출 그대로)
 ##     — 디버그 빌드에서만
 
 signal changed
@@ -77,7 +77,7 @@ func _input(event: InputEvent) -> void:
 				main.debug_next_room()
 			else:
 				main.debug_clear_room()
-		KEY_F8, KEY_F9, KEY_F10:
+		KEY_F8, KEY_F9, KEY_F10, KEY_F11:
 			var b = _boss()
 			if not debug_mode() or b == null or menu_open:
 				return
@@ -85,6 +85,8 @@ func _input(event: InputEvent) -> void:
 				b.debug_stagger()
 			elif event.physical_keycode == KEY_F10:
 				b.debug_force_pattern()
+			elif event.physical_keycode == KEY_F11:
+				b.debug_next_phase(event.shift_pressed)
 			else:
 				b.set_viewer(not b.viewer)
 		_:
