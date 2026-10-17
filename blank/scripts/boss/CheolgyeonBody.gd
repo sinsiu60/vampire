@@ -23,6 +23,10 @@ var _group: CanvasGroup
 var _rig: Node2D
 var _shapes: Array[Polygon2D] = []
 var _muzzles: Array[Node2D] = []
+var _arms: Array[Node2D] = []    # [ArmF, ArmB]
+var _guns: Array[Node2D] = []    # [GunF, GunB]
+var _gun_shapes: Array[Polygon2D] = []
+var _aim := [NAN, NAN]           # 팔 조준 (전역 각도, NAN = 포즈 그대로)
 var _ghosts: Array = []          # 잔상 { polys: [{ xf, pts }], t, life, alpha }
 var _smears: Array = []          # 스미어 { polys: [PackedVector2Array (전역)], ticks }
 
@@ -34,6 +38,10 @@ func _ready() -> void:
 	_anim.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_PHYSICS   # 월드 시간 (히트스톱이면 멈춤)
 	_collect(_rig)
 	_muzzles = [_rig.find_child("MuzzleF", true, false), _rig.find_child("MuzzleB", true, false)]
+	_arms = [_rig.find_child("ArmF", true, false), _rig.find_child("ArmB", true, false)]
+	_guns = [_rig.find_child("GunF", true, false), _rig.find_child("GunB", true, false)]
+	_gun_shapes = [_rig.find_child("GunFShape", true, false), _rig.find_child("GunBShape", true, false)]
+	_anim.mixer_applied.connect(_apply_aim)
 	facing = facing
 	pose("idle")
 
@@ -82,6 +90,37 @@ func snap(name: String) -> void:
 ## 지금 포즈의 잔상 하나 (대시 등)
 func ghost(alpha := C.GHOST_ALPHA, life := C.GHOST_TIME) -> void:
 	_ghosts.append({ "polys": _polys(), "t": 0.0, "life": life, "alpha": alpha })
+
+
+## 팔 i (0 앞 · 1 뒤) 가 권총으로 전역 각도 angle 을 겨누게 (포즈 위에 덮어씀). NAN = 포즈 그대로
+func set_aim(i: int, angle: float) -> void:
+	_aim[i] = angle
+	_apply_aim()
+
+
+func clear_aim() -> void:
+	_aim = [NAN, NAN]
+
+
+## 포즈가 적용될 때마다 조준을 덮어씀: 총(팔 끝 + 총 회전) 방향이 angle 이 되게 팔을 돌림
+func _apply_aim() -> void:
+	if _rig == null:
+		return
+	var inv := _rig.global_transform.affine_inverse()
+	for i in 2:
+		var a: float = _aim[i]
+		if is_nan(a) or _arms[i] == null:
+			continue
+		var la := inv.basis_xform(Vector2.from_angle(a)).angle()           # Rig 기준 각도 (뒤집힌 것까지)
+		var parent := _arms[i].get_parent() as Node2D
+		var pr := (inv * parent.global_transform).get_rotation()
+		_arms[i].rotation = la - pr - _guns[i].rotation
+
+
+## 권총 빨간 점멸 (공격 예고). on = false 면 원래 색
+func set_gun_flash(i: int, on: bool) -> void:
+	if _gun_shapes.size() > i and _gun_shapes[i] != null:
+		_gun_shapes[i].color = C.COL_GUN_FLASH if on else C.COL_GUN
 
 
 ## 흰 테두리 (휘청 깜빡임)

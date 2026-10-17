@@ -55,6 +55,57 @@ const PARRY_SLOW := 0.5                ## 일반 패링 뒤 시간 속도
 const PARRY_SLOW_TIME := 0.1           ## 그 지속 (실제 시간)
 ## 풀 패링 슬로우 시퀀스 (slowmo_in → loop → time_return) 는 페이즈 전환 · 피날레에만 (3·4단계)
 
+# ---------------------------------------------------------------- 사격 공통 (히트스캔 · 조준선 · 줄어드는 원)
+const SHOT_PITCH := 0.85               ## gun_fire 피치 (일반 적보다 묵직하게)
+const AIM_LOCK := 0.15                 ## 발사 이 시간 전부터 조준 고정 (흰 깜빡임)
+const LASER_ALPHA_MIN := 0.3
+const LOCK_BLINKS := 2
+const LOCK_BLINK_TIME := 0.03
+const REFLECT_PITCH := 0.9             ## 반사탄이 철견에 맞아 휘청 — boss_armor 피치
+
+# ---------------------------------------------------------------- 패턴 ① 슬라이드 사격
+const SLIDE_SHOT_MIN_DIST := 120.0     ## 이 거리 이상일 때만 (가까우면 먼저 물러나는 대시)
+const SLIDE_SHOT_PREP := 0.2           ## 몸을 낮추는 예고 (gun_cock.wav 와 동시에 시작)
+const SLIDE_SHOT_COUNT := 3            ## 연발 수 (페이즈 2: 4 — 3단계)
+const SLIDE_SHOT_FIRST := 0.25         ## 슬라이드 시작 → 첫 발
+const SLIDE_SHOT_GAP := 0.30           ## 탄 간격
+const SLIDE_SHOT_AIM := 0.45           ## 탄마다 원이 줄어드는 시간 (패턴 시작보다 일찍 시작하지는 않음)
+const SLIDE_SHOT_PASS := 80.0          ## 플레이어를 지나쳐 이만큼 반대편까지 미끄러짐
+const SLIDE_SHOT_MAX := 1.4            ## 슬라이드 최대 시간
+const SLIDE_SHOT_RECOVER := 0.15       ## 마지막 탄 뒤 여운
+
+# ---------------------------------------------------------------- 패턴 ② 돌진 건카타
+const WHIP_STOP := 30.0                ## 플레이어 앞 이 거리까지 대시 (몸 중심끼리)
+const WHIP_DASH_MAX := 0.45            ## 그 대시 최대 시간
+const WHIP_WINDUP := 0.2               ## 1타 예고 (whip_windup, 권총 빨간 점멸)
+const WHIP_GAP := 0.25                 ## 1타 → 2타 내려치는 순간 사이
+const WHIP_DELAY := 0.5                ## 3타: whip_windup 으로 멈칫하는 시간 (지연 공격)
+const WHIP_REWIND := 0.05              ## 내려친 뒤 다음 예고 자세로 돌아가기까지
+const WHIP_FLASH := 0.2                ## 내려치기 전 권총이 빨갛게 점멸하는 시간
+const WHIP_ACTIVE := 0.07              ## 내려치기 판정 시간
+const WHIP_BOX := Vector2(30, 46)      ## 판정 (몸 앞)
+const WHIP_LUNGE := 12.0               ## 내려칠 때 앞으로 돌진 (px)
+const WHIP_LUNGE_TIME := 0.05
+const WHIP_SHAKE := 4.0                ## 내려칠 때 화면 흔들림
+const WHIP_TRAIL := Color("#9AA0B4")   ## 회색 반달 궤적
+const WHIP_TRAIL_TIME := 0.1
+const WHIP_RECOVER := 0.2              ## 3타 뒤 여운
+const WHIP_PARRY_KNOCK := 320.0        ## 3타 패링: 크게 튕겨나는 속도 (휘청하며 미끄러짐)
+
+# ---------------------------------------------------------------- 패턴 ④ 속사 (짧은 결투)
+const DUEL_MIN_DIST := 110.0           ## 이보다 가까우면 먼저 물러나는 대시
+const DUEL_HOLD_MIN := 0.4             ## duel 포즈 정적
+const DUEL_HOLD_MAX := 0.8
+const DUEL_TWITCH := 0.1               ## 움찔 (진짜) → 이 뒤 원 시작
+const DUEL_DRAW := 0.3                 ## 원이 줄어드는 시간 = 뽑아서 쏘기까지
+const DUEL_RECOVER := 0.2              ## 쏜 뒤 여운
+
+# ---------------------------------------------------------------- 페이즈 1 루프 (체력 9 ~ 7)
+const P1_ORDER := [1, 2, 4]            ## 순서 고정: 슬라이드 사격 → 돌진 건카타 → 속사
+const P1_GAP := 0.3                    ## 패턴 사이 공백 (자리 잡는 이동이 있으면 이동이 대신 — 0.4초 이내)
+const REPOSITION_MAX := 0.23           ## 자리 잡는 대시 최대 시간 (웅크림 0.15 + 이것 ≤ 0.4)
+const PATTERN_NAMES := { 1: "① 슬라이드 사격", 2: "② 돌진 건카타", 3: "③ 점프 사격", 4: "④ 속사", 5: "⑤ 도탄 사격" }
+
 # ---------------------------------------------------------------- 키포즈 (예고 정지 → 1프레임 전환 → 여운 정지)
 const SNAP_GHOST_TIME := 0.16          ## 전환 순간 남는 이전 포즈 잔상 수명
 const SNAP_GHOST_ALPHA := 0.55
@@ -76,6 +127,7 @@ const COL_RIM := Color("#7aa6e6")      ## 옅은 파란 림라이트 (실루엣 
 const COL_RIM_FLASH := Color("#ffffff") ## 휘청 중 깜빡이는 흰 테두리
 const COL_GHOST := Color("#7aa6e6")    ## 잔상 · 스미어 색
 const COL_DUST := [Color("#3a4058"), Color("#545a72"), Color("#2a2f44")]
+const COL_GUN_FLASH := Color("#ff2b3d") ## 권총 빨간 점멸 (공격 예고 — 몸 색이 아님)
 
 # ---------------------------------------------------------------- 배경음
 const RAIN_VOL := 0.35                 ## 보스방 빗소리 (Config.audio.SFX_RAIN 과 같게)
@@ -90,6 +142,6 @@ const RADIO_TIME := 3.2
 const EXIT_DELAY := 2.0                ## 처치 → 출구 문 열림
 
 # ---------------------------------------------------------------- 포즈 (CheolgyeonBody.tscn 의 AnimationPlayer 애니메이션 이름)
-## F9 포즈 뷰어 순서 = 숫자 키 1 ~ 0, Shift+1 ~ 6
+## F9 포즈 뷰어 순서 = 숫자 키 1 ~ 0, Shift+1 ~ 8
 const POSES := ["idle", "dash", "slide", "whip_windup", "whip_smash", "kick_ready", "kick", "jump", "air_fire", "land",
-	"duel", "draw_fire", "aim_up", "stagger", "roar", "crouch", "block"]
+	"duel", "draw_fire", "aim_up", "stagger", "roar", "crouch", "block", "twitch"]

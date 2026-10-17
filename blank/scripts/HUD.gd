@@ -96,6 +96,37 @@ func _draw_boss() -> void:
 			draw_rect(r, Color(ui, 0.4), false, 1.0)
 	if b.viewer:
 		_draw_pose_viewer(b)
+	elif Debug.debug_mode():
+		_draw_boss_timing(b)
+
+
+## 디버그: 패턴 이름 + "패턴 시작 → 첫 플레이어 행동" · 행동 간격 · 패턴 사이 공백 (ms, 1초 넘으면 빨강)
+func _draw_boss_timing(b: BossCheolgyeon) -> void:
+	var d: Dictionary = b.dbg
+	if d.is_empty():
+		return
+	var W: float = Config.view.w
+	var ui: Color = Config.colors.ui
+	var red: Color = Config.colors.attack
+	var parts := [[d.name, ui]]
+	if d.gap >= 0.0:
+		parts.append(["공백 %dms" % roundi(d.gap * 1000.0), red if d.gap > 0.4 + 1e-3 else Color(ui, 0.75)])
+	if d.first >= 0.0:
+		parts.append(["시작→행동 %dms" % roundi(d.first * 1000.0), red if d.first > 1.0 else Color(ui, 0.75)])
+	if d.since_prev >= 0.0:
+		parts.append(["앞 패턴 행동→ %dms" % roundi(d.since_prev * 1000.0), red if d.since_prev > 1.0 else Color(ui, 0.75)])
+	if d.max_gap > 0.0:
+		parts.append(["행동 간격 최대 %dms" % roundi(d.max_gap * 1000.0), red if d.max_gap > 1.0 else Color(ui, 0.75)])
+	# 가운데 정렬로 한 줄: 조각마다 폭을 재서 이어 붙임
+	var y := 30.0
+	var texts := parts.map(func(q): return q[0])
+	var full := "  ·  ".join(texts)
+	var w_total := Fonts.width(full, 9, false, true)
+	var x := roundf(W / 2.0 - w_total / 2.0)
+	for i in parts.size():
+		var tx: String = parts[i][0] + ("  ·  " if i < parts.size() - 1 else "")
+		Fonts.text(self, parts[i][0], Vector2(x, y), 9, parts[i][1], "left", false, true)
+		x += Fonts.width(tx, 9, false, true)
 
 
 func _draw_pose_viewer(b: BossCheolgyeon) -> void:

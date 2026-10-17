@@ -64,6 +64,9 @@ const POSES := {
 	# (보조) 대시 · 점프 전 웅크림
 	"crouch": { "hip": Vector2(0, -17), "torso": 0.45, "head": -0.35, "coat": 0.4,
 		"thigh_f": -0.95, "shin_f": 1.5, "thigh_b": 0.35, "shin_b": 0.9, "arm_f": 0.5, "gun_f": -0.3, "arm_b": 1.55, "gun_b": -0.5 },
+	# (보조) 속사 움찔: 어깨가 튀고 손이 권총 쪽으로 (진짜 뽑기 0.3초 전)
+	"twitch": { "hip": Vector2(0, -23), "torso": 0.1, "head": 0.25, "coat": 0.05,
+		"thigh_f": -0.3, "shin_f": 0.12, "thigh_b": 0.3, "shin_b": 0.06, "arm_f": 1.05, "gun_f": -0.9, "arm_b": 1.5, "gun_b": -1.2 },
 	# (보조) 권총으로 칼을 막음
 	"block": { "hip": Vector2(0, -23), "torso": -0.15, "head": 0.05, "coat": -0.2,
 		"thigh_f": -0.35, "shin_f": 0.3, "thigh_b": 0.35, "shin_b": 0.1, "arm_f": -1.05, "gun_f": -0.6, "arm_b": 1.85, "gun_b": -0.6 },

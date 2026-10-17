@@ -483,7 +483,10 @@ func _resolve_shots() -> void:
 				continue
 			p.mark_used()
 			report_timing(ts - s.fire_t, "ok")
-			_parry_shot(s)
+			if s.get("boss", false):
+				_parry_boss_shot(s)
+			else:
+				_parry_shot(s)
 			continue
 		if TimeManager.world_time > s.fire_t + Sh.PARRY_LATE + eps:
 			s.done = true
@@ -528,6 +531,58 @@ func boss_parry_fx(pos: Vector2, angle: float) -> void:
 	effects.burst(pos, 12, CC.parry, 240.0, angle, 1.2, 0.24, { "glow": true, "streak": true })
 	effects.burst(pos, 5, CC.parry_hot, 120.0, 0.0, PI, 0.3, { "glow": true })
 	Audio.parry()
+
+
+## 철견 사격: 기존 히트스캔 · 조준선 · 원 그대로 (MIN_SHOT_GAP 규칙 밖). bl = { gun, aim, aim_time, role }
+func fire_boss_shot(b: BossCheolgyeon, bl: Dictionary) -> void:
+	var Sh: Dictionary = Config.shot
+	var col: Color = Config.colors.attack
+	var aim: float = bl.aim
+	var m := b.body.muzzle(bl.gun)
+	var hit := hitscan(m, aim, Sh.RANGE, true, false)
+	effects.add_tracer(m, hit.pos, Sh.TRACER_WIDTH, col, Sh.TRACER_FRAMES, true)
+	effects.burst(m, 5, col, 90.0, aim, 0.5, 0.12, { "glow": true })
+	effects.approach_flash(m)
+	Audio.shot(CG.SHOT_PITCH)
+	if hit.wall:
+		effects.burst(hit.pos, 7, col, 110.0, aim + PI, 1.1, 0.2, { "glow": true, "streak": true })
+	if hit.player:
+		pending_shots.append({ "shooter": b, "muzzle": m, "fire_t": TimeManager.world_time, "fire_real": TimeManager.real_time,
+			"angle": aim, "parryable": true, "done": false, "aim_time": bl.aim_time, "boss": true, "role": bl.role })
+
+
+## 철견 탄 패링: 모두 일반 패링 연출 (슬로우 시퀀스 없음). 콤보 마지막 탄(role = stagger)이면
+## 반사탄이 철견에 맞고 (boss_armor) 철견 휘청 → 반격 기회
+func _parry_boss_shot(s: Dictionary) -> void:
+	var p := player
+	var b: BossCheolgyeon = s.shooter
+	var back: float = s.angle + PI
+	var spark: Vector2 = p.center() + Vector2.from_angle(back) * float(Config.slash.radius) * 0.6
+	boss_parry_fx(spark, back)
+	effects.approach_success(s.muzzle)
+	if not is_instance_valid(b) or b.dead:
+		return
+	if s.role == "stagger":
+		var c := b.center()
+		effects.add_tracer(p.center(), c, Config.shot.REFLECT_TRACER_WIDTH, Config.colors.parry, Config.shot.TRACER_FRAMES)
+		effects.burst(c, 10, Config.colors.parry, 220.0, (c - p.center()).angle() + PI, 1.0, 0.24, { "glow": true, "streak": true })
+		Audio.boss_armor(CG.REFLECT_PITCH)
+		b.stagger()
+	else:
+		# 일반 패링: 튕겨 나간 탄이 옆으로 빗나감
+		var off := back + randf_range(-0.6, 0.6)
+		effects.add_tracer(p.center(), raycast_wall(p.center(), off, 160.0), 1.0, Config.colors.parry, 2)
+
+
+## ② 건카타 근접 패링: 1·2타 = 일반 패링, 3타 = 일반 패링 + 철견이 크게 튕겨나며 휘청
+func _parry_whip(b: BossCheolgyeon, i: int) -> void:
+	var p := player
+	p.mark_used()
+	boss_parry_fx(p.tip(), p.slash_angle)
+	if i == 2:
+		add_shake(CG.WHIP_SHAKE * 1.5, 0.2, p.slash_angle)
+		Audio.boss_armor(CG.REFLECT_PITCH)
+	b.on_whip_parried(i)
 
 
 ## 휘청 중 베기가 철견에 닿음 = 반격 베기 (플레이어는 Player._start_slash 에서 이미 자동 돌진)
@@ -648,6 +703,11 @@ func _resolve_combat() -> void:
 			if e is EnemyMelee and e.parry_vulnerable():
 				if p.slash_hits_rect(e.threat_box(), reach) or p.slash_hits_rect(e.body_rect(), reach):
 					_parry_melee(e)
+		# 철견 건카타 내려치기
+		if boss != null and is_instance_valid(boss) and not boss.dead and not p.slash_used:
+			var wi := boss.whip_vulnerable()
+			if wi >= 0 and (p.slash_hits_rect(boss.threat_box(), reach) or p.slash_hits_rect(boss.body_rect(), reach)):
+				_parry_whip(boss, wi)
 	# 2) 칼이 적 몸통에 직접 닿음 → 즉사
 	if S.direct_kill and p.is_slashing() and p.slash_t < S.hit_time:
 		for e in enemies():
