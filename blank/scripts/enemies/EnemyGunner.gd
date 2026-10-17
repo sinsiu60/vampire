@@ -6,7 +6,9 @@ class_name EnemyGunner
 
 var aim := PI                    ## 조준 각도 (전역, 라디안)
 var cool := 0.0                  # 다음 조준까지
-var next_parryable := true       ## 이번 사격이 패링 가능한가 (보라 = 불가, 구조만)
+var next_type := "normal"        ## 이번 사격의 공격 종류 (Config.ATK_*) — 보라 EVADE = 패링 불가
+var next_parryable: bool:        ## 이번 사격이 패링 가능한가
+	get: return next_type != Config.ATK_EVADE
 var last_fire_t := -INF          ## 마지막 발사 시각 (월드 시간)
 var laser_end := Vector2.ZERO    ## 조준선 끝점 (벽까지, 전역)
 
@@ -62,8 +64,13 @@ func approach_infos() -> Array:
 	if not is_aiming():
 		return []
 	return [{ "pos": muzzle(), "remaining": remaining(), "aim_time": cfg.AIM_TIME, "locked": is_locked(),
-		"k": clampf(t / lock_start(), 0.0, 1.0), "parryable": next_parryable, "fire_t": expected_fire_t(),
+		"k": clampf(t / lock_start(), 0.0, 1.0), "parryable": next_parryable, "attack_type": next_type, "fire_t": expected_fire_t(),
 		"owner": self, "aim": aim, "t": t }]
+
+
+## 다음 사격 종류. 보통 총잡이 = NORMAL (unparryable_chance 확률로 EVADE). 더미는 번갈아
+func _pick_attack_type() -> String:
+	return Config.ATK_EVADE if randf() < cfg.unparryable_chance else Config.ATK_NORMAL
 
 
 func _aim_at(player: Player) -> void:
@@ -106,7 +113,7 @@ func _physics_process(delta: float) -> void:
 				cool -= delta
 				if cool <= 0.0 and sees:
 					set_state("aim")
-					next_parryable = randf() >= C.unparryable_chance
+					next_type = _pick_attack_type()
 		"aim":
 			walk(0, 0.0, C.accel * 2.0, delta)
 			if player.dead:

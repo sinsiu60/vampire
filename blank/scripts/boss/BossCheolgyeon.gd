@@ -31,7 +31,7 @@ var viewer := false              ## F9 포즈 뷰어 — 로직 멈춤, 숫자 �
 var body: CheolgyeonBody
 var arena: BossArena
 var pattern := 0                 ## 지금 패턴 번호 (0 = 패턴 사이)
-var bullets: Array = []          ## 사격 { gun, fire_t, aim, target, aim_time, role(normal|stagger), kind(shot|ricochet), fired, laser_end, bounce, dir2 }
+var bullets: Array = []          ## 사격 { gun, fire_t, aim, target, aim_time, role(normal|stagger|opening|finale), type(Config.ATK_*), kind(shot|ricochet), fired, laser_end, bounce, dir2 }
 var waves: Array = []            ## 착지 충격파 { x, dir, dist }
 var forced := 0                  ## F10: 다음에 할 패턴
 var dbg := {}                    ## 패턴 타이밍 (HUD 디버그)
@@ -75,6 +75,7 @@ func _ready() -> void:
 	_setup({ "w": C.W, "h": C.H })
 	add_to_group("boss")
 	add_to_group("aimers")
+	add_to_group("counter_targets")
 	body = $Body
 	var room := get_parent().get_parent()
 	arena = room.get_node_or_null("Arena") as BossArena
@@ -252,18 +253,32 @@ func approach_infos() -> Array:
 		var tt: float = at - rem
 		var info := { "pos": body.muzzle(b.gun), "remaining": rem, "aim_time": at,
 			"locked": tt >= lock_time(at), "k": clampf(tt / maxf(lock_time(at), 0.001), 0.0, 1.0), "parryable": true,
-			"fire_t": b.fire_t, "owner": self, "aim": b.aim, "t": tt, "final": b.role == "stagger" }
+			"fire_t": b.fire_t, "owner": self, "aim": b.aim, "t": tt, "final": b.role == "stagger", "attack_type": b.type }
 		if b.kind == "ricochet" and p != null:
 			info.pos = p.center()
 			info.arrow = (b.bounce - p.center()).angle()
 		out.append(info)
+	# 기회 공격 근접 타격 (② 3타): 내려칠 권총 둘레에 2겹 원 — 감기 시작 → 타격 순간까지 줄어듦
+	if state == "w_combo" and not _whip.is_empty():
+		for i in 3:
+			if _whip.types[i] != Config.ATK_OPPORTUNITY or _whip.parried[i] or _whip.swung[i] or t < float(_whip.wind_at[i]):
+				continue
+			var at: float = float(_whip.times[i]) - float(_whip.wind_at[i])
+			var rem: float = float(_whip.times[i]) - t
+			var tt: float = at - rem
+			out.append({ "pos": body.muzzle(0), "remaining": rem, "aim_time": at, "locked": tt >= lock_time(at),
+				"k": clampf(tt / maxf(lock_time(at), 0.001), 0.0, 1.0), "parryable": true, "fire_t": wt + rem,
+				"owner": self, "aim": 0.0 if facing > 0 else PI, "t": tt, "melee": true, "attack_type": Config.ATK_OPPORTUNITY })
 	return out
 
 
+## role → 공격 종류: normal = NORMAL (1겹), stagger · opening · finale = OPPORTUNITY (2겹, 패링해야 기회)
 func _bullet(gun: int, fire_t: float, aim_time: float, role: String, kind := "shot") -> Dictionary:
 	var p := _player()
+	var r := role if _finisher() else "normal"
 	return { "gun": gun, "fire_t": fire_t, "aim": PI if facing < 0 else 0.0, "target": p.center() if p != null else center(),
-		"aim_time": aim_time, "role": role if _finisher() else "normal", "kind": kind, "fired": false,
+		"aim_time": aim_time, "role": r, "type": Config.ATK_NORMAL if r == "normal" else Config.ATK_OPPORTUNITY,
+		"kind": kind, "fired": false,
 		"laser_end": Vector2.ZERO, "bounce": Vector2.ZERO, "dir2": Vector2.RIGHT }
 
 
@@ -419,7 +434,7 @@ func whip_vulnerable() -> int:
 	if state != "w_combo" or _whip.is_empty():
 		return -1
 	for i in 3:
-		if _whip.kick and i == 1:
+		if _whip.types[i] == Config.ATK_EVADE:
 			continue
 		var T: float = _whip.times[i]
 		if not _whip.parried[i] and t >= T - Config.parry.melee_early and t < T + C.WHIP_ACTIVE:
@@ -428,13 +443,18 @@ func whip_vulnerable() -> int:
 
 
 ## 난타 패링됨: 1·2타는 그대로 이어감, 3타는 크게 튕겨나며 휘청 (이어 붙인 첫 패턴이면 휘청 없이 계속)
+## 난타 i 번째 타격의 공격 종류 (Config.ATK_*)
+func whip_type(i: int) -> String:
+	return String(_whip.types[i]) if not _whip.is_empty() else Config.ATK_NORMAL
+
+
 func on_whip_parried(i: int) -> void:
 	_whip.parried[i] = true
 	body.set_gun_flash(0, false)
 	if i == 2:
 		if not _whip.swung[2]:
 			_action(TimeManager.world_time)
-		if _finisher():
+		if _whip.types[i] == Config.ATK_OPPORTUNITY:
 			stagger()
 			velocity.x = -facing * C.WHIP_PARRY_KNOCK
 		else:
@@ -1300,7 +1320,10 @@ func _start_whip_combo() -> void:
 	var T2: float = T1 + (C.WHIP_REWIND + C.KICK_READY if kick else C.WHIP_GAP)
 	var T3: float = T2 + C.WHIP_REWIND + C.WHIP_DELAY + (0.05 if kick else 0.0)
 	_whip = { "times": [T1, T2, T3], "wind_at": [0.0, T1 + C.WHIP_REWIND, T2 + C.WHIP_REWIND + (0.05 if kick else 0.0)],
-		"parried": [false, false, false], "swung": [false, false, false], "wound": [false, false, false], "kick": kick }
+		"parried": [false, false, false], "swung": [false, false, false], "wound": [false, false, false], "kick": kick,
+		# 1타 NORMAL · 2타 NORMAL (발차기면 EVADE) · 3타 = 휘청 주는 마무리면 OPPORTUNITY
+		"types": [Config.ATK_NORMAL, Config.ATK_EVADE if kick else Config.ATK_NORMAL,
+			Config.ATK_OPPORTUNITY if _finisher() else Config.ATK_NORMAL] }
 	set_state("w_combo")
 
 
@@ -1350,8 +1373,8 @@ func _land_shockwave(main: Node) -> void:
 	_dust(global_position, 12, 0)
 	Audio.play("explosion", Config.audio.SFX_EXPLOSION * C.JS_LAND_VOL, C.JS_LAND_PITCH)
 	main.add_shake(C.JS_LAND_SHAKE, 0.25, PI / 2.0)
-	waves.append({ "x": global_position.x, "dir": -1, "dist": 0.0 })
-	waves.append({ "x": global_position.x, "dir": 1, "dist": 0.0 })
+	waves.append({ "x": global_position.x, "dir": -1, "dist": 0.0, "type": Config.ATK_EVADE })
+	waves.append({ "x": global_position.x, "dir": 1, "dist": 0.0, "type": Config.ATK_EVADE })
 	_action(TimeManager.world_time)
 	bullets.clear()
 	if _finisher():

@@ -251,8 +251,12 @@ func _physics_process(delta: float) -> void:
 
 ## 반격 베기 자동 돌진 { angle, speed } — 휘청 중인 철견이 없거나 멀면 빈 Dictionary
 func _counter_lunge() -> Dictionary:
-	var b = get_tree().get_first_node_in_group("boss")
-	if b == null or b.dead or not b.has_method("can_counter") or not b.can_counter():
+	var b = null
+	for n in get_tree().get_nodes_in_group("counter_targets"):   # 철견 · 연습 더미
+		if not n.dead and n.can_counter():
+			b = n
+			break
+	if b == null:
 		return {}
 	var to: Vector2 = b.center() - center()
 	if to.length() > CG.COUNTER_LUNGE_RANGE:

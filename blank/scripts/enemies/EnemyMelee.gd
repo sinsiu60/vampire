@@ -3,7 +3,9 @@ class_name EnemyMelee
 ## 근접 적: 크고 각진 몸 + 거대한 식칼.
 ## idle → (발견) chase → (사거리) windup 0.4초 (무기 빨간 점멸, 방향 고정) → attack (내딛으며 베기) → recover → chase
 
-var parryable := true            # 이번 공격이 패링 가능한가 (보라 = 불가, 구조만)
+var attack_type := "normal"      ## 이번 공격 종류 (Config.ATK_*) — 보라 EVADE = 패링 불가
+var parryable: bool:             # 이번 공격이 패링 가능한가
+	get: return attack_type != Config.ATK_EVADE
 
 
 func _ready() -> void:
@@ -32,7 +34,7 @@ func _physics_process(delta: float) -> void:
 				var gap: float = absf(d.x) - (C.w + Config.player.w) / 2.0
 				if gap <= C.attack_range and absf(d.y) < C.attack_height and is_on_floor():
 					set_state("windup")
-					parryable = randf() >= C.unparryable_chance
+					attack_type = Config.ATK_EVADE if randf() < C.unparryable_chance else Config.ATK_NORMAL
 				else:
 					walk(facing, C.speed, C.accel, delta)
 		"windup":    # 예고: 방향 고정 — 뒤로 넘어가면 헛친다

@@ -124,6 +124,37 @@ var approach := {                     # 발사 타이밍 원
 	"OFFSCREEN_MARGIN": 24.0,
 }
 
+# ---------------------------------------------------------------- 공격 종류 (모든 적 공통)
+## NORMAL = 빨간 1겹 원 · 빨간 점멸 — 구르기로 피하거나 패링 (철견: 피해 · 휘청 없음)
+## OPPORTUNITY = 빨간 2겹 원 + 0.15초 전 '칭' — 패링해야만 철견 휘청 (피해도 되지만 기회를 놓침)
+## EVADE = 보라 — 패링 불가, 구르기 무적 · 점프로만 피함
+const ATK_NORMAL := "normal"
+const ATK_OPPORTUNITY := "opportunity"
+const ATK_EVADE := "evade"
+
+var attack := {
+	"OPP_RING_GAP": 4.0,              # 2겹: 바깥 원이 안쪽 원보다 이만큼 큼 (px)
+	"OPP_RING_WIDTH": 2.0,            # 바깥 원 두께 (안쪽은 1px)
+	"OPP_RING_BRIGHT": 0.35,          # 바깥 원을 흰색 쪽으로 이만큼 밝게
+	"OPP_ALPHA_MIN": 0.6,             # 바깥 원 최소 투명도 (안쪽 원 0.3 보다 진하게 — 멀리서도 보이게)
+	"OPP_CHIME_LEAD": 0.15,           # 공격 이 시간 전 '칭' 하이라이트
+	"OPP_CHIME_SOUND": "boss_armor",  # 전용 소리가 없어 boss_armor 를 높은 피치로
+	"OPP_CHIME_PITCH": 1.8,
+	"OPP_CHIME_VOLUME": 0.4,
+	"OPP_GLINT_TIME": 0.15,           # 칭 순간 원 중심의 4갈래 반짝임
+	"OPP_GLINT_SIZE": 11.0,
+	"NORMAL_PARRY_HITSTOP": 4,        # 철견 NORMAL 패링: parry_chang + 히트스톱 4프레임 + 노란 불꽃 (피해 · 휘청 없음)
+}
+
+var dummy := {                        # 공격 종류 연습 더미 (rooms/test/room_attack_types.tscn): 세 종류를 번갈아 쏨
+	"ORDER": ["normal", "opportunity", "evade"],
+	"AIM_TIME": 0.8,
+	"COOLDOWN": 1.2,                  # 발사 후 다음 조준까지
+	"FIRST_DELAY": 0.8,
+	"STAGGER_TIME": 1.0,              # 기회 공격 패링 → 이 시간 동안 휘청 (베면 반격 명중)
+	"AGGRO_RANGE": 420.0,
+}
+
 var parry := { "melee_early": 0.1 }   # 근접 적 예고 마지막 이 시간 동안 베어도 패링 인정
 
 var aim_assist := {

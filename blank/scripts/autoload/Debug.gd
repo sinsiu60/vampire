@@ -10,6 +10,7 @@ extends Node
 ##  F8 철견 즉시 휘청 (반격 베기 감각 테스트) · F9 철견 포즈 뷰어 (숫자 키로 포즈, Shift+숫자 = 11번째부터)
 ##  F10 철견 패턴 강제 (① ~ ⑤ 차례로) · F11 철견 페이즈 순환 (1 → 2 → 3, Shift+F11 = 다음 페이즈 전환 연출 그대로)
 ##     — 디버그 빌드에서만
+##  F12 공격 종류 연습 방 (1겹 · 2겹 · 보라를 번갈아 쏘는 더미) ↔ 원래 방 — 디버그 빌드에서만
 
 signal changed
 
@@ -26,6 +27,7 @@ const SOUND_TEST := ["gun_cock", "quickdraw", "pistol_whip", "execute", "stagger
 var sound_i := -1
 var sync_i := -1
 var _rain: AudioStreamPlayer = null
+const ATTACK_ROOM := "res://rooms/test/room_attack_types.tscn"   ## F12 연습 방
 var menu_open := false           ## 옵션 메뉴가 열려 있으면 일시정지 유지 (Menu 가 세팅)
 
 
@@ -77,6 +79,13 @@ func _input(event: InputEvent) -> void:
 				main.debug_next_room()
 			else:
 				main.debug_clear_room()
+		KEY_F12:
+			var main := get_tree().get_first_node_in_group("game")
+			if not debug_mode() or main == null or menu_open:
+				return
+			GameState.room_override = "" if GameState.room_override == ATTACK_ROOM else ATTACK_ROOM
+			GameState.boss_checkpoint = {}
+			main.restart()
 		KEY_F8, KEY_F9, KEY_F10, KEY_F11:
 			var b = _boss()
 			if not debug_mode() or b == null or menu_open:

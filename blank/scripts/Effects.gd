@@ -243,6 +243,8 @@ static func draw_approach(ci: CanvasItem, c: Vector2, info: Dictionary, s := 1.0
 	# 목표 원 (1px 흰 외곽선)
 	ci.draw_arc(c, rt, 0.0, TAU, 32, Color(1, 1, 1, dim), 1.0)
 	# 줄어드는 원: 고정 전 빨강 1px (투명도 30% → 100%), 고정부터 흰색 2px
+	var X: Dictionary = Config.attack
+	var opp: bool = info.get("attack_type", Config.ATK_NORMAL) == Config.ATK_OPPORTUNITY
 	if info.locked:
 		ci.draw_arc(c, r, 0.0, TAU, 40, Color(1, 1, 1, dim), 2.0)
 	else:
@@ -250,6 +252,21 @@ static func draw_approach(ci: CanvasItem, c: Vector2, info: Dictionary, s := 1.0
 		var col: Color = Config.colors.attack if info.parryable else Config.colors.unparryable
 		col.a = lerpf(A.ALPHA_MIN, 1.0, k) * dim
 		ci.draw_arc(c, r, 0.0, TAU, 48, col, 1.0)
+	# 기회 공격 (OPPORTUNITY): 바깥에 한 겹 더 — 살짝 두껍고 밝게. 1겹(일반)과 한눈에 구분
+	if opp:
+		var ro: float = r + X.OPP_RING_GAP * s
+		var wo: float = maxf(1.0, X.OPP_RING_WIDTH * s)
+		if info.locked:
+			ci.draw_arc(c, ro, 0.0, TAU, 48, Color(1, 1, 1, dim), wo + 1.0)
+		else:
+			var oc: Color = Config.colors.attack.lerp(Color.WHITE, X.OPP_RING_BRIGHT)
+			oc.a = lerpf(X.OPP_ALPHA_MIN, 1.0, info.k) * dim
+			ci.draw_arc(c, ro, 0.0, TAU, 48, oc, wo)
+		# 공격 OPP_CHIME_LEAD 초 전부터 '칭' 반짝임 (원 중심의 4갈래 별 — 처음이 가장 크고 점점 작아짐)
+		var rem: float = info.remaining
+		if rem <= X.OPP_CHIME_LEAD and rem >= 0.0:
+			var u := clampf(1.0 - rem / X.OPP_CHIME_LEAD, 0.0, 1.0)
+			draw_glint(ci, c, X.OPP_GLINT_SIZE * s * (1.0 - 0.45 * u), (1.0 - 0.5 * u) * dim, u * 0.5)
 	# 도탄: 원 위의 작은 화살표 = 탄이 날아오는 방향 (그쪽으로 베어야 패링)
 	if info.has("arrow"):
 		var a: float = info.arrow
@@ -260,6 +277,20 @@ static func draw_approach(ci: CanvasItem, c: Vector2, info: Dictionary, s := 1.0
 		var ac: Color = Color(1, 1, 1, dim) if info.locked else Color(Config.colors.attack, dim)
 		ci.draw_colored_polygon(PackedVector2Array([tipp, back + n * 3.5, back - n * 3.5]), ac)
 		ci.draw_line(back, back + d * 4.0, ac, 1.0)
+
+
+## 4갈래 반짝임 (기회 공격 '칭'): 가는 마름모 두 개 + 옅은 노란 번짐
+static func draw_glint(ci: CanvasItem, c: Vector2, size: float, alpha: float, rot := 0.0) -> void:
+	var w := maxf(1.2, size * 0.14)
+	for k in 2:
+		var d := Vector2.from_angle(rot + k * PI / 2.0)
+		var n := d.orthogonal()
+		var L := size if k == 0 else size * 0.75
+		var pts := PackedVector2Array([c + d * L, c + n * w, c - d * L, c - n * w])
+		ci.draw_colored_polygon(pts, Color(Config.colors.parry, alpha * 0.35))
+		var pts2 := PackedVector2Array([c + d * L * 0.85, c + n * w * 0.5, c - d * L * 0.85, c - n * w * 0.5])
+		ci.draw_colored_polygon(pts2, Color(1, 1, 1, alpha))
+	ci.draw_circle(c, w * 1.2, Color(1, 1, 1, alpha))
 
 
 func is_offscreen(pos: Vector2) -> bool:
