@@ -1,7 +1,7 @@
 extends CharacterBody2D
 class_name Player
 const CG := preload("res://scripts/boss/CheolgyeonConfig.gd")   # 반격 베기 자동 돌진 수치
-## 플레이어: 이동 · 가변 점프(코요테 타임 + 점프 버퍼) · 마우스 방향 베기 + 돌진 · 흰 실루엣 그리기
+## 플레이어: 이동 · 가변 점프(코요테 타임 + 점프 버퍼) · 마우스 방향 베기 + 돌진 · 구르기 (Shift) · 흰 실루엣 그리기
 ## 노드 원점 = 발 중앙. 충돌 박스는 Config.player 의 w×h 로 _ready 에서 맞춤.
 
 signal slashed(angle: float)     ## 베기 시작 (효과음·패링 판정이 듣는다)
@@ -27,6 +27,16 @@ var _queued_slash := false       # 히트스톱 중 누른 클릭 (월드가 다
 var _lunge := false              # 지금 돌진이 반격 베기 자동 돌진인가 (끝나면 멈춤)
 var _stun := 0.0                 # 경직 남은 시간 (철견이 막으면 0.2초) — 그동안 조작 불가
 var counter_lunges := 0          ## 반격 베기 자동 돌진 횟수 (테스트 · 디버그)
+
+# ---- 구르기 (Config.roll): 이동 방향(없으면 바라보는 방향)으로 64px · 0.3초, 처음 0.25초 무적, 바닥에서만
+var roll_enabled := true         ## 피날레 결투처럼 받아치기만 하는 곳에서 끔
+var rolls := 0                   ## 구른 횟수 (테스트 · 디버그)
+var _roll_t := -1.0              # 구르기 경과 (-1 = 구르는 중 아님)
+var _roll_dir := 1
+var _roll_cd := 0.0              # 다음 구르기까지 (구르기가 끝난 뒤부터 셈)
+var _roll_ghost := 0.0
+var _roll_dust := 0.0
+var _queued_roll := false        # 히트스톱 중 누른 구르기
 
 # ---- 이동
 var _coyote := 0.0
@@ -140,7 +150,9 @@ func _physics_process(delta: float) -> void:
 	# 히트스톱 중: 아무것도 하지 않고 입력만 모아 둠 (프로토타입처럼 멈춘 동안 누른 클릭도 살림)
 	var ctl := not input_locked and _stun <= 0.0
 	if TimeManager.frozen:
-		if ctl and Input.is_action_just_pressed("slash"):
+		if ctl and Input.is_action_just_pressed("roll"):
+			_queued_roll = true
+		if ctl and Input.is_action_just_pressed("slash") and not is_rolling():
 			_queued_slash = true
 		if ctl and Input.is_action_just_pressed("jump"):
 			_jump_buf = c.jump_buffer
@@ -150,6 +162,18 @@ func _physics_process(delta: float) -> void:
 	# ---- 베기 타이머 · 헛스윙 · 경직
 	_slash_cd = maxf(0.0, _slash_cd - delta)
 	_stun = maxf(0.0, _stun - delta)
+	_roll_cd = maxf(0.0, _roll_cd - delta)
+	# ---- 구르기 중: 이동 · 점프 · 베기(패링) 입력은 무시
+	if is_rolling():
+		_roll_tick(delta, was_on_floor)
+		return
+	var want_roll := (Input.is_action_just_pressed("roll") or _queued_roll) and ctl
+	_queued_roll = false
+	if want_roll and roll_enabled and was_on_floor and _roll_cd <= 0.0 and _dash_t <= 0.0:
+		var rx := int(Input.is_action_pressed("move_right")) - int(Input.is_action_pressed("move_left"))
+		_start_roll(rx)
+		_roll_tick(delta, was_on_floor)
+		return
 	if is_slashing():
 		slash_t += delta
 		# 패링 창(PARRY_EARLY)과 직접 베기 판정(hit_time)이 끝날 때까지 아무것도 못 쳤으면 잠시 베기 불가
@@ -237,6 +261,70 @@ func _counter_lunge() -> Dictionary:
 	return { "angle": to.angle(), "speed": dist / CG.COUNTER_LUNGE_TIME }
 
 
+func is_rolling() -> bool:
+	return _roll_t >= 0.0
+
+
+## 구르기 무적 중인가 (히트스캔 탄 · 근접 공격 · 충격파 · 보라색 공격 모두 통과)
+func is_invincible() -> bool:
+	return _roll_t >= 0.0 and _roll_t < Config.roll.ROLL_IFRAME
+
+
+func _start_roll(dir: int) -> void:
+	_roll_t = 0.0
+	_roll_dir = dir if dir != 0 else facing
+	facing = _roll_dir
+	# 베던 중이면 끊음 (구르기 중엔 패링 판정 없음)
+	slash_t = -1.0
+	_trail = {}
+	_queued_slash = false
+	_jump_buf = 0.0
+	_jumping = false
+	_roll_ghost = 0.0
+	_roll_dust = 0.0
+	rolls += 1
+	Audio.roll()
+	_roll_dust_puff(5)
+
+
+## 구르는 한 틱: 일정한 속도로 굴러감 (중력은 그대로), 0.04초마다 잔상, 바닥 먼지
+func _roll_tick(delta: float, was_on_floor: bool) -> void:
+	var R: Dictionary = Config.roll
+	var c: Dictionary = Config.player
+	_roll_t += delta
+	velocity.x = _roll_dir * R.ROLL_DISTANCE / R.ROLL_TIME
+	velocity.y = minf(velocity.y + c.gravity * delta, c.max_fall)
+	_roll_ghost -= delta
+	if _roll_ghost <= 0.0:
+		_roll_ghost = R.GHOST_EVERY
+		_ghosts.append({ "pos": global_position, "parts": body_parts(), "t": 0.0, "strong": true })
+	_roll_dust -= delta
+	if _roll_dust <= 0.0 and is_on_floor():
+		_roll_dust = R.DUST_EVERY
+		_roll_dust_puff(2)
+	var vy := velocity.y
+	move_and_slide()
+	_animate(delta, was_on_floor, vy, false)
+	if _roll_t >= R.ROLL_TIME:
+		# 끝나는 즉시 베기 가능
+		_roll_t = -1.0
+		_roll_cd = R.ROLL_COOLDOWN
+		_slash_cd = 0.0
+		velocity.x *= 0.35
+	queue_redraw()
+
+
+func _roll_dust_puff(n: int) -> void:
+	var main := get_tree().get_first_node_in_group("game")
+	if main == null:
+		return
+	var dust: Array = Config.colors.dust
+	for i in n:
+		var v := randf_range(30.0, 80.0)
+		main.effects.spawn(global_position + Vector2(-_roll_dir * 3.0 + randf_range(-2, 2), -1.0),
+			Vector2(-_roll_dir * v, -randf_range(10.0, 40.0)), randf_range(0.2, 0.35), dust[i % dust.size()], { "size": 2.0, "grav": 90.0 })
+
+
 ## 경직: sec 초 동안 조작 불가 + push 속도로 밀려남 (철견이 칼을 막았을 때)
 func stun(sec: float, push: Vector2) -> void:
 	_stun = maxf(_stun, sec)
@@ -317,7 +405,7 @@ func _animate(delta: float, was_on_floor: bool, vy_before: float, jumped: bool) 
 	_tick += 1
 	# 잔상: 돌진(또는 아주 빠를 때)은 매 틱 진하게, 전력 질주는 몇 틱마다 옅게
 	var sp := velocity.length()
-	var dashing: bool = _dash_t > 0.0 or sp > c.run_speed * 1.4
+	var dashing: bool = (_dash_t > 0.0 or sp > c.run_speed * 1.4) and not is_rolling()
 	if dashing or (is_on_floor() and absf(velocity.x) > c.run_speed * 0.9 and _tick % int(a.ghost_every_run) == 0):
 		_ghosts.append({ "pos": global_position, "parts": body_parts(), "t": 0.0, "strong": dashing })
 	for gh in _ghosts:
@@ -408,6 +496,18 @@ func _draw_body() -> void:
 func body_parts() -> Array:
 	var col: Color = Config.colors.player
 	var sh := []
+	# 구르기: 몸을 둥글게 말아 회전
+	if is_rolling():
+		var u: float = clampf(_roll_t / Config.roll.ROLL_TIME, 0.0, 1.0)
+		var rot: float = u * TAU * Config.roll.SPIN * _roll_dir
+		sh.append(["rect", Rect2(-4, -4, 8, 8)])          # 웅크린 몸
+		sh.append(["rect", Rect2(-3, -5, 6, 1)])
+		sh.append(["rect", Rect2(-3, 4, 6, 1)])
+		sh.append(["rect", Rect2(-5, -3, 1, 6)])
+		sh.append(["rect", Rect2(4, -3, 1, 6)])
+		sh.append(["rect", Rect2(1, -7, 4, 3)])           # 머리
+		sh.append(["rect", Rect2(-5, 1, 2, 1)])           # 칼집
+		return [{ "xf": Transform2D(rot, Vector2(0, -5)), "shapes": sh, "body": col, "rim": Color(0, 0, 0, 0) }]
 	if not is_on_floor():
 		var tuck := 1 if velocity.y < 0.0 else 0
 		sh.append(["rect", Rect2(-3, -6, 2, 5 - tuck)])

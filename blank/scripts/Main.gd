@@ -403,7 +403,7 @@ func hitscan(from: Vector2, angle: float, dist: float, hit_player: bool, hit_ene
 	var end := raycast_wall(from, angle, dist)
 	var res := { "pos": end, "wall": end.distance_to(from) < dist - 0.5, "player": false, "enemy": null }
 	var best := 2.0
-	if hit_player and not player.dead:
+	if hit_player and not player.dead and not player.is_invincible():   # 구르기 무적이면 탄이 통과
 		var pad: float = Config.shot.PLAYER_HIT_PAD
 		# 판정 창 안에서 막 벤 칼은 칼날이 닿는 범위까지 탄을 받아냄 (베기 돌진으로 조준선에서 살짝 비껴도 패링)
 		if player.is_slashing() and not player.slash_used and player.slash_t <= Config.shot.PARRY_EARLY + 1e-6:
@@ -479,7 +479,7 @@ func _resolve_shots() -> void:
 			s.done = true
 			continue
 		var ts := p.last_slash_t
-		if s.parryable and not p.slash_used and ts >= s.fire_t - Sh.PARRY_EARLY - eps and ts <= s.fire_t + Sh.PARRY_LATE + eps:
+		if s.parryable and not p.slash_used and not p.is_rolling() and ts >= s.fire_t - Sh.PARRY_EARLY - eps and ts <= s.fire_t + Sh.PARRY_LATE + eps:
 			s.done = true
 			# 도탄: 탄이 날아오는 쪽 ±DIRECTIONAL_PARRY_ANGLE 로 베어야 함. 다른 방향 = 실패
 			if s.has("incoming") and absf(angle_difference(p.slash_angle, s.incoming)) > deg_to_rad(Config.shot.DIRECTIONAL_PARRY_ANGLE):
@@ -931,7 +931,8 @@ func view_rect() -> Rect2:
 
 
 func _kill_player(angle: float) -> void:
-	if player.dead:
+	# 구르기 무적: 히트스캔 · 근접 · 충격파 · 보라색 공격 모두 통과
+	if player.dead or player.is_invincible():
 		return
 	pending_shots.clear()
 	seq.cancel()

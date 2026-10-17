@@ -55,7 +55,7 @@ func _draw() -> void:
 	# 조작 안내 (첫 판 몇 초)
 	if play_t < Config.hint_time:
 		var a := 0.75 * clampf(Config.hint_time - play_t, 0.0, 1.0)
-		Fonts.text(self, "A/D 이동 · Space 점프 · 클릭 베기 — 칼이 닿는 순간 / 총을 쏘는 순간 베면 패링",
+		Fonts.text(self, "A/D 이동 · Space 점프 · %s 구르기 · 클릭 베기 — 칼이 닿는 순간 / 총을 쏘는 순간 베면 패링" % Settings.roll_key_name(),
 			Vector2(W / 2.0, H - 10), 10, Color(ui, a), "center")
 	# 출구 열림 · CLEAR (출구 없는 옛 테스트 방) · 장 클리어 · 사망
 	var t: float = main.open_msg_t

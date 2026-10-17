@@ -49,6 +49,18 @@ var slash := {
 	"direct_kill": true,              # false 면 '패링으로만' 적을 죽일 수 있음
 }
 
+# ---------------------------------------------------------------- 구르기 (모든 스테이지 공통, 입력 "roll" = Shift — 옵션 메뉴에서 바꿀 수 있음)
+var roll := {
+	"ROLL_DISTANCE": 64.0,            # 구르는 거리 (px)
+	"ROLL_TIME": 0.30,                # 구르는 시간
+	"ROLL_IFRAME": 0.25,              # 시작부터 이 시간 동안 무적 (히트스캔 · 근접 · 충격파 · 보라색 공격 모두 통과)
+	"ROLL_COOLDOWN": 0.40,            # 구르기가 끝난 뒤 다음 구르기까지
+	"GHOST_EVERY": 0.04,              # 잔상 간격
+	"DUST_EVERY": 0.05,               # 바닥 먼지 간격
+	"SPIN": 1.0,                      # 구르는 동안 회전 수
+	"FALLBACK_PITCH": 1.3,            # roll.wav 가 없으면 dash_whoosh 를 이 피치로 (그것도 없으면 무음)
+}
+
 # ---------------------------------------------------------------- 적
 var enemy := { "gravity": 1000.0, "max_fall": 380.0, "edge_stop": true }
 
@@ -257,6 +269,7 @@ var audio := {
 	"SFX_THUNDER": 0.7,               # thunder.wav (번개)
 	"SFX_RAIN": 0.35,                 # rain_loop.wav (보스방 빗소리, 반복)
 	"SFX_DASH": 0.8, "SFX_SLIDE": 0.8, "SFX_JUMP": 0.8,   # dash_whoosh · slide · jump.wav (아직 없음 → 무음)
+	"SFX_ROLL": 0.6,                  # roll.wav (플레이어 구르기, 없으면 dash_whoosh 피치 1.3 → 그것도 없으면 무음)
 	"MUFFLE_CUTOFF": 650.0,           # 먹먹함 (World 버스 로우패스) 차단 주파수 Hz
 	"GUN_PITCH": Vector2(0.95, 1.05),
 	"KILL_PITCH": Vector2(0.92, 1.08),

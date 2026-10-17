@@ -22,6 +22,7 @@ const JUICE := [
 
 var shake := 1.0
 var approach := true
+var roll_key := KEY_SHIFT        ## 구르기 키 (물리 키 코드) — 옵션 메뉴에서 바꿈
 var juice := {}
 
 
@@ -30,6 +31,27 @@ func _ready() -> void:
 	for j in JUICE:
 		juice[j.key] = true
 	load_settings()
+	apply_roll_key()
+
+
+## 구르기 키를 입력 "roll" 에 반영 (project.godot 의 기본값 Shift 를 덮어씀)
+func apply_roll_key() -> void:
+	if not InputMap.has_action("roll"):
+		InputMap.add_action("roll")
+	InputMap.action_erase_events("roll")
+	var ev := InputEventKey.new()
+	ev.physical_keycode = roll_key as Key
+	InputMap.action_add_event("roll", ev)
+
+
+func set_roll_key(code: int) -> void:
+	roll_key = code
+	apply_roll_key()
+
+
+## 키 이름 (옵션 메뉴 표시)
+func roll_key_name() -> String:
+	return OS.get_keycode_string(roll_key as Key)
 
 
 func on(key: String) -> bool:
@@ -62,10 +84,12 @@ func load_settings() -> void:
 	if v >= 0.0 and v <= 1.5:
 		shake = v
 	approach = bool(cf.get_value("options", "approach", true))
+	roll_key = int(cf.get_value("options", "roll_key", KEY_SHIFT))
 
 
 func save_settings() -> void:
 	var cf := ConfigFile.new()
 	cf.set_value("options", "shake", shake)
 	cf.set_value("options", "approach", approach)
+	cf.set_value("options", "roll_key", roll_key)
 	cf.save(PATH)

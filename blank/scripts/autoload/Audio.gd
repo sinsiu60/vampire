@@ -12,7 +12,7 @@ const SynthLib := preload("res://scripts/audio/Synth.gd")
 const FILES := ["gun_fire", "parry_chang", "slowmo_in", "slowmo_loop", "time_return", "kill_sound", "door_open", "door_boss", "boss_intro", "boss_armor",
 	"gun_cock", "quickdraw", "pistol_whip", "execute", "stagger", "explosion", "flashbang", "thunder", "rain_loop"]
 # 있으면 쓰고 없으면 조용히 무음 (경고 없음)
-const OPTIONAL := ["dash_whoosh", "slide", "jump", "grenade_pin"]
+const OPTIONAL := ["dash_whoosh", "slide", "jump", "grenade_pin", "roll"]
 ## 파일 안에서 가장 큰 소리 위치 (초) — play_synced 가 이만큼 일찍 재생해 타격 순간에 맞춤
 const PEAKS := {
 	"gun_cock": 0.07, "quickdraw": 0.22, "pistol_whip": 0.12, "execute": 0.0, "stagger": 0.0,
@@ -25,6 +25,7 @@ const VOLUME_KEYS := {
 	"stagger": "SFX_STAGGER", "explosion": "SFX_EXPLOSION", "flashbang": "SFX_FLASHBANG", "thunder": "SFX_THUNDER",
 	"rain_loop": "SFX_RAIN", "gun_fire": "SFX_GUN", "parry_chang": "SFX_PARRY", "boss_armor": "SFX_BOSS_ARMOR",
 	"boss_intro": "SFX_BOSS_INTRO", "kill_sound": "SFX_KILL", "dash_whoosh": "SFX_DASH", "slide": "SFX_SLIDE", "jump": "SFX_JUMP",
+	"roll": "SFX_ROLL",
 }
 const POOL_SIZE := 16
 const WORLD_BUS := "World"       # 효과음 대부분 — 섬광탄 동안 로우패스 (귀가 멍함)
@@ -299,6 +300,15 @@ func boss_intro(vol_mul := 1.0) -> void:
 ## 반사탄이 철견 장갑에 튕김 (boss_armor.wav) — 풀 패링 명중은 피치 0.8
 func boss_armor(pitch := 1.0) -> void:
 	play("boss_armor", Config.audio.SFX_BOSS_ARMOR, pitch)
+
+## 플레이어 구르기: roll.wav → 없으면 dash_whoosh 피치 1.3 → 그것도 없으면 무음
+func roll() -> void:
+	var v: float = Config.audio.SFX_ROLL
+	if streams.has("roll"):
+		play("roll", v)
+	elif streams.has("dash_whoosh"):
+		play("dash_whoosh", v, Config.roll.FALLBACK_PITCH)
+
 
 func swing() -> void:
 	play("swing", 1.0, randf_range(0.88, 1.12))   # 프로토타입: 매번 음높이 ±12%
