@@ -242,6 +242,16 @@ static func draw_approach(ci: CanvasItem, c: Vector2, info: Dictionary, s := 1.0
 		var col: Color = Config.colors.attack if info.parryable else Config.colors.unparryable
 		col.a = lerpf(A.ALPHA_MIN, 1.0, k) * dim
 		ci.draw_arc(c, r, 0.0, TAU, 48, col, 1.0)
+	# 도탄: 원 위의 작은 화살표 = 탄이 날아오는 방향 (그쪽으로 베어야 패링)
+	if info.has("arrow"):
+		var a: float = info.arrow
+		var d := Vector2.from_angle(a)
+		var n := d.orthogonal()
+		var tipp := c + d * (r + 1.0)
+		var back := c + d * (r + 6.0)
+		var ac: Color = Color(1, 1, 1, dim) if info.locked else Color(Config.colors.attack, dim)
+		ci.draw_colored_polygon(PackedVector2Array([tipp, back + n * 3.5, back - n * 3.5]), ac)
+		ci.draw_line(back, back + d * 4.0, ac, 1.0)
 
 
 func is_offscreen(pos: Vector2) -> bool:

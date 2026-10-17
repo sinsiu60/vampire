@@ -186,49 +186,93 @@ var rooms := {
 }
 
 # ---------------------------------------------------------------- 보스 "철견" (1장, 하운드 제1 사냥개 부대장 — 쌍권총 난사)
-# 핵심: 연사의 박자를 읽고 연속으로 받아치는 리듬 패링. 시간은 월드 시간(초) — 연출(카드·무전)만 실제 시간
+# 체력 3 은 처형으로만 줄어듦. 패링할 때마다 자세 게이지가 오르고, 100 이 되면 그로기 → 베면 처형.
+# 패턴 7종이 각자 다른 대응을 요구. 시간은 월드 시간(초) — 등장 카드 · 무전만 실제 시간
 var boss := {
 	"NAME": "철견", "TITLE": "하운드 제1 사냥개",
 	"BOSS_CHEOLGYEON_HP": 3,
 	"w": 20, "h": 36,                              # 일반 근접 적(16×26)보다 큰 몸 (약 1.4배)
 	"accel": 900.0,
-	# 사격 (기존 히트스캔 · 조준선 · 줄어드는 원 그대로)
-	"AIM_TIME": 0.8, "AIM_LOCK_TIME": 0.15,        # 탄마다: 원이 AIM_TIME 동안 줄어들고, 발사 0.15초 전 조준 고정
+	# ---- 자세 게이지 (체력 칸 아래)
+	"POSTURE_MAX": 100.0,
+	"POSTURE_MINI": 10.0,                          # 일반(미니) 패링 · 권총 난타 1 · 2타 패링
+	"POSTURE_FULL": 30.0,                          # 연사 마지막 탄 · 도탄 풀 패링 (반사탄 명중)
+	"POSTURE_GRENADE": 40.0,                       # 되친 수류탄이 철견 근처에서 폭발
+	"POSTURE_WHIP_FINAL": 25.0,                    # 권총 난타 3타 패링
+	"POSTURE_DECAY_DELAY": 3.0, "POSTURE_DECAY": 5.0,   # 3초 동안 패링이 없으면 초당 5씩 감소
+	# ---- 그로기 · 처형
+	"BOSS_STAGGER_TIME": 2.0,                      # 무릎 꿇은 채 버티는 시간 — 이 안에 베면 처형
+	"GROGGY_RISE": 0.3,                            # 못 베면 일어나는 동작 (게이지 0)
+	"EXECUTE_HITSTOP": 12, "EXECUTE_SHAKE": 8.0, "EXECUTE_KILL_PITCH": 0.8, "EXECUTE_ARMOR_PITCH": 0.7,
+	"FULL_HIT_HITSTOP": 4, "FULL_HIT_SHAKE": 4.0, "FULL_HIT_FLINCH": 0.3,   # 반사탄 명중 (체력은 그대로)
+	# ---- 사격 (기존 히트스캔 · 조준선 · 줄어드는 원 그대로)
+	"AIM_TIME": 0.8, "AIM_LOCK_TIME": 0.15,
 	"LASER_ALPHA_MIN": 0.4, "LOCK_BLINKS": 2, "LOCK_BLINK_TIME": 0.025,
 	"GUN_LENGTH": 9.0,
 	"SHOT_PITCH": 0.85,                            # gun_fire.wav 피치 (묵직하게)
-	"FIRST_DELAY": 0.6,                            # 전투 시작 → 첫 연사 조준
-	# 페이즈별 연사: GAPS = 탄 사이 간격 (탄 수 = 간격 수 + 1), REST = 연사 사이 휴식
-	"P1_GAPS": [0.4], "P1_REST": 1.5,                         # 2연발, 제자리
-	"P2_GAPS": [0.3, 0.6], "P2_REST": 1.2, "P2_JUMP": true,    # 3연발 빠름 → 느림, 끝나면 다른 발판으로 점프
-	"P3_GAPS": [0.3, 0.3, 0.3], "P3_REST": 1.0, "P3_ALTERNATE": true,   # 4연발, 왼쪽·오른쪽 총 번갈아
-	"P3_FAKE_CHANCE": 1.0 / 3.0, "FAKE_CANCEL_AT": 0.5,       # 가짜 조준: 3번에 1번꼴, 첫 원이 절반 줄었을 때 취소
-	# 패링
-	"MINI_PARRY_PITCH": 1.2, "MINI_PARRY_VOL": 0.7, "MINI_HITSTOP": 4,   # 연사 중간 탄 (슬로우 없음, 장갑에 튕김)
-	"FINAL_HOLD_MUL": 2.0,                         # 체력 0 이 되는 마지막 풀 패링: SLOWMO_HOLD × 2
-	"STAGGER_TIME": 1.5,                           # 풀 패링 명중 → 경직
-	"HIT_HITSTOP": 10, "HIT_SHAKE": 6.0, "HIT_SHAKE_TIME": 0.25, "HIT_PITCH": 0.8,   # 피격 연출 (킬 연출 대신)
-	"KILL_SHAKE_MUL": 1.5,                         # 처치: 16프레임 킬 연출 + 흔들림 1.5배 + 쌍권총이 공중으로
-	# 발차기 (패링 불가 — 다리가 보라색으로 빛남)
-	"KICK_RANGE": 40.0, "KICK_HEIGHT": 30.0,       # 이 안으로 다가오면 (가로 · 세로)
+	"FIRST_DELAY": 0.6,                            # 전투(페이즈) 시작 → 첫 패턴
+	# ---- 페이즈: 쓰는 패턴 · 패턴 사이 휴식 (① 리듬 연사 ② 권총 난타 ③ 발차기 ④ 도탄 ⑤ 수류탄 ⑥ 섬광탄 ⑦ 핑퐁)
+	"P1_PATTERNS": [1, 2, 3], "P1_REST": 1.2,
+	"P2_PATTERNS": [1, 2, 3, 4, 5], "P2_REST": 1.0, "P2_JUMP": true,      # 연사 뒤 다른 발판으로 점프
+	"P3_PATTERNS": [1, 2, 3, 4, 5, 6], "P3_REST": 0.8,
+	# 거리에 따른 선택 가중치 (같은 패턴 2번 연속은 금지)
+	"NEAR_DIST": 80.0,
+	"NEAR_WEIGHTS": { 1: 1, 2: 4, 3: 4, 4: 1, 5: 1, 6: 1 },
+	"FAR_WEIGHTS": { 1: 4, 2: 0, 3: 0, 4: 3, 5: 3, 6: 2 },
+	# ① 리듬 연사: 페이즈별 박자 (탄 사이 간격 목록 중 하나), 중간 탄 = 미니 패링, 마지막 탄 = 풀 패링
+	"P1_BURSTS": [[0.4], [0.4, 0.4]],
+	"P2_BURSTS": [[0.3, 0.6], [0.3, 0.3]],
+	"P3_BURSTS": [[0.3, 0.3, 0.3], [0.3, 0.3]], "P3_ALTERNATE": true,    # 왼쪽 · 오른쪽 총 번갈아
+	"P3_FAKE_CHANCE": 1.0 / 3.0, "FAKE_CANCEL_AT": 0.5,                 # 가짜 조준 (페이즈 3)
+	"MINI_PARRY_PITCH": 1.2, "MINI_PARRY_VOL": 0.7, "MINI_HITSTOP": 4,
+	# ② 권총 난타: 달려들어 손잡이로 3연타 (빨강 = 패링 가능)
+	"WHIP_RANGE": 80.0, "RUSH_SPEED": 260.0, "RUSH_MAX": 0.35, "WHIP_REACH": 18.0,
+	"WHIP_TELEGRAPH": 0.3,                         # 각 타격 0.3초 전부터 권총이 빨갛게 점멸
+	"WHIP_GAPS": [0.35, 0.8],                      # 1 → 2타 0.35초, 2 → 3타 0.8초 (손을 치켜든 채 멈칫)
+	"WHIP_ACTIVE": 0.08, "WHIP_BOX": Vector2(24, 20),
+	"WHIP_PARRY_HITSTOP": 6,
+	"WHIP_KNOCKBACK": 240.0, "WHIP_KNOCK_STUN": 0.6, "WHIP_RECOVER": 0.4,
+	# ③ 발차기 (패링 불가 — 다리가 보라색으로 빛남)
+	"KICK_RANGE": 40.0, "KICK_HEIGHT": 30.0,
+	"KICK_APPROACH_SPEED": 130.0, "KICK_APPROACH_MAX": 0.5,
 	"KICK_WINDUP": 0.4, "KICK_ACTIVE": 0.12, "KICK_RECOVER": 0.5,
-	"KICK_BOX": Vector2(28, 16),                   # 몸 앞쪽 발 높이 판정
-	# 페이즈 2 점프 이동
+	"KICK_BOX": Vector2(28, 16),
+	# ④ 도탄 사격 (방향 패링, 페이즈 2부터): 벽에 1번 튕겨 플레이어에게. 원은 플레이어 몸 둘레 + 날아오는 방향 화살표
+	"DIRECTIONAL_PARRY_ANGLE": 60.0,               # 탄이 날아오는 방향 ±60° 쪽으로 베어야 성공
+	"RICOCHET_MIN_ANGLE": 12.0,                    # 벽을 너무 얕게 스치는 경로는 안 씀 (도)
+	# ⑤ 수류탄 (페이즈 2부터): 포물선, 1.2초 뒤 폭발 (반경 50, 즉사). 베면 마우스 방향으로 되치기 (철견 조준 스냅)
+	"GRENADE_WINDUP": 0.3, "GRENADE_RECOVER": 0.5,
+	"GRENADE_FLIGHT": 0.75, "GRENADE_GRAVITY": 700.0,
+	"GRENADE_FUSE": 1.2, "GRENADE_RADIUS": 50.0,
+	"GRENADE_BAT_SPEED": 380.0, "GRENADE_HIT_DIST": 16.0,
+	"GRENADE_STUN": 1.0,                           # 철견 근처 폭발 → 경직
+	"EXPLOSION_SHAKE": 5.0,
+	# ⑥ 섬광탄 (페이즈 3부터): 0.5초 뒤 화면이 2초 동안 하얗게, 그동안 3연발 — 장전음 0.5초 뒤 발사
+	"FLASH_POP": 0.5, "FLASH_DURATION": 2.0, "FLASH_FADE_IN": 0.06, "FLASH_FADE_OUT": 0.35,
+	"FLASH_SHOTS": [0.6, 1.15, 1.7],               # 섬광 시작 기준 발사 시각
+	"COCK_LEAD": 0.5,                              # 장전음 "철컥" → 발사
+	"FLASH_SILHOUETTE": 0.16,                      # 하얀 화면 속 실루엣 진하기
+	"MUFFLE_CUTOFF": 650.0,                        # 귀가 멍한 효과 (로우패스 Hz) — gun_cock 만 선명
+	# ⑦ 핑퐁 결투 (결전): 체력 1 처형을 막아내고 "아직이다!" → 랠리마다 원이 줄어드는 시간만 짧아짐
+	"FINALE_LINE": "아직이다!", "FINALE_LINE_TIME": 1.2, "BLOCK_SHAKE": 4.0,
+	"RALLY_AIM": [0.8, 0.6, 0.45, 0.35],           # 4번째에서 철견이 못 받아치고 명중 → 최종 처치
+	"RALLY_RETURN_DELAY": 0.15, "RALLY_RETURN_PITCH": 0.9,
+	"FINAL_HOLD_MUL": 2.0,                         # 최종 처치 풀 패링: SLOWMO_HOLD × 2
+	"KILL_SHAKE_MUL": 1.5,                         # 처치: 16프레임 킬 연출 + 흔들림 1.5배 + 쌍권총이 공중으로
+	# ---- 이동 · 전환
 	"JUMP_TIME": 0.6, "JUMP_HEIGHT": 44.0,
-	# 페이즈 전환 포효
 	"ROAR_TIME": 0.8, "ROAR_SHAKE": 4.0, "ROAR_VOL": 0.6,
-	# 등장 (실제 시간)
-	"INTRO_LOCK": 0.5,                             # 들어오면 입력 잠금
-	"CARD_DELAY": 0.2,                             # 들어온 뒤 이름 카드가 박히기까지
+	# ---- 등장 (실제 시간)
+	"INTRO_LOCK": 0.5, "CARD_DELAY": 0.2,
 	"CARD_SCALES": [1.9, 1.35, 1.1],               # "쾅" — 3프레임 동안 확대 → 원래 크기
 	"CARD_HOLD": 1.5, "CARD_FADE": 0.3, "CARD_SHAKE": 5.0,
 	"LINE": "등록도 안 된 놈이 칼을 들고 왔다고?",
-	"LINE_CPS": 16.0, "LINE_HOLD": 1.0,            # 대사: 한 자씩 → 다 나온 뒤 1초 → 전투 시작
+	"LINE_CPS": 16.0, "LINE_HOLD": 1.0,
 	"RESUME_DELAY": 0.8,                           # 체크포인트 재시작: 전투 재개까지
-	# 처치 후 (실제 시간)
+	# ---- 처치 후 (실제 시간)
 	"RADIO_DELAY": 1.0, "RADIO_TEXT": "철견 처리 확인. ...공백, 너 방금 웃었어?", "RADIO_TIME": 3.5,
-	"EXIT_DELAY": 2.0,                             # 처치 2초 뒤 출구 문 열림 (다음 장 예고)
-	# 색 (장갑판 · 금)
+	"EXIT_DELAY": 2.0,
+	# ---- 색 (장갑판 · 금)
 	"PLATE": Color("#30364c"), "PLATE_RIM": Color("#6a718c"), "CRACK": Color("#a7aec4"),
 }
 
@@ -291,6 +335,9 @@ var audio := {
 	"SFX_DOOR_BOSS": 0.9,             # door_boss.wav (보스방 문)
 	"SFX_BOSS_INTRO": 1.0,            # boss_intro.wav (철견 이름 카드 · 포효)
 	"SFX_BOSS_ARMOR": 0.8,            # boss_armor.wav (반사탄이 장갑에 튕김)
+	# 철견 개편 (sounds 에 없으면 무음)
+	"SFX_PISTOL_WHIP": 0.8, "SFX_GUN_COCK": 1.0, "SFX_GRENADE_PIN": 0.8, "SFX_EXPLOSION": 1.0,
+	"SFX_FLASHBANG": 1.0, "SFX_STAGGER": 0.9, "SFX_EXECUTE": 1.0,
 	"GUN_PITCH": Vector2(0.95, 1.05),
 	"KILL_PITCH": Vector2(0.92, 1.08),
 }

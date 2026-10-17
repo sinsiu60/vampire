@@ -23,7 +23,9 @@ func _ready() -> void:
 	_update()
 
 
-func flash() -> void:
+## 한 프레임 섬광 (color: 기본 흰색, 섬광탄 중 패링 성공은 노랑)
+func flash(color := Color.WHITE) -> void:
+	(material as ShaderMaterial).set_shader_parameter("flash_color", Vector3(color.r, color.g, color.b))
 	_flash_left = Config.fx.flash_time
 	_flash_shown = false
 	_update()

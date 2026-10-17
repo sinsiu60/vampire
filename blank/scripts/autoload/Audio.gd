@@ -8,7 +8,10 @@ extends Node
 const SynthLib := preload("res://scripts/audio/Synth.gd")
 
 const FILES := ["gun_fire", "parry_chang", "slowmo_in", "slowmo_loop", "time_return", "kill_sound", "door_open", "door_boss", "boss_intro", "boss_armor"]
+# 있으면 쓰고 없으면 조용히 무음 (경고 없음)
+const OPTIONAL := ["pistol_whip", "gun_cock", "grenade_pin", "explosion", "flashbang", "stagger", "execute"]
 const POOL_SIZE := 16
+const WORLD_BUS := "World"       # 효과음 대부분 — 섬광탄 동안 로우패스 (귀가 멍함)
 
 var streams := {}                 # 이름 → AudioStream
 var muted := false
@@ -23,21 +26,38 @@ func _ready() -> void:
 			streams[n] = load(path)
 		else:
 			push_warning("효과음 파일 없음: " + path)
+	for n in OPTIONAL:
+		var path: String = Config.audio.dir + n + ".wav"
+		if ResourceLoader.exists(path):
+			streams[n] = load(path)
+	# World 버스 (Master 로 보냄) + 로우패스 (평소엔 꺼짐)
+	if AudioServer.get_bus_index(WORLD_BUS) < 0:
+		AudioServer.add_bus()
+		var bi := AudioServer.bus_count - 1
+		AudioServer.set_bus_name(bi, WORLD_BUS)
+		AudioServer.set_bus_send(bi, "Master")
+		var lp := AudioEffectLowPassFilter.new()
+		lp.cutoff_hz = Config.boss.MUFFLE_CUTOFF
+		AudioServer.add_bus_effect(bi, lp)
+		AudioServer.set_bus_effect_enabled(bi, 0, false)
 	streams["swing"] = SynthLib.swing()
 	streams["death"] = SynthLib.death()
 	streams["clear"] = SynthLib.clear()
 	for i in POOL_SIZE:
 		var p := AudioStreamPlayer.new()
 		p.process_mode = Node.PROCESS_MODE_ALWAYS
+		p.bus = WORLD_BUS
 		add_child(p)
 		_pool.append(p)
 
 
 ## 재생. 반환값 = 재생 중인 플레이어 (fade_out / stop 에 사용). 못 찾으면 null
-func play(name: String, volume := 1.0, pitch := 1.0) -> AudioStreamPlayer:
+## clear = 로우패스(멍한 효과)를 거치지 않고 선명하게 (섬광탄 중 장전음)
+func play(name: String, volume := 1.0, pitch := 1.0, clear := false) -> AudioStreamPlayer:
 	if not streams.has(name) or not Settings.on("sound"):
 		return null
 	var p := _free_player()
+	p.bus = "Master" if clear else WORLD_BUS
 	p.stream = streams[name]
 	p.volume_db = linear_to_db(maxf(volume, 0.0001))
 	p.pitch_scale = pitch
@@ -72,6 +92,7 @@ func pause_all(paused: bool) -> void:
 
 
 func stop_all() -> void:
+	set_muffled(false)
 	for p in _pool:
 		p.stream_paused = false
 		p.stop()
@@ -91,6 +112,23 @@ func kill(pitch_mul := 1.0) -> void:
 ## 미니 패링(철견 연사 중간 탄): 피치 1.2 · 볼륨 70%
 func parry(pitch := 1.0, vol_mul := 1.0) -> void:
 	play("parry_chang", Config.audio.SFX_PARRY * vol_mul, pitch)
+
+## 섬광탄: 귀가 멍한 효과 (World 버스 로우패스 켜기/끄기)
+func set_muffled(on: bool) -> void:
+	var bi := AudioServer.get_bus_index(WORLD_BUS)
+	if bi >= 0:
+		AudioServer.set_bus_effect_enabled(bi, 0, on)
+
+
+func is_muffled() -> bool:
+	var bi := AudioServer.get_bus_index(WORLD_BUS)
+	return bi >= 0 and AudioServer.is_bus_effect_enabled(bi, 0)
+
+
+## 철견 개편 효과음 (파일이 없으면 무음)
+func sfx(name: String, vol_key: String, pitch := 1.0, clear := false) -> void:
+	play(name, Config.audio.get(vol_key, 1.0), pitch, clear)
+
 
 ## 철견 등장 카드 · 페이즈 전환 포효 (boss_intro.wav)
 func boss_intro(vol_mul := 1.0) -> void:

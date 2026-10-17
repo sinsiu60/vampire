@@ -94,6 +94,22 @@ func _draw_boss() -> void:
 				draw_rect(r.grow(1.0), Color(ui, 0.25), false, 1.0)
 			else:
 				draw_rect(r, Color(ui, 0.45), false, 1.0)
+		# 자세 게이지 (체력 칸 아래, 하늘색). 가득 차면 그로기 — 그동안 깜빡임
+		var bw := cw * n + gap * (n - 1)
+		var pr := Rect2(x0, 25, bw, 3)
+		var u: float = clampf(b.posture / float(B.POSTURE_MAX), 0.0, 1.0)
+		draw_rect(pr.grow(1.0), Color(0, 0, 0, 0.5))
+		draw_rect(pr, Color(ui, 0.15))
+		var pc := Color(ui, 0.9)
+		if b.is_groggy():
+			u = 1.0
+			pc = Color.WHITE if fmod(HUD.play_t, 0.3) < 0.2 else Color(ui, 0.9)
+		if u > 0.0:
+			draw_rect(Rect2(pr.position, Vector2(roundf(bw * u), pr.size.y)), pc)
+		if Debug.debug_mode():
+			var pn: String = BossCheolgyeon.PATTERN_NAMES[b.pattern] if b.pattern > 0 else "-"
+			Fonts.text(self, "자세 %d  ·  %s  ·  %s" % [roundi(b.posture), "결전" if b.phase == 4 else "P%d" % b.phase, pn],
+				Vector2(W / 2.0, 35), 9, Color(ui, 0.7), "center", false, true)
 	# 이름 카드: 박히는 3프레임 동안 확대 → 원래 크기, 1.5초 유지 뒤 페이드아웃
 	var cs: Dictionary = b.card_state()
 	if not cs.is_empty():
