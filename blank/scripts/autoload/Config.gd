@@ -99,8 +99,8 @@ var gunner := {                       # 총잡이: 가늘고 총이 튀어나온
 
 # ---------------------------------------------------------------- 사격 · 패링
 var shot := {                         # 히트스캔 사격 + 타이밍 패링
-	"PARRY_EARLY": 0.10,              # 발사 이 시간 전부터 베기 시작이면 패링
-	"PARRY_LATE": 0.05,               # 발사 후 이 시간까지 (그동안 피격 보류)
+	"PARRY_EARLY": 0.14,              # 발사 이 시간 전부터 베기 시작이면 패링 (난이도 프리셋이 덮어씀)
+	"PARRY_LATE": 0.08,               # 발사 후 이 시간까지 (그동안 피격 보류, 난이도 프리셋이 덮어씀)
 	"WHIFF_COOLDOWN": 0.3,            # 헛스윙 시 베기 불가 시간
 	"MIN_SHOT_GAP": 0.3,              # 여러 총잡이 발사 최소 간격
 	"RANGE": 480.0,
@@ -109,7 +109,7 @@ var shot := {                         # 히트스캔 사격 + 타이밍 패링
 	"REFLECT_TRACER_WIDTH": 3.0,
 	"PLAYER_HIT_PAD": 1.0,
 	"SLASH_CATCH_PAD": 14.0,          # 막 벤 칼(판정 창 PARRY_EARLY 안)은 몸 둘레 이만큼까지 탄을 받아냄 — 연속 패링 중 돌진으로 비껴도 받아침
-	"DIRECTIONAL_PARRY_ANGLE": 60.0,  # 방향 패링 탄 (pending 에 incoming 이 있으면): 그 방향 ± 이 각도로 베어야 성공
+	"DIRECTIONAL_PARRY_ANGLE": 80.0,  # (난이도 프리셋이 덮어씀) 방향 패링 탄 (pending 에 incoming 이 있으면): 그 방향 ± 이 각도로 베어야 성공
 }
 
 var approach := {                     # 발사 타이밍 원
@@ -125,6 +125,57 @@ var approach := {                     # 발사 타이밍 원
 	"OFFSCREEN_SCALE": 0.5,
 	"OFFSCREEN_MARGIN": 24.0,
 }
+
+# ---------------------------------------------------------------- 난이도 프리셋 (옵션 메뉴, 기본 NORMAL)
+## 지금 프리셋은 Config.diff (set_difficulty 로 바뀜). 철견 수치 중 이 표에 있는 것은 CheolgyeonConfig 대신 여기서 읽음.
+##  PARRY_EARLY · PARRY_LATE · DIRECTIONAL_PARRY_ANGLE → Config.shot 에 그대로 써 넣음 (모든 적 공통 — 판정 띠도 같이 바뀜)
+##  TELEGRAPH_TIME      철견 공격 직전 웅크림 예고: ① 슬라이드 · ② 돌진 · ③ 점프 (⑤ 는 원 자체가 예고, ④ 는 정적)
+##  SLIDE_SHOT_INTERVAL ① 탄 간격 · WHIP_INTERVAL ② 1타 → 2타 · QUICKDRAW_RING_TIME ④ 원 = 뽑아 쏘기까지
+##  FAKE_TWITCH_CHANCE  ④ 가짜 움찔 확률 { 페이즈: 확률 } · SHOCKWAVE_SPEED ③ 충격파 속도
+##  STAGGER_TIME 휘청 (연습 더미도) · COUNTER_LUNGE_RANGE 반격 베기 자동 돌진 거리
+##  BOSS_HP 체력 칸 수 (= 페이즈 1 시작 체력) · PHASE_HP 페이즈 2 · 3 시작 체력 · PATTERN_GAP { 페이즈: 패턴 사이 공백 } · P3_CHAIN 페이즈 3 이어 붙이기
+const DIFFICULTIES := ["easy", "normal", "hard"]
+const DIFFICULTY_LABELS := { "easy": "EASY", "normal": "NORMAL", "hard": "HARD" }
+
+var difficulty_presets := {
+	"easy": {
+		"PARRY_EARLY": 0.18, "PARRY_LATE": 0.10, "TELEGRAPH_TIME": 0.40,
+		"SLIDE_SHOT_INTERVAL": 0.50, "WHIP_INTERVAL": 0.45, "QUICKDRAW_RING_TIME": 0.55,
+		"FAKE_TWITCH_CHANCE": { 2: 0.15, 3: 0.25 }, "DIRECTIONAL_PARRY_ANGLE": 90.0, "SHOCKWAVE_SPEED": 180.0,
+		"STAGGER_TIME": 1.3, "COUNTER_LUNGE_RANGE": 200.0,
+		"BOSS_HP": 6, "PHASE_HP": { 2: 4, 3: 2 }, "PATTERN_GAP": { 1: 0.9, 2: 0.7, 3: 0.6 }, "P3_CHAIN": false,
+	},
+	"normal": {
+		"PARRY_EARLY": 0.14, "PARRY_LATE": 0.08, "TELEGRAPH_TIME": 0.30,
+		"SLIDE_SHOT_INTERVAL": 0.42, "WHIP_INTERVAL": 0.35, "QUICKDRAW_RING_TIME": 0.45,
+		"FAKE_TWITCH_CHANCE": { 2: 0.25, 3: 0.40 }, "DIRECTIONAL_PARRY_ANGLE": 80.0, "SHOCKWAVE_SPEED": 220.0,
+		"STAGGER_TIME": 1.0, "COUNTER_LUNGE_RANGE": 170.0,
+		"BOSS_HP": 6, "PHASE_HP": { 2: 4, 3: 2 }, "PATTERN_GAP": { 1: 0.7, 2: 0.55, 3: 0.45 }, "P3_CHAIN": false,
+	},
+	"hard": {
+		"PARRY_EARLY": 0.10, "PARRY_LATE": 0.05, "TELEGRAPH_TIME": 0.18,
+		"SLIDE_SHOT_INTERVAL": 0.30, "WHIP_INTERVAL": 0.25, "QUICKDRAW_RING_TIME": 0.30,
+		"FAKE_TWITCH_CHANCE": { 2: 0.50, 3: 0.60 }, "DIRECTIONAL_PARRY_ANGLE": 60.0, "SHOCKWAVE_SPEED": 300.0,
+		"STAGGER_TIME": 0.7, "COUNTER_LUNGE_RANGE": 120.0,
+		"BOSS_HP": 9, "PHASE_HP": { 2: 6, 3: 3 }, "PATTERN_GAP": { 1: 0.4, 2: 0.3, 3: 0.2 }, "P3_CHAIN": true,
+	},
+}
+var difficulty := "normal"
+var diff: Dictionary = difficulty_presets.normal
+
+
+func _init() -> void:
+	set_difficulty("normal")
+
+
+## 난이도 바꾸기 (Settings 가 부름). 사격 판정 값은 Config.shot 에 써 넣어 모든 적에 바로 적용
+func set_difficulty(name: String) -> void:
+	difficulty = name if difficulty_presets.has(name) else "normal"
+	diff = difficulty_presets[difficulty]
+	shot.PARRY_EARLY = diff.PARRY_EARLY
+	shot.PARRY_LATE = diff.PARRY_LATE
+	shot.DIRECTIONAL_PARRY_ANGLE = diff.DIRECTIONAL_PARRY_ANGLE
+
 
 # ---------------------------------------------------------------- 공격 종류 (모든 적 공통)
 ## NORMAL = 빨간 1겹 원 · 빨간 점멸 — 구르기로 피하거나 패링 (철견: 피해 · 휘청 없음)
@@ -153,7 +204,6 @@ var dummy := {                        # 공격 종류 연습 더미 (rooms/test/
 	"AIM_TIME": 0.8,
 	"COOLDOWN": 1.2,                  # 발사 후 다음 조준까지
 	"FIRST_DELAY": 0.8,
-	"STAGGER_TIME": 1.0,              # 기회 공격 패링 → 이 시간 동안 휘청 (베면 반격 명중)
 	"AGGRO_RANGE": 420.0,
 }
 

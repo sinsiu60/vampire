@@ -4,11 +4,12 @@ class_name Menu
 ##  ▶ 화면 흔들림 0 ~ 150% (5% 단위, ← → 10%, 마우스 클릭/드래그) — 바꾸면 그 강도로 흔들림 미리보기
 ##  ▶ 발사 타이밍 원 표시 켜기/끄기 (끄면 숙련자용 하드 모드)
 ##  ▶ 구르기 키 (Enter / 클릭 → 다음에 누른 키로 바뀜, ESC 취소)
+##  ▶ 난이도 EASY / NORMAL / HARD (← → · Enter · 클릭). 보스 체력 칸은 방을 다시 시작할 때부터, 나머지는 바로
 ## ↑ ↓ 항목 선택 · ESC 닫기 (닫을 때 저장)
 
 var main: Node
 var open := false
-var row := 0                     # 0 = 화면 흔들림, 1 = 발사 타이밍 원, 2 = 구르기 키
+var row := 0                     # 0 = 화면 흔들림, 1 = 발사 타이밍 원, 2 = 구르기 키, 3 = 난이도
 var _drag := false
 var _waiting_key := false        # 구르기 키 바꾸기: 다음 키 입력을 기다리는 중
 
@@ -29,6 +30,10 @@ func toggle_rect() -> Rect2:
 
 func key_rect() -> Rect2:
 	return Rect2(Config.view.w / 2.0 - 80, Config.view.h / 2.0 + 40, 160, 14)
+
+
+func diff_rect() -> Rect2:
+	return Rect2(Config.view.w / 2.0 - 80, Config.view.h / 2.0 + 60, 160, 14)
 
 
 func set_open(v: bool) -> void:
@@ -61,7 +66,7 @@ func _input(event: InputEvent) -> void:
 	var before := Settings.shake
 	match event.physical_keycode:
 		KEY_UP, KEY_W: row = maxi(0, row - 1)
-		KEY_DOWN, KEY_S: row = mini(2, row + 1)
+		KEY_DOWN, KEY_S: row = mini(3, row + 1)
 		KEY_LEFT, KEY_A, KEY_RIGHT, KEY_D, KEY_SPACE, KEY_ENTER, KEY_KP_ENTER:
 			var dir := -1 if event.physical_keycode in [KEY_LEFT, KEY_A] else 1
 			if row == 0:
@@ -69,6 +74,11 @@ func _input(event: InputEvent) -> void:
 					Settings.set_shake(Settings.shake + 0.1 * dir)
 			elif row == 1:
 				Settings.approach = not Settings.approach
+			elif row == 3:
+				if event.physical_keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
+					_cycle_difficulty_wrap()
+				else:
+					Settings.cycle_difficulty(dir)
 			elif event.physical_keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
 				_waiting_key = true
 	get_viewport().set_input_as_handled()
@@ -88,6 +98,9 @@ func _physics_process(_delta: float) -> void:
 		if key_rect().has_point(m):
 			row = 2
 			_waiting_key = true
+		if diff_rect().has_point(m):
+			row = 3
+			_cycle_difficulty_wrap()
 		var sl := slider_rect()
 		if sl.grow_individual(6, 8, 6, 8).has_point(m):
 			_drag = true
@@ -99,6 +112,12 @@ func _physics_process(_delta: float) -> void:
 		Settings.set_shake((m.x - sl.position.x) / sl.size.x * 1.5)
 	_after_change(before)
 	queue_redraw()
+
+
+## Enter · 클릭: EASY → NORMAL → HARD → EASY
+func _cycle_difficulty_wrap() -> void:
+	var L: Array = Config.DIFFICULTIES
+	Settings.set_difficulty(L[(L.find(Settings.difficulty) + 1) % L.size()])
 
 
 ## 값이 바뀌면 그 강도로 흔들림을 미리 보여줌 (드래그 중엔 놓을 때까지 기다림)
@@ -119,7 +138,8 @@ func _draw() -> void:
 	draw_rect(Rect2(0, 0, W, H), Color(0, 0, 0, 0.75))
 	Fonts.text(self, "옵션", Vector2(W / 2.0, H / 2.0 - 44), 16, ui, "center", false, true)
 	var kr := key_rect()
-	var arrow_y: float = [sl.position.y - 10, tg.position.y + 7, kr.position.y + 7][row]
+	var dr := diff_rect()
+	var arrow_y: float = [sl.position.y - 10, tg.position.y + 7, kr.position.y + 7, dr.position.y + 7][row]
 	Fonts.text(self, "▶", Vector2(sl.position.x - 6, arrow_y), 11, ui, "right")
 	Fonts.text(self, "화면 흔들림", Vector2(sl.position.x, sl.position.y - 10), 11, ui)
 	Fonts.text(self, "%d%%" % roundi(Settings.shake * 100), Vector2(sl.end.x, sl.position.y - 10), 11, ui, "right")
@@ -145,5 +165,11 @@ func _draw() -> void:
 	Fonts.text(self, "구르기 키", Vector2(kr.position.x, kr.position.y + 7), 11, ui)
 	var kname := "키를 누르세요" if _waiting_key else Settings.roll_key_name()
 	Fonts.text(self, kname, Vector2(kr.end.x, kr.position.y + 7), 11, ui if not _waiting_key else Config.colors.parry, "right")
+	# 난이도 (← EASY · NORMAL · HARD →)
+	Fonts.text(self, "난이도", Vector2(dr.position.x, dr.position.y + 7), 11, ui)
+	var dl := Settings.difficulty_label()
+	Fonts.text(self, "← %s →" % dl if row == 3 else dl, Vector2(dr.end.x, dr.position.y + 7), 11, ui, "right", false, true)
+	if row == 3:
+		Fonts.text(self, "보스 체력은 방을 다시 시작할 때부터", Vector2(dr.end.x, dr.position.y + 20), 9, Color(ui, 0.7), "right")
 	var help := "새 구르기 키를 누르세요 · ESC 취소" if _waiting_key else "↑ ↓ 항목 선택 · ← → 조절 · Enter 키 바꾸기 · 클릭/드래그 · ESC 닫기"
-	Fonts.text(self, help, Vector2(W / 2.0, H / 2.0 + 72), 10, Color(ui, 0.8), "center")
+	Fonts.text(self, help, Vector2(W / 2.0, H / 2.0 + 96), 10, Color(ui, 0.8), "center")

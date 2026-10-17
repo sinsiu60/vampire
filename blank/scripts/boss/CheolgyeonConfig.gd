@@ -7,7 +7,7 @@ extends RefCounted
 # ---------------------------------------------------------------- 기본
 const NAME := "철견"
 const TITLE := "하운드 제1 사냥개"
-const HP := 9                          ## 체력 칸 9개 — 반격 베기 명중마다 1
+## HP → 난이도 프리셋 Config.difficulty_presets 의 BOSS_HP
 const W := 20.0                        ## 몸통 판정 너비 (px)
 const H := 54.0                        ## 몸통 판정 높이 (모자 끝까지 약 56px)
 const FIRST_DELAY := 0.5               ## (예전 값 — 지금은 OPEN_STILL / OPEN_STILL_RESTART)
@@ -31,9 +31,9 @@ const DEMO_BACK := 110.0               ## (데모) 뒤로 빠지는 대시 거�
 const EDGE := 20.0                     ## 방 양 끝 벽에서 이만큼 안쪽까지만 이동
 
 # ---------------------------------------------------------------- 휘청 → 반격 (핵심)
-const STAGGER_TIME := 0.7              ## 휘청 지속 — 이 안에 베면 반격 베기
+## STAGGER_TIME → 난이도 프리셋 Config.difficulty_presets 의 STAGGER_TIME
 const STAGGER_BLINK := 0.06            ## 휘청 중 흰 테두리 깜빡임 주기 (켜짐/꺼짐 각각)
-const COUNTER_LUNGE_RANGE := 120.0     ## 이 안이면 플레이어가 철견에게 자동 돌진하며 벰
+## COUNTER_LUNGE_RANGE → 난이도 프리셋 Config.difficulty_presets 의 COUNTER_LUNGE_RANGE
 const COUNTER_LUNGE_TIME := 0.08       ## 자동 돌진 시간
 const COUNTER_STOP := 15.0             ## 돌진이 멈추는 거리 (철견 몸 중심에서)
 const COUNTER_HITSTOP := 8             ## 반격 명중 히트스톱 (프레임)
@@ -65,10 +65,10 @@ const REFLECT_PITCH := 0.9             ## 반사탄이 철견에 맞아 휘청 �
 
 # ---------------------------------------------------------------- 패턴 ① 슬라이드 사격
 const SLIDE_SHOT_MIN_DIST := 120.0     ## 이 거리 이상일 때만 (가까우면 먼저 물러나는 대시)
-const SLIDE_SHOT_PREP := 0.2           ## 몸을 낮추는 예고 (gun_cock.wav 와 동시에 시작)
+## SLIDE_SHOT_PREP → 난이도 프리셋 Config.difficulty_presets 의 TELEGRAPH_TIME
 const SLIDE_SHOT_COUNT := 3            ## 연발 수 (페이즈 2: 4 — 3단계)
 const SLIDE_SHOT_FIRST := 0.25         ## 슬라이드 시작 → 첫 발
-const SLIDE_SHOT_GAP := 0.42           ## 탄 간격 — 구르기(0.30초, 끝날 때까지 점프 · 베기 불가) 뒤 다음 탄을 점프 · 패링할 틈 (4단계 NORMAL 값)
+## SLIDE_SHOT_GAP → 난이도 프리셋 Config.difficulty_presets 의 SLIDE_SHOT_INTERVAL
 const SLIDE_SHOT_AIM := 0.45           ## 탄마다 원이 줄어드는 시간 (패턴 시작보다 일찍 시작하지는 않음)
 const SLIDE_SHOT_PASS := 80.0          ## 플레이어를 지나쳐 이만큼 반대편까지 미끄러짐
 const SLIDE_SHOT_MAX := 1.4            ## 슬라이드 최대 시간
@@ -78,7 +78,7 @@ const SLIDE_SHOT_RECOVER := 0.4        ## 마지막 탄 뒤 플레이어 뒤쪽�
 const WHIP_STOP := 30.0                ## 플레이어 앞 이 거리까지 대시 (몸 중심끼리)
 const WHIP_DASH_MAX := 0.45            ## 그 대시 최대 시간
 const WHIP_WINDUP := 0.2               ## 1타 예고 (whip_windup, 권총 빨간 점멸)
-const WHIP_GAP := 0.25                 ## 1타 → 2타 내려치는 순간 사이
+## WHIP_GAP → 난이도 프리셋 Config.difficulty_presets 의 WHIP_INTERVAL
 const WHIP_DELAY := 0.5                ## 3타: whip_windup 으로 멈칫하는 시간 (지연 공격)
 const WHIP_REWIND := 0.05              ## 내려친 뒤 다음 예고 자세로 돌아가기까지
 const WHIP_FLASH := 0.2                ## 내려치기 전 권총이 빨갛게 점멸하는 시간
@@ -97,23 +97,23 @@ const DUEL_MIN_DIST := 110.0           ## 이보다 가까우면 먼저 물러�
 const DUEL_HOLD_MIN := 0.4             ## duel 포즈 정적
 const DUEL_HOLD_MAX := 0.8
 const DUEL_TWITCH := 0.1               ## 움찔 (진짜) → 이 뒤 원 시작
-const DUEL_DRAW := 0.3                 ## 원이 줄어드는 시간 = 뽑아서 쏘기까지
+## DUEL_DRAW → 난이도 프리셋 Config.difficulty_presets 의 QUICKDRAW_RING_TIME
 const DUEL_RECOVER := 0.2              ## 쏜 뒤 여운
 
 # ---------------------------------------------------------------- 페이즈 1 루프 (체력 9 ~ 7)
 const P1_ORDER := [1, 2, 4]            ## 순서 고정: 슬라이드 사격 → 돌진 건카타 → 속사
-const P1_GAP := 0.3                    ## 패턴 사이 공백 (자리 잡는 이동이 있으면 이동이 대신 — 0.4초 이내)
+## P1_GAP → 난이도 프리셋 Config.difficulty_presets 의 PATTERN_GAP
 const REPOSITION_MAX := 0.23           ## 자리 잡는 대시 최대 시간 (웅크림 0.15 + 이것 ≤ 0.4)
 const PATTERN_NAMES := { 1: "① 슬라이드 사격", 2: "② 돌진 건카타", 3: "③ 점프 사격", 4: "④ 속사", 5: "⑤ 도탄 사격" }
 
 # ---------------------------------------------------------------- 패턴 ③ 점프 사격 (페이즈 2부터)
-const JS_PREP := 0.15                  ## 웅크림
+## JS_PREP → 난이도 프리셋 Config.difficulty_presets 의 TELEGRAPH_TIME
 const JS_TIME := 0.85                  ## 체공 (포물선)
 const JS_HEIGHT := 92.0                ## 높이 뛰어오름 (px)
 const JS_LAND_OFFSET := 56.0           ## 플레이어에서 이만큼 떨어진 곳에 착지 (내 쪽)
 const JS_SHOTS := [0.3, 0.55]          ## 뛰어오른 뒤 발사 시각 (간격 0.25초) — 공중에서 아래 대각선
 const JS_AIM := 0.3                    ## 원이 줄어드는 시간
-const JS_WAVE_SPEED := 300.0           ## 착지 충격파 (보라색, 패링 불가 — 점프로 피함) 좌우로 퍼지는 속도
+## JS_WAVE_SPEED → 난이도 프리셋 Config.difficulty_presets 의 SHOCKWAVE_SPEED
 const JS_WAVE_H := 8.0                 ## 충격파 높이 (바닥에서)
 const JS_WAVE_RANGE := 300.0           ## 충격파가 사라지는 거리
 const JS_LAND_PITCH := 1.4             ## 착지 쿵: explosion.wav 피치
@@ -140,18 +140,18 @@ const KICK_BOX := Vector2(34, 20)      ## 발차기 판정 (바닥 근처 — �
 const KICK_LUNGE := 16.0
 
 # ---------------------------------------------------------------- 속사 가짜 움찔 (페이즈 2부터)
-const FAKE_CHANCE := 0.6               ## 정적 중 가짜 움찔이 나올 확률 (한 판에 최대 FAKE_MAX 번)
+## FAKE_CHANCE → 난이도 프리셋 Config.difficulty_presets 의 FAKE_TWITCH_CHANCE
 const FAKE_MAX := 1
 const FAKE_WINDOW := 0.3               ## 가짜 움찔 뒤 이 시간 안에 베면 (헛스윙) → 즉시 사격
 const FAKE_PUNISH := 0.12              ## 헛스윙 벌: 이 시간 뒤 바로 쏨 (원도 이 길이)
 
 # ---------------------------------------------------------------- 페이즈 (체력: 1 = 9 ~ 7 · 2 = 6 ~ 4 폭우 · 3 = 3 ~ 1 정전)
-const PHASE_HP := { 1: 9, 2: 6, 3: 3 } ## 페이즈 시작 체력
+## PHASE_HP → 난이도 프리셋 Config.difficulty_presets 의 BOSS_HP · PHASE_HP
 const P2_PATTERNS := [1, 2, 3, 4, 5]   ## 무작위, 같은 패턴 연속 금지
-const P2_GAP := 0.3
+## P2_GAP → 난이도 프리셋 Config.difficulty_presets 의 PATTERN_GAP
 const P2_SLIDE_SHOTS := 4              ## 슬라이드 사격 4연발
-const P3_GAP := 0.2
-const P3_CHAIN := true                 ## 패턴 두 개를 휘청 없이 이어 붙임 — 두 번째 패턴 끝에만 휘청
+## P3_GAP → 난이도 프리셋 Config.difficulty_presets 의 PATTERN_GAP
+## P3_CHAIN → 난이도 프리셋 Config.difficulty_presets 의 P3_CHAIN
 
 # ---------------------------------------------------------------- 페이즈 전환 연출 (실제 시간, 여기서만 긴 슬로우 · 레터박스)
 const TR_SLOW := 0.3                   ## 전환 중 시간 속도

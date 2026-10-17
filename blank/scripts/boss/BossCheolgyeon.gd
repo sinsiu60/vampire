@@ -24,7 +24,10 @@ class_name BossCheolgyeon
 
 const C := preload("res://scripts/boss/CheolgyeonConfig.gd")
 
-var hp := C.HP
+var hp := 0
+var max_hp := 0                  ## 체력 칸 수 (난이도 BOSS_HP — 방을 시작할 때 정함)
+var _hp_table := {}              # 페이즈 시작 체력 { 1: BOSS_HP, 2, 3 } (방을 시작할 때 프리셋에서)
+var _gap_until := -INF           # 자리 잡는 대시가 끝나도 이 시각까지는 기다림 (패턴 사이 공백을 지킴)
 var phase := 1                   ## 1 · 2 · 3 (피날레도 무대는 3)
 var stage := "fight"             ## opening | fight | finale
 var viewer := false              ## F9 포즈 뷰어 — 로직 멈춤, 숫자 키로 포즈
@@ -105,7 +108,10 @@ func _ready() -> void:
 			phase = 3
 		_:
 			phase = clampi(cp_phase, 1, 3)
-	hp = 0 if stage == "finale" else C.PHASE_HP[phase]
+	var D: Dictionary = Config.diff
+	max_hp = int(D.BOSS_HP)
+	_hp_table = { 1: max_hp, 2: int(D.PHASE_HP[2]), 3: int(D.PHASE_HP[3]) }
+	hp = 0 if stage == "finale" else phase_hp(phase)
 	_tele = Node2D.new()
 	_tele.name = "Telegraph"
 	_tele.z_index = 30
@@ -472,9 +478,11 @@ func wave_hits(r: Rect2) -> bool:
 
 # ---------------------------------------------------------------- 외부에서 부름 (Main · Debug)
 ## 휘청: 반격 기회 len 초 (③ 착지 경직은 land 포즈 · 소리 없이)
-func stagger(sec := C.STAGGER_TIME, pose := "stagger") -> void:
+func stagger(sec := -1.0, pose := "stagger") -> void:
 	if dead or state == "cine":
 		return
+	if sec < 0.0:
+		sec = Config.diff.STAGGER_TIME
 	_stop_pattern(true)
 	_chain = 0
 	_move = {}
@@ -513,7 +521,7 @@ func on_counter_hit(angle: float) -> int:
 		dir = -float(facing)
 	_kb_v = dir * 2.0 * C.COUNTER_KNOCKBACK / C.KNOCKBACK_TIME
 	velocity.x = _kb_v
-	if hp > 0 and phase < 3 and hp <= C.PHASE_HP[phase + 1]:
+	if hp > 0 and phase < 3 and hp <= phase_hp(phase + 1):
 		_transition_to = phase + 1
 	if hp <= 0:
 		hp = 0
@@ -525,7 +533,7 @@ func on_blocked(p: Player) -> bool:
 	if p.last_slash_t == _last_block:
 		return false
 	_last_block = p.last_slash_t
-	if pattern != 0 or stage != "fight" or state in ["jump", "repo_dash", "repo_prep", "cine", "knockback"]:
+	if pattern != 0 or stage != "fight" or state in ["jump", "repo_dash", "repo_prep", "repo_wait", "cine", "knockback"]:
 		return true
 	_move = {}
 	set_state("block")
@@ -547,7 +555,7 @@ func _debug_to_fight() -> void:
 		arena.spots = []
 		arena.lightning_on = true
 	if hp <= 0:
-		hp = C.PHASE_HP[phase]
+		hp = phase_hp(phase)
 	var main := _main()
 	if main != null:
 		main.cine_end()
@@ -612,13 +620,13 @@ func debug_next_phase(cinematic := false) -> int:
 	if stage == "finale":
 		_debug_to_fight()
 		phase = 1
-		hp = C.PHASE_HP[1]
+		hp = phase_hp(1)
 		_start_phase()
 		return 1
 	_debug_to_fight()
 	if cinematic:
 		if phase < 3:
-			hp = C.PHASE_HP[phase + 1]
+			hp = phase_hp(phase + 1)
 			_begin_transition(phase + 1)
 			return phase + 1
 		hp = 0
@@ -631,14 +639,24 @@ func debug_next_phase(cinematic := false) -> int:
 		_begin_finale(false)
 		return 4
 	phase = phase + 1
-	hp = C.PHASE_HP[phase]
+	hp = phase_hp(phase)
 	_start_phase()
 	return phase
 
 
 # ---------------------------------------------------------------- 페이즈
 func _gap() -> float:
-	return C.P3_GAP if phase >= 3 else (C.P2_GAP if phase == 2 else C.P1_GAP)
+	return float(Config.diff.PATTERN_GAP[clampi(phase, 1, 3)])
+
+
+## 패턴 사이 공백 목표 (난이도 PATTERN_GAP — HUD 타이밍 표시)
+func pattern_gap() -> float:
+	return _gap()
+
+
+## 페이즈 ph 시작 체력 (난이도 프리셋, 방을 시작할 때 정한 값)
+func phase_hp(ph: int) -> int:
+	return int(_hp_table.get(clampi(ph, 1, 3), max_hp))
 
 
 ## 페이즈 시작 = 체크포인트
@@ -887,6 +905,16 @@ func _physics_process(delta: float) -> void:
 			_dash_ghosts(delta)
 			if _arrived() or is_on_wall():
 				velocity.x *= 0.25
+				if TimeManager.world_time < _gap_until:
+					set_state("repo_wait")
+					_wait = _gap_until - TimeManager.world_time
+				else:
+					_start_pattern(_after_move)
+		"repo_wait":
+			_face_player()
+			velocity.x = move_toward(velocity.x, 0.0, 2400.0 * delta)
+			if t >= _wait:
+				_gap_until = -INF
 				_start_pattern(_after_move)
 		# ---- 점프 (발판에서 내려오기)
 		"jump_prep":
@@ -939,7 +967,7 @@ func _physics_process(delta: float) -> void:
 			_face_player()
 			velocity.x = move_toward(velocity.x, 0.0, 2400.0 * delta)
 			_bullets_tick(main, p)
-			if t >= C.SLIDE_SHOT_PREP:
+			if t >= Config.diff.TELEGRAPH_TIME:
 				set_state("s_slide")
 				body.snap("slide")
 				Audio.sfx("slide")
@@ -967,7 +995,7 @@ func _physics_process(delta: float) -> void:
 		# ---- ② 돌진 건카타
 		"w_prep":
 			velocity.x = 0.0
-			if t >= C.DASH_PREP:
+			if t >= Config.diff.TELEGRAPH_TIME:
 				set_state("w_dash")
 				body.snap("dash")
 				Audio.sfx("dash_whoosh")
@@ -984,7 +1012,7 @@ func _physics_process(delta: float) -> void:
 		"j_prep":
 			velocity.x = 0.0
 			_face_player()
-			if t >= C.JS_PREP:
+			if t >= Config.diff.TELEGRAPH_TIME:
 				set_state("j_air")
 				body.snap("jump")
 				Audio.sfx("jump")
@@ -1141,7 +1169,7 @@ func _next_pattern() -> void:
 	else:
 		n = _queued if _queued != 0 else _pick_random([_last_pattern])
 		_queued = 0
-		if phase >= 3 and C.P3_CHAIN:
+		if phase >= 3 and Config.diff.P3_CHAIN:
 			_chain = 1
 			_chain_next = _pick_random([n])
 	if _reposition_needed(n) and _reposition(n):
@@ -1196,11 +1224,11 @@ func _start_pattern(n: int) -> void:
 			Audio.sfx("gun_cock")
 			var tx := _clamp_x(p.global_position.x + dir * C.SLIDE_SHOT_PASS)
 			_move = { "dir": dir, "target_x": tx, "max_t": C.SLIDE_SHOT_MAX }
-			var slide_start: float = wt + C.SLIDE_SHOT_PREP
+			var slide_start: float = wt + Config.diff.TELEGRAPH_TIME
 			var count: int = C.SLIDE_SHOT_COUNT if phase == 1 else C.P2_SLIDE_SHOTS
 			bullets.clear()
 			for i in count:
-				var ft: float = slide_start + C.SLIDE_SHOT_FIRST + i * C.SLIDE_SHOT_GAP
+				var ft: float = slide_start + C.SLIDE_SHOT_FIRST + i * Config.diff.SLIDE_SHOT_INTERVAL
 				bullets.append(_bullet(0, ft, minf(C.SLIDE_SHOT_AIM, ft - wt), "normal"))   # 모두 NORMAL — 휘청 없음, 굴러서 파고드는 패턴
 		2:
 			var tx := _clamp_x(p.global_position.x - dir * C.WHIP_STOP)
@@ -1221,7 +1249,7 @@ func _start_pattern(n: int) -> void:
 			set_state("j_prep")
 			_face_player()
 			body.snap("crouch")
-			var air: float = wt + C.JS_PREP
+			var air: float = wt + Config.diff.TELEGRAPH_TIME
 			bullets.clear()
 			for i in C.JS_SHOTS.size():
 				var ft: float = air + float(C.JS_SHOTS[i])
@@ -1243,7 +1271,7 @@ func _start_pattern(n: int) -> void:
 				fakes = randi_range(C.FINALE_FAKES.x, C.FINALE_FAKES.y)
 				gap = C.FINALE_FAKE_GAP
 				role = "finale"
-			elif phase >= 2 and randf() < C.FAKE_CHANCE:
+			elif phase >= 2 and randf() < float(Config.diff.FAKE_TWITCH_CHANCE.get(phase, 0.0)):
 				fakes = randi_range(1, C.FAKE_MAX)
 			_duel = { "hold": hold + fakes * gap, "fakes": [], "fake_t": INF, "punished": false, "role": role }
 			for k in fakes:
@@ -1283,7 +1311,11 @@ func _after_pattern(no_gap := false) -> void:
 	if phase >= 2 and forced == 0 and _queued == 0:
 		_queued = _pick_random([_last_pattern])
 	var nx := _peek_next()
-	if (nx != 0 and _reposition_needed(nx)) or no_gap:
+	_gap_until = -INF
+	if no_gap:
+		_next_pattern()
+	elif nx != 0 and _reposition_needed(nx):
+		_gap_until = TimeManager.world_time + _gap()     # 대시가 공백보다 짧으면 도착 뒤 남은 만큼 기다림
 		_next_pattern()
 	else:
 		_go_wait(_gap())
@@ -1319,7 +1351,7 @@ func _action(at: float) -> void:
 func _start_whip_combo() -> void:
 	var kick := phase >= 2 and randf() < C.KICK_CHANCE
 	var T1: float = C.WHIP_WINDUP
-	var T2: float = T1 + (C.WHIP_REWIND + C.KICK_READY if kick else C.WHIP_GAP)
+	var T2: float = T1 + (C.WHIP_REWIND + C.KICK_READY if kick else Config.diff.WHIP_INTERVAL)
 	var T3: float = T2 + C.WHIP_REWIND + C.WHIP_DELAY + (0.05 if kick else 0.0)
 	_whip = { "times": [T1, T2, T3], "wind_at": [0.0, T1 + C.WHIP_REWIND, T2 + C.WHIP_REWIND + (0.05 if kick else 0.0)],
 		"parried": [false, false, false], "swung": [false, false, false], "wound": [false, false, false], "kick": kick,
@@ -1393,7 +1425,7 @@ func _waves_tick(delta: float) -> void:
 	var main := _main()
 	var w: float = main.room.size_px().x if main != null else 512.0
 	for wv in waves:
-		var dx: float = C.JS_WAVE_SPEED * delta
+		var dx: float = Config.diff.SHOCKWAVE_SPEED * delta
 		wv.x += wv.dir * dx
 		wv.dist += dx
 	waves = waves.filter(func(wv): return wv.dist < C.JS_WAVE_RANGE and wv.x > 8.0 and wv.x < w - 8.0)
@@ -1424,8 +1456,9 @@ func _duel_tick(p: Player) -> void:
 	if t >= float(_duel.hold):
 		set_state("d_twitch")
 		body.snap("twitch")
-		var fire_t := TimeManager.world_time + C.DUEL_TWITCH + C.DUEL_DRAW
-		bullets = [_bullet(0, fire_t, C.DUEL_DRAW, String(_duel.get("role", "stagger")))]
+		var draw: float = Config.diff.QUICKDRAW_RING_TIME
+		var fire_t := TimeManager.world_time + C.DUEL_TWITCH + draw
+		bullets = [_bullet(0, fire_t, draw, String(_duel.get("role", "stagger")))]
 		Audio.play_synced("quickdraw", fire_t)
 
 

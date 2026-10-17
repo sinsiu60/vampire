@@ -23,6 +23,7 @@ const JUICE := [
 var shake := 1.0
 var approach := true
 var roll_key := KEY_SHIFT        ## 구르기 키 (물리 키 코드) — 옵션 메뉴에서 바꿈
+var difficulty := "normal"       ## 난이도 easy | normal | hard (Config.difficulty_presets) — 옵션 메뉴에서 바꿈
 var juice := {}
 
 
@@ -32,6 +33,7 @@ func _ready() -> void:
 		juice[j.key] = true
 	load_settings()
 	apply_roll_key()
+	Config.set_difficulty(difficulty)
 
 
 ## 구르기 키를 입력 "roll" 에 반영 (project.godot 의 기본값 Shift 를 덮어씀)
@@ -50,6 +52,21 @@ func set_roll_key(code: int) -> void:
 
 
 ## 키 이름 (옵션 메뉴 표시)
+## 난이도 바꾸기 (옵션 메뉴 ← →). 보스 체력은 다음 재시작부터, 나머지는 바로
+func set_difficulty(name: String) -> void:
+	Config.set_difficulty(name)
+	difficulty = Config.difficulty
+
+
+func cycle_difficulty(dir: int) -> void:
+	var L: Array = Config.DIFFICULTIES
+	set_difficulty(L[clampi(L.find(difficulty) + dir, 0, L.size() - 1)])
+
+
+func difficulty_label() -> String:
+	return Config.DIFFICULTY_LABELS.get(difficulty, "NORMAL")
+
+
 func roll_key_name() -> String:
 	return OS.get_keycode_string(roll_key as Key)
 
@@ -85,6 +102,7 @@ func load_settings() -> void:
 		shake = v
 	approach = bool(cf.get_value("options", "approach", true))
 	roll_key = int(cf.get_value("options", "roll_key", KEY_SHIFT))
+	difficulty = String(cf.get_value("options", "difficulty", "normal"))
 
 
 func save_settings() -> void:
@@ -92,4 +110,5 @@ func save_settings() -> void:
 	cf.set_value("options", "shake", shake)
 	cf.set_value("options", "approach", approach)
 	cf.set_value("options", "roll_key", roll_key)
+	cf.set_value("options", "difficulty", difficulty)
 	cf.save(PATH)

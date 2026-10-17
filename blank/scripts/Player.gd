@@ -264,10 +264,12 @@ func _counter_lunge() -> Dictionary:
 	if b == null:
 		return {}
 	var to: Vector2 = b.center() - center()
-	if to.length() > CG.COUNTER_LUNGE_RANGE:
+	if to.length() > Config.diff.COUNTER_LUNGE_RANGE:
 		return {}
 	var dist := maxf(0.0, to.length() - CG.COUNTER_STOP)
-	return { "angle": to.angle(), "speed": dist / CG.COUNTER_LUNGE_TIME }
+	# 돌진은 _dash_t 가 남아 있는 틱에만 움직임 (0.08초 = 4틱) — 그 틱 수로 나눠야 정확히 COUNTER_STOP 앞에 멈춤
+	var move_ticks := maxi(1, ceili(CG.COUNTER_LUNGE_TIME * Config.fps - 1e-6) - 1)
+	return { "angle": to.angle(), "speed": dist / (float(move_ticks) / Config.fps) }
 
 
 func is_rolling() -> bool:

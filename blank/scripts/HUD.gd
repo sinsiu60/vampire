@@ -78,7 +78,7 @@ func _draw() -> void:
 		Fonts.text(self, GameState.label(), Vector2(8, H - 22), 9, Color(ui, 0.7), "left", false, true)
 
 
-## 철견: 화면 위 하늘색 체력 칸 9개 (반격 베기 명중마다 하나씩 빔) · 휘청 중이면 칸이 깜빡임
+## 철견: 화면 위 하늘색 체력 칸 (난이도 BOSS_HP 개) (반격 베기 명중마다 하나씩 빔) · 휘청 중이면 칸이 깜빡임
 ## F9 포즈 뷰어: 왼쪽에 포즈 목록 (숫자 키)
 func _draw_boss() -> void:
 	var b: BossCheolgyeon = main.boss
@@ -86,7 +86,7 @@ func _draw_boss() -> void:
 		return
 	var W: float = Config.view.w
 	var ui: Color = Config.colors.ui
-	var n: int = CheolgyeonConfig.HP
+	var n: int = b.max_hp
 	var cw := 12.0
 	var gap := 3.0
 	var x0 := roundf(W / 2.0 - (cw * n + gap * (n - 1)) / 2.0)
@@ -140,7 +140,7 @@ func _draw_boss_timing(b: BossCheolgyeon) -> void:
 	var red: Color = Config.colors.attack
 	var parts := [["P%d %s%s" % [b.phase, d.name, " (이어 붙임 %d)" % d.chain if d.get("chain", 0) > 0 else ""], ui]]
 	if d.gap >= 0.0:
-		parts.append(["공백 %dms" % roundi(d.gap * 1000.0), red if d.gap > 0.4 + 1e-3 else Color(ui, 0.75)])
+		parts.append(["공백 %dms" % roundi(d.gap * 1000.0), red if d.gap > b.pattern_gap() + 0.05 else Color(ui, 0.75)])
 	if d.first >= 0.0:
 		parts.append(["시작→행동 %dms" % roundi(d.first * 1000.0), red if d.first > 1.0 else Color(ui, 0.75)])
 	if d.since_prev >= 0.0:

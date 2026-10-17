@@ -2,7 +2,7 @@ extends EnemyGunner
 class_name EnemyDummy
 ## 공격 종류 연습 더미 (rooms/test/room_attack_types.tscn): 제자리에서 NORMAL → OPPORTUNITY → EVADE 를 번갈아 쏨. 죽지 않음.
 ##  NORMAL (빨간 1겹)      — 패링하면 일반 패링 연출만 (철견처럼 피해 · 휘청 없음). 구르기로 피해도 됨
-##  OPPORTUNITY (빨간 2겹) — 0.15초 전 '칭'. 패링하면 휘청 (Config.dummy.STAGGER_TIME) → 그동안 베면 반격 명중
+##  OPPORTUNITY (빨간 2겹) — 0.15초 전 '칭'. 패링하면 휘청 (Config.diff.STAGGER_TIME) → 그동안 베면 반격 명중
 ##  EVADE (보라)           — 패링 불가. 구르기 무적이나 점프로 피함
 ## 수치는 Config.dummy · Config.attack
 
@@ -69,7 +69,7 @@ func _physics_process(delta: float) -> void:
 	if state == "stagger":
 		t += delta
 		walk(0, 0.0, cfg.accel, delta)
-		if t >= Config.dummy.STAGGER_TIME:
+		if t >= Config.diff.STAGGER_TIME:
 			set_state("engage")
 			cool = cfg.cooldown
 		apply_physics(delta)
