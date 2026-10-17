@@ -182,7 +182,7 @@ func _draw_juice_panel() -> void:
 	var lh := 11.0
 	var n := Settings.JUICE.size()
 	var ui: Color = Config.colors.ui
-	draw_rect(Rect2(x - 4, y0 - 8, 148, lh * (n + 3) + 4), Color(0, 0, 0, 0.7))
+	draw_rect(Rect2(x - 4, y0 - 8, 186, lh * (n + 5) + 4), Color(0, 0, 0, 0.7))
 	Fonts.text(self, "F2 타격감 토글", Vector2(x, y0), 10, ui, "left", false, true)
 	for i in n:
 		var j: Dictionary = Settings.JUICE[i]
@@ -191,6 +191,13 @@ func _draw_juice_panel() -> void:
 			Color(ui, 1.0 if on else 0.4))
 	Fonts.text(self, "-  전부 켜기/끄기", Vector2(x, y0 + lh * (n + 1)), 10, Color(ui, 0.7))
 	Fonts.text(self, "듣기: Z 휘두르기 X 처치 C 패링 V 사격", Vector2(x, y0 + lh * (n + 2)), 10, Color(ui, 0.7))
+	var si: int = Debug.sound_i
+	var cur: String = Debug.SOUND_TEST[si] if si >= 0 else "-"
+	if cur == "rain_loop":
+		cur += " (켜짐)" if Debug._rain != null and is_instance_valid(Debug._rain) else " (꺼짐)"
+	Fonts.text(self, "B 보스 효과음 차례로: %s" % cur, Vector2(x, y0 + lh * (n + 3)), 10, Color(ui, 0.7))
+	var sync_names := ["뽑기+발사", "내려치기+칼"]
+	Fonts.text(self, "N 싱크 테스트 0.6초 뒤: %s" % (sync_names[Debug.sync_i] if Debug.sync_i >= 0 else "-"), Vector2(x, y0 + lh * (n + 4)), 10, Color(ui, 0.7))
 
 
 ## F3/F4: 시간 조작 상태 + 패링 시퀀스 / 킬 연출 타임라인 위치

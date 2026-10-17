@@ -20,6 +20,11 @@ var timing := false
 var frame := 0                   ## 처리된 게임 틱 수 (F3/F4 표시용)
 
 var _step_queue := 0
+## F2 패널 B / N: 보스 효과음 2차 미리 듣기 · 타격 지점 싱크 테스트
+const SOUND_TEST := ["gun_cock", "quickdraw", "pistol_whip", "execute", "stagger", "explosion", "flashbang", "thunder", "rain_loop"]
+var sound_i := -1
+var sync_i := -1
+var _rain: AudioStreamPlayer = null
 var menu_open := false           ## 옵션 메뉴가 열려 있으면 일시정지 유지 (Menu 가 세팅)
 
 
@@ -99,7 +104,34 @@ func _juice_key(code: int) -> void:
 	elif code == KEY_X: Audio.kill()
 	elif code == KEY_C: Audio.parry()
 	elif code == KEY_V: Audio.shot()
+	elif code == KEY_B:
+		# 보스 효과음 2차 차례로 미리 듣기
+		sound_i = (sound_i + 1) % SOUND_TEST.size()
+		var n: String = SOUND_TEST[sound_i]
+		if n == "rain_loop":
+			_toggle_rain()
+		else:
+			Audio.sfx(n)
+	elif code == KEY_N:
+		# 싱크 테스트: 0.6초 뒤 한 순간에 맞춰 (뽑기 + 발사) / (내려치기 + 칼 부딪힘)
+		sync_i = (sync_i + 1) % 2
+		var at := TimeManager.world_time + 0.6
+		if sync_i == 0:
+			Audio.play_synced("quickdraw", at)
+			Audio.play_synced("gun_fire", at, Config.audio.SFX_GUN, 0.85)
+		else:
+			Audio.play_synced("pistol_whip", at)
+			Audio.play_synced("parry_chang", at)
 	changed.emit()
+
+
+## F2 패널 B: 빗소리 반복 켜기/끄기
+func _toggle_rain() -> void:
+	if _rain != null and is_instance_valid(_rain):
+		Audio.stop_loop(_rain, 0.3)
+		_rain = null
+	else:
+		_rain = Audio.play_loop("rain_loop", -1.0, 0.3)
 
 
 func _physics_process(_delta: float) -> void:

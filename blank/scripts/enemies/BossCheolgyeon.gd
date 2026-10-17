@@ -687,7 +687,7 @@ func _whip_tick(player: Player) -> void:
 		if not _whip.swung[i] and t >= T:
 			_whip.swung[i] = true
 			if not _whip.parried[i]:
-				Audio.sfx("pistol_whip", "SFX_PISTOL_WHIP")
+				Audio.sfx("pistol_whip")
 	if t >= _whip.times[2] + B.WHIP_ACTIVE + B.WHIP_RECOVER:
 		_whip = {}
 		_end_pattern()

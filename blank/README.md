@@ -77,8 +77,9 @@ blank/
                                (2,0) 일방향 발판 = 물리 레이어 1 (발판, 비트 16) — 몸은 올라서지만 총알·시야는 통과
   art/tiles.png                8×8 타일 3장
   sounds/*.wav                 gun_fire, parry_chang, slowmo_in, slowmo_loop, time_return, kill_sound, door_open (0.9초), door_boss (3.5초),
-                               boss_intro (0.9초), boss_armor (0.35초)
-                               (있으면 씀, 없으면 무음: pistol_whip, gun_cock, grenade_pin, explosion, flashbang, stagger, execute)
+                               boss_intro (0.9초), boss_armor (0.35초), gun_cock, quickdraw, pistol_whip, execute, stagger, explosion,
+                               flashbang, thunder, rain_loop (반복), grenade_pin
+                               (있으면 씀, 없으면 무음: dash_whoosh, slide, jump)
 ```
 - `Config.gd` 이름 규칙: 프로토타입에서 대문자였던 이름(`AIM_TIME` 등)은 그대로, camelCase 는 snake_case (`runSpeed` → `run_speed`).
 - 방은 `Room.tscn` 의 `Terrain` 레이어에 에디터에서 직접 칠해서 고칠 수 있다. 타일 8px, 테스트 방 120 × 34 칸.
@@ -393,3 +394,38 @@ f = 처치한 틱부터 센 실제 틱 (처치 틱 = 0).
 | 결전 체크포인트 | 랠리 중 사망 → R → 결전 (체력 1, block) 부터 |
 | F8 · F10 | 페이즈 2 → 3 → 결전 → 1, 패턴 1 → 2 → … → 7 |
 | 일반 방 | 방 1 ~ 5 불러옴, 총잡이 패링 → 시퀀스 → 처치 (먹먹함 꺼짐) |
+
+## 보스 "철견" 재제작 — 0단계: 효과음 등록
+보스 효과음 2차 9종을 `sounds/` 에 넣고 `Audio` 에 등록 (앞 무음 제거 · 음량 정리된 파일 그대로).
+
+| 파일 | 길이 | 가장 큰 소리 | 볼륨 (`Config.audio`) | 용도 |
+|---|---|---|---|---|
+| gun_cock | 0.25s | 0.07s | SFX_GUN_COCK 0.8 | 슬라이드 사격 예고 |
+| quickdraw | 0.35s | 0.22s | SFX_QUICKDRAW 0.9 | 속사 권총 뽑기 |
+| pistol_whip | 0.45s | 0.12s | SFX_WHIP 0.9 | 건카타 내려치기 |
+| execute | 0.65s | 0 | SFX_EXECUTE 1.0 | 반격 베기 명중 |
+| stagger | 0.50s | 0 | SFX_STAGGER 0.8 | 철견 휘청 |
+| explosion | 0.60s | 0 | SFX_EXPLOSION 1.0 | 물탱크 폭발 |
+| flashbang | 1.00s | 0 | SFX_FLASHBANG 0.9 | 조명 파괴 · 정전 |
+| thunder | 0.90s | 0.17s | SFX_THUNDER 0.7 | 번개 |
+| rain_loop | 4.00s | — | SFX_RAIN 0.35 | 보스방 빗소리 (이음새 없는 반복) |
+
+- `Audio.play_synced(이름, 타격_월드시각)`: 피크 위치(`Audio.PEAKS`)만큼 일찍 재생해 그 지점이 타격 순간에 오게.
+  소리는 실제 시간으로 재생되므로 남은 월드 시간을 지금 시간 속도로 나눠 비교 — 슬로우면 그만큼 늦게 시작, 히트스톱 중엔 기다림,
+  이미 늦었으면 앞부분을 건너뛰고 재생. `cancel_synced` 로 취소
+- `Audio.play_loop` / `set_loop_volume` / `stop_loop`: 반복 재생 (풀과 따로, 실제 시간 페이드). `stop_all`(재시작)이면 같이 멈춤
+- 효과음은 시간 속도(슬로우 · 히트스톱)의 영향을 받지 않음 (Godot 오디오는 `Engine.time_scale` 과 무관)
+- 아직 없는 dash_whoosh · slide · jump 는 넣으면 바로 쓰이고 없으면 무음 (볼륨 키 SFX_DASH · SFX_SLIDE · SFX_JUMP 0.8)
+
+**들어 보기** — F2 패널: **B** 새 효과음 차례로 재생 (rain_loop 차례에서는 빗소리 반복 켜기/끄기),
+**N** 싱크 테스트 — 0.6초 뒤 한 순간에 맞춰 quickdraw + gun_fire / pistol_whip + parry_chang (번갈아)
+
+**확인** (Godot 4.5.1 자동 테스트, 실제 시간 기준)
+| 경우 | 시작 | 피크 | 목표 |
+|---|---|---|---|
+| quickdraw, 0.5초 뒤 | 0.283 | 0.497 | 0.500 |
+| pistol_whip, 0.5초 뒤 | 0.383 | 0.497 | 0.500 |
+| quickdraw, 슬로우 50% (월드 0.5 = 실제 1.0) | 0.783 | 0.997 | 1.000 |
+| quickdraw, 0.1초 뒤 (이미 늦음 → 0.12초 건너뜀) | 0.000 | 0.097 | 0.100 |
+| quickdraw, 히트스톱 20틱 중 예약 | 0.417 | 0.631 | 0.633 |
+| rain_loop | 반복 구간 = 파일 전체 (192000 샘플), 4.7초 뒤에도 재생 중, 볼륨 0.35 → 0.6 | | |

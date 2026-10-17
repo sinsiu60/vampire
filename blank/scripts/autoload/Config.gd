@@ -335,9 +335,17 @@ var audio := {
 	"SFX_DOOR_BOSS": 0.9,             # door_boss.wav (보스방 문)
 	"SFX_BOSS_INTRO": 1.0,            # boss_intro.wav (철견 이름 카드 · 포효)
 	"SFX_BOSS_ARMOR": 0.8,            # boss_armor.wav (반사탄이 장갑에 튕김)
-	# 철견 개편 (sounds 에 없으면 무음)
-	"SFX_PISTOL_WHIP": 0.8, "SFX_GUN_COCK": 1.0, "SFX_GRENADE_PIN": 0.8, "SFX_EXPLOSION": 1.0,
-	"SFX_FLASHBANG": 1.0, "SFX_STAGGER": 0.9, "SFX_EXECUTE": 1.0,
+	# 철견 (보스 효과음 2차) — Audio.VOLUME_KEYS 가 소리 이름과 연결
+	"SFX_GUN_COCK": 0.8,              # gun_cock.wav (슬라이드 사격 예고)
+	"SFX_QUICKDRAW": 0.9,             # quickdraw.wav (속사 권총 뽑기)
+	"SFX_WHIP": 0.9,                  # pistol_whip.wav (건카타 내려치기)
+	"SFX_EXECUTE": 1.0,               # execute.wav (반격 베기 명중)
+	"SFX_STAGGER": 0.8,               # stagger.wav (철견 휘청)
+	"SFX_EXPLOSION": 1.0,             # explosion.wav (물탱크 폭발)
+	"SFX_FLASHBANG": 0.9,             # flashbang.wav (조명 파괴 · 정전)
+	"SFX_THUNDER": 0.7,               # thunder.wav (번개)
+	"SFX_RAIN": 0.35,                 # rain_loop.wav (보스방 빗소리, 반복)
+	"SFX_DASH": 0.8, "SFX_SLIDE": 0.8, "SFX_JUMP": 0.8,   # dash_whoosh · slide · jump.wav (아직 없음 → 무음)
 	"GUN_PITCH": Vector2(0.95, 1.05),
 	"KILL_PITCH": Vector2(0.92, 1.08),
 }
