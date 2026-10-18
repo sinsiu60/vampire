@@ -326,6 +326,35 @@ const LIGHTNING_THUNDER := 0.5         ## → 이 뒤 thunder.wav
 const LIGHTNING_REVEAL := 0.35         ## 번개 뒤 어둠이 돌아오는 시간
 const SIGN_SIZE := Vector2(10, 30)     ## 떨어진 네온 간판 (바닥 장애물 + 도탄 반사판)
 
+# ---------------------------------------------------------------- 무대 그림 (배경 리디자인 2단계, 색은 Palette)
+## 사양 좌표는 바닥 222 기준 → 이 방 바닥 240 이라 y 를 STAGE_Y 만큼 내림 (충돌은 그대로).
+## 바닥 아래 띠는 사양 48px → 실제 30px 이라 웅덩이 y · 높이는 그 비율로 눌러 담음
+const STAGE_Y := 18.0
+const WIRE_A := Vector2(0, 52 + STAGE_Y)               ## 전선 (1px)
+const WIRE_B := Vector2(480, 46 + STAGE_Y)
+const LAMP_XS := [110.0, 240.0, 370.0]                 ## 조명 3개 — 전선에 8px 줄로 매달린 9×3 갓 + 7×1 전구
+const LAMP_CORD := 8.0
+const LAMP_SHADE := Vector2(9, 3)
+const LAMP_BULB := Vector2(7, 1)
+const LAMP_CONE_W := 92.0                              ## 원뿔 빛 바닥 폭 (투명도 Palette.LAMP_CONE_ALPHA)
+const SIGN_RECT := Rect2(192, 66 + STAGE_Y, 96, 30)    ## 네온 간판 (페이즈 1 — 걸려 있음)
+const SIGN_CHAINS := [215.0, 265.0]
+const SIGN_PLATE := Color("#181422")
+const SIGN_STROKES := [                                ## 분홍 네온 획 8개 (글자 대신 추상적인 획, 간판 안 좌표)
+	[Vector2(10, 7), Vector2(10, 23)], [Vector2(10, 7), Vector2(24, 7)], [Vector2(18, 7), Vector2(18, 23)],
+	[Vector2(32, 7), Vector2(32, 23)], [Vector2(32, 23), Vector2(46, 23)],
+	[Vector2(54, 7), Vector2(66, 7)], [Vector2(66, 7), Vector2(54, 23)],
+	[Vector2(74, 7), Vector2(74, 23)],
+]
+const TANK_RECT := Rect2(418, 120 + STAGE_Y, 40, 52)   ## 물탱크 원통 (위 뚜껑 타원 · 다리 2개 바닥까지 · 줄무늬 10px · 왼쪽 림라이트)
+const TANK_STRIPE := 10.0
+const RAIL_L := Vector2(0, 18)                         ## 난간 x 범위 (높이 RAIL_H, 기둥 RAIL_GAP 간격)
+const RAIL_R := Vector2(462, 480)
+const RAIL_H := 14.0
+const RAIL_GAP := 5.0
+const PUDDLES := [Rect2(60, 240, 70, 6), Rect2(170, 250, 90, 7), Rect2(300, 236, 80, 5), Rect2(400, 252, 60, 6)]   ## 사양 좌표 (바닥 222)
+const PUDDLE_COLOR := Color("#10111A")
+
 # ---------------------------------------------------------------- 키포즈 (예고 정지 → 1프레임 전환 → 여운 정지)
 const SNAP_GHOST_TIME := 0.16          ## 전환 순간 남는 이전 포즈 잔상 수명
 const SNAP_GHOST_ALPHA := 0.55

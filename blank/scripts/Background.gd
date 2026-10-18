@@ -14,6 +14,7 @@ var base_y := 240.0              ## 건물이 서 있는 높이 (화면 y) — �
 var layers: Array = []           # [{ tex, factor }]
 var rain_back: Rain
 var rain_front: Rain
+var painted := false             ## 지형을 팔레트로 다시 칠했는가 (Room.paint_terrain)
 
 var _room_w := 480.0
 var _rng := RandomNumberGenerator.new()
@@ -41,6 +42,8 @@ func build(room_w: float, seed: int, floor_y := 240.0, room: Node = null) -> voi
 	if room != null:
 		rain_back.room = room
 		rain_front.room = room
+		if room.get("paint_terrain"):
+			_paint_terrain(room)
 	_parallax.queue_redraw()
 
 
@@ -113,6 +116,50 @@ static func _blend(img: Image, r: Rect2i, c: Color) -> void:
 	for y in range(r.position.y, r.end.y):
 		for x in range(r.position.x, r.end.x):
 			img.set_pixel(x, y, img.get_pixel(x, y).blend(c))
+
+
+# ---------------------------------------------------------------- 6 Floor: 지형을 팔레트로 다시 칠함 (한 번 이미지로)
+## 지형 칸: 바닥색 #161822 + 윗면 1px 림 #464C64 + 24px 간격 사선 줄눈 #1A1C28 · 옆면 1px 어두운 테두리
+## 일방향 발판: 윗면 림 + 3px 구조물 색 + 아래 1px 테두리. 원래 타일은 투명하게 (충돌은 그대로)
+func _paint_terrain(room: Node) -> void:
+	var terrain: TileMapLayer = room.terrain
+	var t: int = int(Config.room.tile)
+	var size: Vector2 = room.size_px()
+	var img := Image.create(int(size.x), int(size.y), false, Image.FORMAT_RGBA8)
+	var used := terrain.get_used_rect()
+	for cy in range(used.position.y, used.end.y):
+		for cx in range(used.position.x, used.end.x):
+			var c := Vector2i(cx, cy)
+			var k: int = room.cell_kind(c)
+			if k == 0:
+				continue
+			var x0 := cx * t
+			var y0 := cy * t
+			if k == 2:
+				_fill(img, x0, y0, t, 1, Palette.FLOOR_LINE)
+				_fill(img, x0, y0 + 1, t, 3, Palette.STRUCT_LIGHT)
+				_fill(img, x0, y0 + 4, t, 1, Palette.STRUCT_EDGE)
+				continue
+			_fill(img, x0, y0, t, t, Palette.FLOOR)
+			for yy in t:            # 사선 줄눈 (24px 간격)
+				for xx in t:
+					if (x0 + xx + y0 + yy) % 24 == 0:
+						img.set_pixel(x0 + xx, y0 + yy, Palette.FLOOR_JOINT)
+			if room.cell_kind(c + Vector2i(-1, 0)) == 0:
+				_fill(img, x0, y0, 1, t, Palette.STRUCT_DARK)
+			if room.cell_kind(c + Vector2i(1, 0)) == 0:
+				_fill(img, x0 + t - 1, y0, 1, t, Palette.STRUCT_DARK)
+			if room.cell_kind(c + Vector2i(0, -1)) != 1:
+				_fill(img, x0, y0, t, 1, Palette.FLOOR_LINE)
+	var fl := $Floor as Node2D
+	for ch in fl.get_children():
+		ch.queue_free()
+	var spr := Sprite2D.new()
+	spr.centered = false
+	spr.texture = ImageTexture.create_from_image(img)
+	fl.add_child(spr)
+	terrain.self_modulate = Color(1, 1, 1, 0)
+	painted = true
 
 
 # ---------------------------------------------------------------- 시차 (화면 왼쪽 끝 월드 x × 배율)

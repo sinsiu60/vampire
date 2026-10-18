@@ -10,6 +10,7 @@ class_name Room
 @export var room_title := ""     ## 방 설명 (디버그 표시용, 예: "기본 베기 연습")
 @export var ambience := ""       ## 배경음 반복 (sounds/ 의 이름, 예: "rain_loop") — 없으면 ""
 @export var ambience_volume := -1.0   ## 배경음 볼륨 (-1 = Config.audio 기본값)
+@export var paint_terrain := false    ## 지형을 1장 팔레트로 다시 칠함 (Background 의 Floor 층 — 타일은 안 보이게, 충돌은 그대로)
 
 @onready var terrain: TileMapLayer = $Terrain
 

@@ -9,11 +9,10 @@ class_name BossArena
 const C := preload("res://scripts/boss/CheolgyeonConfig.gd")
 const DARK_SHADER := preload("res://shaders/darkness.gdshader")
 
-@export var tank_pos := Vector2(452, 104)          ## 물탱크 받침 아래 중앙 (배경, 부딪히지 않음)
-@export var sign_hang := Vector2(190, 92)          ## 매달린 네온 간판 중앙
 @export var sign_floor_x := 190.0                  ## 떨어져 박히는 x
-@export var lamp_xs: PackedFloat32Array = PackedFloat32Array([96.0, 256.0, 416.0])
-@export var lamp_y := 26.0                         ## 조명 갓 위치 (천장 전선에 매달림)
+## 무대 소품 위치는 CheolgyeonConfig 의 무대 그림 블록 (WIRE_* · LAMP_* · SIGN_RECT · TANK_RECT · RAIL_* · PUDDLES) — 색은 Palette
+var sign_hang: Vector2 = C.SIGN_RECT.get_center()  ## 매달린 네온 간판 중앙
+var lamp_xs: Array = C.LAMP_XS
 
 var floor_y := 240.0
 var tank_burst := false
@@ -122,7 +121,7 @@ func burst_tank() -> void:
 
 
 func tank_center() -> Vector2:
-	return tank_pos + Vector2(0, -26)
+	return C.TANK_RECT.get_center()
 
 
 ## 네온 간판이 떨어짐 (실제 시간 0.35초) → 바닥에 박혀 장애물 + 도탄 반사판
@@ -144,8 +143,20 @@ func _place_sign() -> void:
 	(_sign_body.get_child(0) as CollisionShape2D).disabled = false
 
 
+## 전선 높이 (x 에서)
+static func wire_y(x: float) -> float:
+	return lerpf(C.WIRE_A.y, C.WIRE_B.y, (x - C.WIRE_A.x) / (C.WIRE_B.x - C.WIRE_A.x))
+
+
+## 조명 갓 윗변 가운데 (전선에서 LAMP_CORD 아래)
+func _shade_top(i: int) -> Vector2:
+	var x: float = lamp_xs[i]
+	return Vector2(x, roundf(wire_y(x)) + C.LAMP_CORD)
+
+
+## 전구 (조준 · 깨짐 · 철견 명암의 빛 방향 기준)
 func lamp_pos(i: int) -> Vector2:
-	return Vector2(lamp_xs[i], lamp_y)
+	return _shade_top(i) + Vector2(0, C.LAMP_SHADE.y)
 
 
 ## 조명 하나가 깨짐: 유리 파편 + 불꽃 (소리는 Main)
@@ -257,63 +268,160 @@ func _view() -> Rect2:
 	return main.view_rect() if main != null else Rect2(0, 0, Config.view.w, Config.view.h)
 
 
-## 무대 소품 (배경 쪽)
+## 무대 소품 (배경 쪽, 사양 좌표 · Palette 색): 전선 · 조명 3개 + 원뿔 빛 · 네온 간판 · 물탱크 · 난간 · 물웅덩이
 func _draw() -> void:
-	var rim := Color("#2c3655")
-	# 조명 3개: 천장 전선 + 갓 + (켜져 있으면) 옅은 빛 원뿔
+	var P := Palette
+	# 전선 (1px)
+	draw_line(C.WIRE_A, C.WIRE_B, P.STRUCT_LIGHT, -1.0)
+	# 원뿔 빛 (켜진 조명): 전구 폭 → 바닥에서 LAMP_CONE_W, 투명도 약 10%
 	for i in lamp_xs.size():
-		var c := lamp_pos(i)
-		draw_line(Vector2(c.x, -40), c + Vector2(0, -4), Color("#1a2036"), 1.0)
-		draw_colored_polygon(PackedVector2Array([c + Vector2(-6, 0), c + Vector2(6, 0), c + Vector2(3, -5), c + Vector2(-3, -5)]), Color("#1c2238"))
+		if not lamps[i]:
+			continue
+		var b := lamp_pos(i)
+		var hw: float = C.LAMP_BULB.x / 2.0
+		var cw: float = C.LAMP_CONE_W / 2.0
+		draw_colored_polygon(PackedVector2Array([b + Vector2(-hw, 1), b + Vector2(hw, 1), Vector2(b.x + cw, floor_y), Vector2(b.x - cw, floor_y)]),
+			Color(P.LAMP_LIGHT, P.LAMP_CONE_ALPHA))
+		draw_colored_polygon(PackedVector2Array([b + Vector2(-hw, 1), b + Vector2(hw, 1), Vector2(b.x + cw * 0.55, floor_y), Vector2(b.x - cw * 0.55, floor_y)]),
+			Color(P.LAMP_LIGHT, P.LAMP_CONE_ALPHA * 0.6))
+		# 바닥에 떨어진 빛 웅덩이
+		draw_set_transform(Vector2(b.x, floor_y + 2), 0.0, Vector2(1.0, 0.18))
+		draw_circle(Vector2.ZERO, cw * 0.8, Color(P.LAMP_LIGHT, P.LAMP_CONE_ALPHA * 0.8))
+		draw_set_transform_matrix(Transform2D.IDENTITY)
+	# 조명: 줄 · 갓 (9×3) · 전구 (7×1)
+	for i in lamp_xs.size():
+		var st := _shade_top(i)
+		draw_line(Vector2(st.x, roundf(wire_y(st.x))), st, P.STRUCT_LIGHT, -1.0)
+		var sw: float = C.LAMP_SHADE.x
+		draw_rect(Rect2(st + Vector2(-floorf(sw / 2.0), 0), C.LAMP_SHADE), P.STRUCT_LIGHT)
+		draw_rect(Rect2(st + Vector2(-floorf(sw / 2.0), 0), Vector2(sw, 1)), Color(P.RIM, 0.6))
+		var bulb := Rect2(lamp_pos(i) + Vector2(-floorf(C.LAMP_BULB.x / 2.0), 0), C.LAMP_BULB)
 		if lamps[i]:
-			draw_colored_polygon(PackedVector2Array([c + Vector2(-5, 1), c + Vector2(5, 1), c + Vector2(48, floor_y - c.y), c + Vector2(-48, floor_y - c.y)]),
-				Color(0.62, 0.7, 0.85, 0.05))
-			draw_rect(Rect2(c + Vector2(-3, 0), Vector2(6, 2)), Color("#c9d6ee"))
+			draw_rect(bulb.grow(1.0), Color(P.LAMP_LIGHT, 0.25))
+			draw_rect(bulb, P.LAMP_LIGHT)
 		else:
-			draw_rect(Rect2(c + Vector2(-3, 0), Vector2(6, 1)), Color("#30364c"))
-	# 물탱크 (받침 + 원통)
-	var tp := tank_pos
-	for lx in [-9.0, 9.0]:
-		draw_line(tp + Vector2(lx, 0), tp + Vector2(lx * 0.7, -16), Color("#141a2e"), 2.0)
-	if not tank_burst:
-		draw_rect(Rect2(tp + Vector2(-14, -40), Vector2(28, 24)), Color("#151c33"))
-		draw_rect(Rect2(tp + Vector2(-14, -40), Vector2(28, 24)), rim, false, 1.0)
-		draw_rect(Rect2(tp + Vector2(-15, -42), Vector2(30, 3)), Color("#1d2540"))
-		for k in 3:
-			draw_line(tp + Vector2(-14, -34 + k * 7), tp + Vector2(14, -34 + k * 7), Color("#1d2540"), 1.0)
-	else:
-		draw_colored_polygon(PackedVector2Array([tp + Vector2(-14, -16), tp + Vector2(14, -16), tp + Vector2(12, -24), tp + Vector2(4, -20), tp + Vector2(-3, -27), tp + Vector2(-13, -22)]), Color("#151c33"))
+			draw_rect(bulb, P.STRUCT_EDGE)
 	# 네온 간판
 	match sign_state:
 		"hang":
-			var c := sign_hang
-			draw_line(c + Vector2(-10, -6), Vector2(c.x - 10, -40), Color("#1a2036"), 1.0)
-			draw_line(c + Vector2(10, -6), Vector2(c.x + 10, -40), Color("#1a2036"), 1.0)
-			_draw_neon(c, 0.0, true)
+			var r: Rect2 = C.SIGN_RECT
+			for cx in C.SIGN_CHAINS:
+				_draw_chain(Vector2(cx, roundf(wire_y(cx))), Vector2(cx, r.position.y))
+			_draw_neon(r.get_center(), 0.0, true)
 		"falling":
 			var u := clampf(_sign_t / 0.35, 0.0, 1.0)
 			var to := Vector2(sign_floor_x, floor_y - C.SIGN_SIZE.y / 2.0)
 			_draw_neon(sign_hang.lerp(to, u * u), u * u * PI / 2.0, true)
 		"down":
 			_draw_neon(Vector2(sign_floor_x, floor_y - C.SIGN_SIZE.y / 2.0), PI / 2.0, false)
+	_draw_tank()
+	_draw_rails()
+	_draw_puddles()
 	# 파편
-	for s in _shards:
-		draw_set_transform(s.pos, s.rot, Vector2.ONE)
-		draw_rect(Rect2(-s.size / 2.0, -s.size / 4.0, s.size, s.size / 2.0), s.color)
+	for sh in _shards:
+		draw_set_transform(sh.pos, sh.rot, Vector2.ONE)
+		draw_rect(Rect2(-sh.size / 2.0, -sh.size / 4.0, sh.size, sh.size / 2.0), sh.color)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
-## 네온 간판 (가로 30 × 세로 10, 회전 rot). lit = 네온 켜짐 (떨어져 박히면 꺼짐)
+## 체인: 1px 고리 (2px 간격으로 밝고 어두운 점)
+func _draw_chain(a: Vector2, b: Vector2) -> void:
+	var y := a.y
+	var i := 0
+	while y < b.y:
+		draw_rect(Rect2(Vector2(a.x - (i % 2), y), Vector2(1 + (i % 2), 2)), Palette.STRUCT_LIGHT if i % 2 == 0 else Palette.STRUCT_DARK)
+		y += 2.0
+		i += 1
+
+
+## 네온 간판 (96×30, 짙은 판 + 분홍 네온 획 8개 + 주변 분홍 글로우). lit = 켜짐
 func _draw_neon(c: Vector2, rot: float, lit: bool) -> void:
-	draw_set_transform(c, rot, Vector2.ONE)
-	var w: float = C.SIGN_SIZE.y
-	var h: float = C.SIGN_SIZE.x
-	draw_rect(Rect2(-w / 2.0, -h / 2.0, w, h), Color("#0f1424"))
-	draw_rect(Rect2(-w / 2.0, -h / 2.0, w, h), Color("#2c3655"), false, 1.0)
-	var neon := Color("#3fd6a8") if lit and fmod(Time.get_ticks_msec() / 1000.0, 2.3) > 0.12 else Color("#1f4a40")
-	for k in 4:
-		draw_rect(Rect2(-w / 2.0 + 4 + k * 6.5, -2, 4, 4), neon)
+	var r: Rect2 = C.SIGN_RECT
+	var w := r.size.x
+	var h := r.size.y
+	var P := Palette
+	draw_set_transform(c.round(), rot, Vector2.ONE)
+	var on := lit and fmod(Time.get_ticks_msec() / 1000.0, 3.1) > 0.08
+	if on:   # 글로우 (네온만 번짐)
+		for g in [[10.0, 0.05], [6.0, 0.08], [3.0, 0.12]]:
+			draw_rect(Rect2(-w / 2.0 - g[0], -h / 2.0 - g[0], w + g[0] * 2.0, h + g[0] * 2.0), Color(P.NEON_PINK, g[1]))
+	draw_rect(Rect2(-w / 2.0, -h / 2.0, w, h), C.SIGN_PLATE)
+	draw_rect(Rect2(-w / 2.0, -h / 2.0, w, h), P.STRUCT_EDGE, false, 1.0)
+	draw_rect(Rect2(-w / 2.0 + 1, -h / 2.0 + 1, w - 2, 1), Color(P.RIM, 0.35))
+	var col: Color = P.NEON_PINK if on else P.NEON_PINK_DARK
+	var o := Vector2(-w / 2.0, -h / 2.0)
+	for st in C.SIGN_STROKES:
+		var a: Vector2 = o + st[0]
+		var b: Vector2 = o + st[1]
+		if on:
+			draw_line(a + Vector2.ONE, b + Vector2.ONE, Color(col, 0.3), 5.0)      # 획 둘레 번짐
+		if a.x == b.x or a.y == b.y:      # 가로 · 세로 획: 2px 사각형
+			draw_rect(Rect2(Vector2(minf(a.x, b.x), minf(a.y, b.y)), (b - a).abs() + Vector2(2, 2)), col)
+		else:                             # 사선 획
+			draw_line(a + Vector2.ONE, b + Vector2.ONE, col, 2.0)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+## 물탱크: 40×52 원통 (가로 줄무늬 10px · 왼쪽 림라이트 · 오른쪽 어두운 면) + 위 뚜껑 타원 + 다리 2개 (바닥까지)
+func _draw_tank() -> void:
+	var P := Palette
+	var r: Rect2 = C.TANK_RECT
+	for lx in [r.position.x + 6.0, r.end.x - 8.0]:
+		draw_rect(Rect2(lx, r.end.y, 2, floor_y - r.end.y), P.STRUCT_DARK)
+		draw_rect(Rect2(lx, r.end.y, 1, floor_y - r.end.y), Color(P.RIM, 0.25))
+	draw_rect(Rect2(r.position.x + 4, r.end.y + 16, r.size.x - 8, 2), P.STRUCT_DARK)       # 다리 가로대
+	draw_rect(r, P.STRUCT_LIGHT)
+	draw_rect(Rect2(r.end.x - 12, r.position.y, 12, r.size.y), P.STRUCT_DARK)            # 오른쪽 그늘
+	var y := r.position.y + C.TANK_STRIPE
+	while y < r.end.y - 1:
+		draw_rect(Rect2(r.position.x, y, r.size.x, 1), P.STRUCT_EDGE)
+		y += C.TANK_STRIPE
+	draw_rect(Rect2(r.position.x, r.position.y, 1, r.size.y), P.RIM)                      # 왼쪽 림라이트
+	draw_rect(Rect2(r.position.x + 1, r.position.y, 1, r.size.y), Color(P.RIM, 0.35))
+	draw_rect(r, P.STRUCT_EDGE, false, 1.0)
+	# 위 뚜껑 (타원)
+	draw_set_transform(Vector2(r.get_center().x, r.position.y), 0.0, Vector2(1.0, 0.22))
+	draw_circle(Vector2.ZERO, r.size.x / 2.0 + 1.0, P.STRUCT_EDGE)
+	draw_circle(Vector2.ZERO, r.size.x / 2.0, P.STRUCT_LIGHT)
+	draw_arc(Vector2.ZERO, r.size.x / 2.0 - 1.0, PI, TAU, 24, Color(P.RIM, 0.6), 1.0)
+	draw_set_transform_matrix(Transform2D.IDENTITY)
+	if tank_burst:   # (3단계에서 총알구멍 · 물줄기로 바꿈) 임시: 구멍 3개
+		for hp in [Vector2(26, 18), Vector2(32, 32), Vector2(22, 42)]:
+			draw_rect(Rect2(r.position + hp - Vector2(1, 1), Vector2(2, 2)), P.STRUCT_EDGE)
+
+
+## 난간: 왼쪽 · 오른쪽, 높이 14px, 기둥 5px 간격, 윗면 림라이트
+func _draw_rails() -> void:
+	var P := Palette
+	for rx in [C.RAIL_L, C.RAIL_R]:
+		var top: float = floor_y - C.RAIL_H
+		var x: float = rx.x
+		while x <= rx.y:
+			draw_rect(Rect2(x, top, 1, C.RAIL_H), P.STRUCT_DARK)
+			x += C.RAIL_GAP
+		draw_rect(Rect2(rx.x, top, rx.y - rx.x, 2), P.STRUCT_LIGHT)
+		draw_rect(Rect2(rx.x, top, rx.y - rx.x, 1), P.RIM)
+		draw_rect(Rect2(rx.x, top + 7, rx.y - rx.x, 1), P.STRUCT_DARK)
+
+
+## 바닥 아래 띠 y (사양: 바닥 222 ~ 화면 270 의 48px → 이 방 바닥 ~ 화면 아래)
+func _floor_band(y: float) -> float:
+	var band := float(Config.view.h) - floor_y
+	return floor_y + (y - (floor_y - C.STAGE_Y)) * band / (float(Config.view.h) - (floor_y - C.STAGE_Y))
+
+
+## 물웅덩이 4개 (어두운 타원 + 가운데 분홍 반사선)
+func _draw_puddles() -> void:
+	var P := Palette
+	for pr in C.PUDDLES:
+		var y0 := roundf(_floor_band(pr.position.y))
+		var h := maxf(2.0, roundf(_floor_band(pr.end.y) - y0))
+		var c := Vector2(pr.position.x + pr.size.x / 2.0, y0 + h / 2.0)
+		draw_set_transform(c, 0.0, Vector2(1.0, h / pr.size.x))
+		draw_circle(Vector2.ZERO, pr.size.x / 2.0, C.PUDDLE_COLOR)
+		draw_set_transform_matrix(Transform2D.IDENTITY)
+		var lw := roundf(pr.size.x * 0.45)
+		draw_rect(Rect2(roundf(c.x - lw / 2.0), roundf(c.y), lw, 1), Color(P.NEON_PINK, 0.55 if lamps.has(true) else 0.25))
 
 
 func _draw_dark() -> void:
