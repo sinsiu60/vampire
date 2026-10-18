@@ -29,6 +29,7 @@ var _parallax: Node2D
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_PAUSABLE     # 일시정지면 비도 멈춤
 	_parallax = $Far/Parallax
 	_parallax.draw.connect(_draw_parallax)
 	rain_back = $RainBack

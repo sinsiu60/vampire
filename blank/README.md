@@ -29,7 +29,7 @@
 | `slash` | 마우스 왼쪽 |
 | `restart` | R |
 | `mute` | M |
-| `menu` | ESC (옵션 메뉴) |
+| `menu` | ESC (일시정지 메뉴) |
 
 디버그 키 (`Debug.gd`): F1 반사 보정 표시 · F2 타격감 토글 패널 · F3 슬로우 10% · F4 프레임 진행 (F4 한 틱, Enter 해제) · F5 패링 타이밍 바 + 입력 오차 ms
 · F6 다음 방으로 바로 (보스방에서는 무대 페이즈 상태 순환) · F7 지금 방 즉시 클리어 · F8 철견 즉시 휘청 · F9 철견 포즈 뷰어 (숫자 키, Shift+숫자)
@@ -43,7 +43,7 @@ blank/
   project.godot
   scripts/autoload/Config.gd   모든 수치 (프로토타입 CONFIG 를 그대로 옮김)
   scripts/autoload/GameState.gd 진행 상태: 지금 장 · 방 번호, 클리어한 방, 장마다 방 씬 목록
-  scripts/autoload/Settings.gd 옵션(흔들림 강도·발사 타이밍 원, user://settings.cfg 에 저장) + F2 타격감 토글
+  scripts/autoload/Settings.gd 옵션(소리 · 화면 · 난이도 · 발사 타이밍 원 · 키 설정, user://settings.json 에 저장) + F2 타격감 토글
   scripts/autoload/Debug.gd    F1 ~ F5 디버그 키, F3 슬로우(물리 틱 6/초 + time_scale 0.1), F4 프레임 진행(일시정지 + 한 틱씩)
   scripts/autoload/TimeManager.gd  Engine.time_scale 로 히트스톱·슬로우, 실제 시간 틱(real_frames / real_time), 월드 시간
   scripts/autoload/Audio.gd    효과음 재생 (파일 6종 + 합성음), 실제 시간 페이드, 음소거
@@ -75,7 +75,7 @@ blank/
   shaders/scanline.gdshader    스캔라인 (확대된 픽셀 한 줄마다 아래 1/3 을 20% 어둡게)
   scripts/Backdrop.gd          하늘 + 도시 2겹 시차 배경 (프로토타입과 같은 시드로 같은 실루엣)
   scripts/HUD.gd · Fonts.gd    남은 적 · 디버그 표시 · 조작 안내 · CLEAR/사망 · F2 패널 · F3/F4 줄 · F5 오차
-  scripts/Menu.gd              ESC 옵션 메뉴 (흔들림 0~150% 슬라이더 + 미리보기, 발사 타이밍 원 켜기/끄기)
+  scripts/ui/PauseMenu.gd      ESC 일시정지 메뉴 (scripts/ui/OptionsMenu.gd = 타이틀 · 일시정지 공용 옵션 화면)
   scripts/DebugDraw.gd         F1 스냅 범위 부채꼴·대상 표시, F5 판정 창 바 (월드)
   scenes/Boot.tscn (Screen/Game = SubViewport 480×270 · Scanlines)
   scenes/Main.tscn (BackdropLayer · Room(GameState 의 방을 불러와 끼움) · Player · Effects · ParrySeq · DebugDraw · ScreenFX · HUD[Offscreen · Text · Menu · Crosshair · Fade])  Player.tscn  Room.tscn  EnemyMelee.tscn  EnemyGunner.tscn  Effects.tscn   (적 배치는 Room.tscn 의 Enemies 아래)
@@ -562,7 +562,7 @@ Shift+F11 다음 페이즈 전환 연출을 그대로 보기. HUD 타이밍 줄�
 
 ## 철견 수정 — 1단계: 플레이어 구르기 (모든 스테이지 공통)
 수치는 `Config.roll`. 입력 `roll` (기본 Shift) — project.godot 의 입력 맵, 그리고 ESC 옵션 메뉴 "구르기 키" 에서
-Enter (또는 클릭) → 바꿀 키를 누르면 바뀜 (ESC 취소, user://settings.cfg 에 저장).
+Enter (또는 클릭) → 바꿀 키를 누르면 바뀜 (ESC 취소, 지금은 옵션 화면 "조작", user://settings.json).
 
 - 이동 방향으로 (입력이 없으면 바라보는 방향) 64px · 0.30초, 시작부터 0.25초 무적 (`ROLL_DISTANCE` · `ROLL_TIME` · `ROLL_IFRAME`)
 - 쿨타임 0.40초 (구르기가 끝난 뒤부터), 공중에서는 불가, 경직 · 입력 잠금 중 불가
@@ -651,7 +651,7 @@ Enter (또는 클릭) → 바꿀 키를 누르면 바뀜 (ESC 취소, user://set
 | 회귀 | 방 1 ~ 5, 총잡이 패링, 1단계 구르기 테스트 모두 통과 |
 
 ## 철견 수정 — 4단계: 난이도 프리셋 + 체력 조정
-ESC 옵션 메뉴 맨 아래 **난이도** (← → 로 EASY · NORMAL · HARD, Enter · 클릭 = 차례로). 기본 NORMAL, user://settings.cfg 에 저장.
+옵션 화면 "게임" **난이도** (← → 로 EASY · NORMAL · HARD, Enter · 클릭 = 차례로). 기본 NORMAL, user://settings.json 에 저장.
 표는 `Config.difficulty_presets`, 지금 값은 `Config.diff` (`Config.set_difficulty`). 표에 있는 철견 상수는 `CheolgyeonConfig.gd` 에서 빼고
 "→ 난이도 프리셋" 주석만 남김. HARD = 그동안 쓰던 값과 거의 같음.
 
@@ -883,7 +883,7 @@ room_06 (철견) 은 그대로. 모든 수치는 `Config.gd` 의 `burst` · `cha
 - **타이틀** (`scenes/Title.tscn`) — 배경 = 보스 무대 페이즈 1 (room_06 에서 철견만 빼고, 비 normal · 번개 그대로) + 35% 어둡게.
   "공백" (큰 흰 글씨) + "BLANK", 4 ~ 7초마다 0.1초 글리치 (글자가 튀고 · 강조색 · 흰 잔상 · 가로 띠). 메뉴 새로 시작 / 이어하기 / 옵션 / 종료.
   저장이 없으면 이어하기 비활성, 저장이 있는데 새로 시작 → "기존 기록이 지워집니다. 계속할까요?" (기본 = 아니오). 오른쪽 아래 v0.1, rain_loop 0.3.
-  옵션은 3단계에서 공용 옵션 화면으로 연결 (지금은 안내 한 줄)
+  옵션 = 공용 옵션 화면 (3단계)
 - **장 시작 카드** (`scenes/ChapterIntro.tscn`) — 검은 화면에 한 줄씩 타이핑 (글자당 0.04초, 줄 사이 0.8초). 클릭 · 엔터: 치는 중이면 줄 완성, 다 쳤으면 다음 줄.
   "2047년, 신항시." / "인증된 자들만 총을 사용할 수 있는 시대." / "..." → 가운데 "1장" / "비 내리는 시장" 2초 → 페이드 → 방 1
 - 새로 시작은 1장 처음부터 (클리어 · 체크포인트 · 본 적 소개 기록 지움)
@@ -903,4 +903,18 @@ room_06 (철견) 은 그대로. 모든 수치는 `Config.gd` 의 `burst` · `cha
 - 적 소개 무전 = 적의 `intro_radio_key` (비우면 `Config.intro.RADIO_KEYS`), 보스방 문 = 문의 `radio_key` (열리기 시작할 때),
   철견 처치 뒤 = boss_clear (기존 타이밍)
 - `Main.radio(key)` 로 어디서든 무전
+
+## 1장 버티컬 슬라이스 — 4단계 / 3단계: 일시정지 + 옵션
+옛 ESC 옵션 메뉴 (`scripts/Menu.gd`) 는 지우고 둘로 나눔. 설정 파일은 `user://settings.json` (옛 settings.cfg 가 있으면 한 번 옮겨 읽음).
+- **일시정지** (`scripts/ui/PauseMenu.gd`, ESC — 게임 중에만, 화면 전환 중엔 안 열림) — 게임 · 소리 정지, 화면 55% 로 어둡게 + 흑백 50%
+  (`shaders/pause_gray.gdshader`). 메뉴 계속하기 / 방 다시 시작 / 옵션 / 타이틀로. ESC = 계속하기.
+  타이틀로 → 확인창 "현재 방 진행은 저장되지 않습니다." (기본 = 취소). 피날레 · 컷신 중에도 열리고, 피날레 연출 타이머 · 배경 · 비 · 무전도 같이 멈춤
+- **옵션** (`scenes/Options.tscn` · `scripts/ui/OptionsMenu.gd`, 타이틀 · 일시정지 공용) — 바꾸면 바로 적용 + 저장
+  - 소리: 전체 / 배경음 / 효과음 0 ~ 100 (10 단위). 버스 Master · Music (빗소리 등 배경음) · World + Direct (효과음 · UI)
+  - 화면: 전체화면 켜기 · 끄기, 화면 흔들림 0 ~ 150% (게임 중이면 바꿀 때 그 세기로 미리보기)
+  - 게임: 난이도 EASY / NORMAL / HARD (기존 프리셋), 발사 타이밍 원 켜기 · 끄기
+  - 조작: 공격 · 구르기 · 점프 · 왼쪽 · 오른쪽 — 엔터 · 클릭 → "키를 누르세요…" → 누른 키 (또는 마우스 버튼) 로. ESC = 취소.
+    다른 동작이 이미 쓰는 입력이면 "이미 'OO'에 쓰는 입력입니다" 경고하고 그대로. 기본 공격 = 마우스 왼쪽, 구르기 Shift, 점프 Space, 이동 A / D (← → 는 늘 같이)
+  - 키보드 ↑ ↓ 고르기 · ← → 값 · 엔터 · ESC 돌아가기 / 마우스: 가리키면 고르기 · ◂ ▸ 클릭 = 값 · 줄 클릭 = 엔터
+- 조준점 (마우스 커서) 은 일시정지 중에도 움직이고 메뉴 위에 그림
 

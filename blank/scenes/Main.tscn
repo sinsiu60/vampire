@@ -9,7 +9,7 @@
 [ext_resource type="Script" path="res://scripts/ScreenFX.gd" id="8_sfx"]
 [ext_resource type="PackedScene" path="res://scenes/Background.tscn" id="9_bg"]
 [ext_resource type="Script" path="res://scripts/HUD.gd" id="10_hud"]
-[ext_resource type="Script" path="res://scripts/Menu.gd" id="11_menu"]
+[ext_resource type="Script" path="res://scripts/ui/PauseMenu.gd" id="11_menu"]
 [ext_resource type="Script" path="res://scripts/DebugDraw.gd" id="12_dbg"]
 
 [node name="Main" type="Node2D"]

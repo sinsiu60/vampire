@@ -19,7 +19,6 @@ var _card_t := 0.0
 
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
 	size = Vector2(Config.view.w, Config.view.h)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var d := TextData.chapter(chapter)

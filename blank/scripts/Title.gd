@@ -14,6 +14,7 @@ const STAGE_ROOM := "res://rooms/ch1/room_06.tscn"
 const BG := preload("res://scenes/Background.tscn")
 
 var glitch_count := 0            ## 글리치 횟수 (테스트)
+var options_menu: OptionsMenu
 
 var _ui: Control
 var _menu: MenuList
@@ -63,6 +64,9 @@ func _ready() -> void:
 	_confirm = ConfirmBox.new()
 	ui_layer.add_child(_confirm)
 	_confirm.answered.connect(_on_confirm)
+	options_menu = (load("res://scenes/Options.tscn") as PackedScene).instantiate()
+	ui_layer.add_child(options_menu)
+	options_menu.closed.connect(func(): _menu.active = true)
 	refresh()
 	_next_glitch = randf_range(S.TITLE_GLITCH_EVERY.x, S.TITLE_GLITCH_EVERY.y) * 0.5
 	Audio.set_ambience("rain_loop", S.TITLE_RAIN_VOL)
@@ -95,6 +99,8 @@ func _on_choose(id: String) -> void:
 		"continue":
 			continue_game.emit()
 		"options":
+			_menu.active = false
+			options_menu.open()
 			options.emit()
 		"quit":
 			get_tree().quit()

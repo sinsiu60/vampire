@@ -93,6 +93,7 @@ func setup(m: Node, boss: BossCheolgyeon) -> void:
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_PAUSABLE     # 일시정지면 연출 타이머도 같이 멈춤 (Main 은 ALWAYS)
 	# 흑백 후처리 (화면 전체) + 그 위 색 유지 층 (월드 좌표를 따라감)
 	_gray_layer = CanvasLayer.new()
 	_gray_layer.layer = GRAY_LAYER

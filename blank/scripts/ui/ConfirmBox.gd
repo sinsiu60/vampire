@@ -9,7 +9,7 @@ var _menu: MenuList
 
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	size = Vector2(Config.view.w, Config.view.h)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_menu = MenuList.new()
 	_menu.line_h = 14.0

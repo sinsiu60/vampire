@@ -33,6 +33,8 @@ const VOLUME_KEYS := {
 }
 const POOL_SIZE := 16
 const WORLD_BUS := "World"       # 효과음 대부분 — 섬광탄 동안 로우패스 (귀가 멍함)
+const MUSIC_BUS := "Music"       # 배경음 (방 빗소리)
+const DIRECT_BUS := "Direct"     # 로우패스를 거치지 않는 효과음 (UI · clear)
 
 var streams := {}                 # 이름 → AudioStream
 var muted := false
@@ -65,6 +67,13 @@ func _ready() -> void:
 		lp.cutoff_hz = Config.audio.MUFFLE_CUTOFF
 		AudioServer.add_bus_effect(bi, lp)
 		AudioServer.set_bus_effect_enabled(bi, 0, false)
+	# Music (배경음 — 빗소리 반복) · Direct (선명한 효과음 — UI · 섬광탄 중 장전음) 버스: 옵션의 배경음 · 효과음 볼륨
+	for bn in [MUSIC_BUS, DIRECT_BUS]:
+		if AudioServer.get_bus_index(bn) < 0:
+			AudioServer.add_bus()
+			var b2 := AudioServer.bus_count - 1
+			AudioServer.set_bus_name(b2, bn)
+			AudioServer.set_bus_send(b2, "Master")
 	streams["swing"] = SynthLib.swing()
 	streams["death"] = SynthLib.death()
 	streams["clear"] = SynthLib.clear()
@@ -83,7 +92,7 @@ func play(name: String, volume := 1.0, pitch := 1.0, clear := false, from := 0.0
 	if not streams.has(name) or not Settings.on("sound"):
 		return null
 	var p := _free_player()
-	p.bus = "Master" if clear else WORLD_BUS
+	p.bus = DIRECT_BUS if clear else WORLD_BUS
 	p.stream = streams[name]
 	p.volume_db = linear_to_db(maxf(volume, 0.0001))
 	p.pitch_scale = pitch
@@ -222,6 +231,8 @@ func set_ambience(name: String, volume := -1.0, fade := 0.6) -> void:
 	if name == "":
 		return
 	_ambience = play_loop(name, v, fade)
+	if _ambience != null:
+		_ambience.bus = MUSIC_BUS
 	_loops.erase(_ambience)
 
 

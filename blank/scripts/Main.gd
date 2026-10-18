@@ -25,7 +25,7 @@ var _outro_radio := false
 @onready var seq: ParrySeq = $ParrySeq
 @onready var screen_fx: ScreenFX = $ScreenFX/Rect
 @onready var hud: HUD = $HUD/Text
-@onready var menu: Menu = $HUD/Menu
+@onready var menu: PauseMenu = $HUD/Menu   # 일시정지 (ESC) — 옵션 화면 포함
 @onready var debug_draw: DebugDraw = $DebugDraw
 @onready var fade: ColorRect = $HUD/Fade
 var radio_dialog: RadioDialog     # 잡음 무전 (HUD 층)

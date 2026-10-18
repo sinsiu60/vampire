@@ -146,10 +146,9 @@ func _on_continue() -> void:
 	_busy = false
 
 
-## 옵션 (3단계에서 공용 옵션 화면)
+## 옵션: 타이틀 위에 공용 옵션 화면 (Title 이 직접 엶)
 func _on_title_options() -> void:
-	if title != null:
-		title.show_toast("옵션 화면은 3단계에서 연결됩니다")
+	pass
 
 
 ## 창 크기에 맞춰 정수 배율·가운데 정렬 (Aspect keep)
