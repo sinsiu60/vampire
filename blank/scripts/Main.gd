@@ -249,6 +249,8 @@ func _note_click() -> void:
 	# 패링 실패 후 늦게 누른 클릭 → '+xxms 늦음'
 	if not _late_watch.is_empty() and TimeManager.real_time <= _late_watch.until:
 		report_timing(TimeManager.real_time - _late_watch.fire_real, "late")
+		if _late_watch.get("death", false):
+			GameState.update_last_death_err(timing_msg.text)
 		_late_watch = {}
 
 
@@ -486,7 +488,7 @@ func _resolve_shots() -> void:
 			# 도탄: 탄이 날아오는 쪽 ±DIRECTIONAL_PARRY_ANGLE 로 베어야 함. 다른 방향 = 실패
 			if s.has("incoming") and absf(angle_difference(p.slash_angle, s.incoming)) > deg_to_rad(Config.shot.DIRECTIONAL_PARRY_ANGLE):
 				report_timing(ts - s.fire_t, "dir")
-				_kill_player(s.angle)
+				_kill_player(s.angle, _shot_cause(s))
 				continue
 			p.mark_used()
 			report_timing(ts - s.fire_t, "ok")
@@ -500,7 +502,7 @@ func _resolve_shots() -> void:
 		if TimeManager.world_time > s.fire_t + Sh.PARRY_LATE + eps:
 			s.done = true
 			_report_shot_fail(s)
-			_kill_player(s.angle)
+			_kill_player(s.angle, _shot_cause(s))
 	pending_shots = pending_shots.filter(func(s): return not s.done)
 
 
@@ -519,6 +521,41 @@ func _opportunity_chimes() -> void:
 			continue
 		_chimed[id] = ft
 		Audio.play(X.OPP_CHIME_SOUND, X.OPP_CHIME_VOLUME, X.OPP_CHIME_PITCH)
+
+
+## 사망 원인 (탄): 패턴 · 공격 이름 · 종류 · 패링 오차 (방금 _report_shot_fail / report_timing 이 낸 글자)
+func _shot_cause(s: Dictionary) -> Dictionary:
+	var ty: String = s.get("attack_type", Config.ATK_NORMAL)
+	var pat := "총잡이"
+	if s.get("boss", false) and is_instance_valid(s.shooter):
+		pat = s.get("pattern", s.shooter.cause_pattern())
+	elif is_instance_valid(s.shooter) and s.shooter is EnemyDummy:
+		pat = "연습 더미"
+	if timing_msg.get("text", "") == "입력 없음" and not _late_watch.is_empty():
+		_late_watch.death = true           # 0.5초 안에 늦게 누르면 기록도 '+xxms 늦음' 으로
+	return { "pattern": pat, "attack": s.get("label", "사격"), "type": ty,
+		"err": "패링 불가" if ty == Config.ATK_EVADE else String(timing_msg.get("text", "")) }
+
+
+## 사망 원인 (근접): 패링 오차 = 마지막 베기 시작 - 타격 순간 (0.5초 넘게 떨어져 있으면 '입력 없음')
+func _melee_cause(e: Enemy) -> Dictionary:
+	var c: Dictionary
+	if e is BossCheolgyeon:
+		c = e.melee_cause()
+	else:
+		var impact := TimeManager.world_time - (e.t if e.state == "attack" else 0.0)
+		c = { "pattern": "근접 적", "attack": "베기", "type": e.get("attack_type") if e.get("attack_type") != null else Config.ATK_NORMAL, "impact_t": impact }
+	if c.type == Config.ATK_EVADE:
+		c.err = "패링 불가"
+	else:
+		var d: float = player.last_slash_t - float(c.impact_t)
+		if absf(d) > 0.5:
+			c.err = "입력 없음"
+		else:
+			var ms := roundi(d * 1000.0)
+			c.err = "%s%dms %s" % ["+" if ms > 0 else "", ms, "늦음" if ms > 0 else "이름"]
+	c.erase("impact_t")
+	return c
 
 
 ## 반사 대상 고르기. 기준 방향 = 플레이어 → 마우스
@@ -580,7 +617,8 @@ func fire_boss_shot(b: BossCheolgyeon, bl: Dictionary) -> void:
 		effects.burst(hit.pos, 7, col, 110.0, aim + PI, 1.1, 0.2, { "glow": true, "streak": true })
 	if hit.player:
 		pending_shots.append({ "shooter": b, "muzzle": m, "fire_t": TimeManager.world_time, "fire_real": TimeManager.real_time,
-			"angle": aim, "parryable": true, "attack_type": bl.type, "done": false, "aim_time": bl.aim_time, "boss": true, "role": bl.role })
+			"angle": aim, "parryable": true, "attack_type": bl.type, "done": false, "aim_time": bl.aim_time, "boss": true, "role": bl.role,
+			"pattern": b.cause_pattern(), "label": bl.get("label", "탄") })
 
 
 ## ⑤ 도탄: 총구 → 반사면 (튕김) → 플레이어. 두 번째 줄은 튕긴 점에서 히트스캔. 판정은 방향 패링
@@ -607,6 +645,7 @@ func fire_boss_ricochet(b: BossCheolgyeon, bl: Dictionary) -> void:
 	if hit.player:
 		pending_shots.append({ "shooter": b, "muzzle": player.center(), "fire_t": TimeManager.world_time, "fire_real": TimeManager.real_time,
 			"angle": dir2.angle(), "parryable": true, "attack_type": bl.type, "done": false, "aim_time": bl.aim_time, "boss": true, "role": bl.role,
+			"pattern": b.cause_pattern(), "label": bl.get("label", "도탄"),
 			"incoming": (bounce - player.center()).angle() })
 
 
@@ -768,6 +807,7 @@ func _counter_hit(b: BossCheolgyeon) -> void:
 ## execute.wav + kill_sound → 16프레임 킬 연출 (흔들림 1.5배) → 번개 한 번 + thunder → 모자가 날아가고 쌍권총이 떨어짐
 func _final_cut(b: BossCheolgyeon) -> void:
 	var p := player
+	p.roll_enabled = true                 # 피날레 결투 동안 꺼 둔 구르기
 	var o := p.center()
 	var side := signf(b.global_position.x - p.global_position.x)
 	if side == 0.0:
@@ -912,12 +952,12 @@ func _resolve_combat() -> void:
 		return
 	# 철견 착지 충격파 (보라, 패링 불가 — 점프로 피함)
 	if boss != null and is_instance_valid(boss) and not boss.dead and boss.wave_hits(p.body_rect()):
-		_kill_player(-PI / 2.0)
+		_kill_player(-PI / 2.0, { "pattern": boss.pattern_name(3), "attack": "충격파", "type": Config.ATK_EVADE, "err": "패링 불가" })
 		return
 	for e in enemies():
 		var box: Rect2 = e.attack_box()
 		if box.has_area() and box.intersects(p.body_rect()):
-			_kill_player((p.center() - e.center()).angle())
+			_kill_player((p.center() - e.center()).angle(), _melee_cause(e))
 			return
 
 
@@ -999,10 +1039,12 @@ func view_rect() -> Rect2:
 	return inv * Rect2(Vector2.ZERO, Vector2(Config.view.w, Config.view.h))
 
 
-func _kill_player(angle: float) -> void:
+func _kill_player(angle: float, cause := {}) -> void:
 	# 구르기 무적: 히트스캔 · 근접 · 충격파 · 보라색 공격 모두 통과
 	if player.dead or player.is_invincible():
 		return
+	if not cause.is_empty():
+		GameState.log_death(cause)
 	pending_shots.clear()
 	seq.cancel()
 	player.input_locked = false

@@ -334,10 +334,40 @@ func _bullets_tick(main: Node, p: Player) -> void:
 					b.aim = (b.target - body.muzzle(b.gun)).angle()
 			body.set_aim(b.gun, b.aim)
 			_action(wt)
+			b.label = _shot_label(b)
 			if b.kind == "ricochet":
 				main.fire_boss_ricochet(self, b)
 			else:
 				main.fire_boss_shot(self, b)
+
+
+## 사망 기록용 공격 이름 / 패턴 이름
+func _shot_label(b: Dictionary) -> String:
+	var i := bullets.find(b) + 1
+	match pattern:
+		1: return "슬라이드 탄 %d" % i
+		3: return "공중 탄 %d" % i
+		4: return "헛스윙 벌 사격" if b.get("track", false) else "속사"
+		5: return "도탄 %d" % i
+	return "탄"
+
+
+func cause_pattern() -> String:
+	if stage == "opening":
+		return "오프닝"
+	if stage == "finale":
+		return "피날레"
+	return pattern_name(pattern) if pattern != 0 else "패턴 사이"
+
+
+## 근접 사망 원인: ② 건카타 몇 번째 타격인지 · 종류 · 타격 순간 (월드 시간)
+func melee_cause() -> Dictionary:
+	var i := _whip_active()
+	if i < 0:
+		return { "pattern": cause_pattern(), "attack": "근접", "type": Config.ATK_NORMAL, "impact_t": TimeManager.world_time }
+	var kick: bool = _whip.kick and i == 1
+	return { "pattern": pattern_name(2), "attack": "발차기" if kick else "%d타" % (i + 1), "type": String(_whip.types[i]),
+		"impact_t": TimeManager.world_time - (t - float(_whip.times[i])) }
 
 
 func _cancel_bullets(scatter := true) -> void:
@@ -782,6 +812,7 @@ func _physics_process(delta: float) -> void:
 	var main := _main()
 	if p == null or main == null:
 		return
+	p.roll_enabled = stage != "finale"      # 피날레 결투는 받아치기만 (구르기 불가)
 	if not _say.is_empty():
 		_say.t += TimeManager.real_delta()
 		if _say.t > _say.dur:
@@ -854,6 +885,13 @@ func _physics_process(delta: float) -> void:
 				body.set_gun_visible(0, true)
 				body.snap("idle")
 				Audio.sfx("gun_cock")
+				stage = "fight"
+				main.cine_end()
+				_start_phase()
+		"op_dodged":
+			_face_player()
+			velocity.x = 0.0
+			if t >= C.OPEN_DODGE_WAIT:
 				stage = "fight"
 				main.cine_end()
 				_start_phase()
@@ -1041,8 +1079,14 @@ func _physics_process(delta: float) -> void:
 			_bullets_tick(main, p)
 		"d_end":
 			velocity.x = 0.0
-			if stage != "fight":
-				# 오프닝 · 피날레: 탄이 빗나갔으면 (플레이어가 살아 있으면) 다시 한 판
+			if stage == "opening":
+				# 오프닝: 패링 안 하고 (구르기로) 피함 → "피하기만 할 거냐?" → 페이즈 1
+				if t >= C.OPEN_DODGE_AT and not p.dead:
+					set_state("op_dodged")
+					body.snap("idle")
+					say(C.OPEN_DODGE_LINE)
+			elif stage != "fight":
+				# 피날레: 탄이 빗나갔으면 (플레이어가 살아 있으면) 다시 한 판
 				if t >= C.RETRY_DUEL and not p.dead:
 					_start_stage_duel()
 			elif t >= C.DUEL_RECOVER:

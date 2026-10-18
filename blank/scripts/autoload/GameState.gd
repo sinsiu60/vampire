@@ -23,6 +23,8 @@ var chapter := 1
 var room := 1                    ## 1부터
 var cleared := {}                ## "1-3" → true (클리어한 방)
 var boss_checkpoint := {}        ## 보스 체크포인트 { key: "1-6", phase, dead? } — 죽으면 R 로 지금 페이즈 시작부터
+var death_log: Array = []        ## 사망 기록 (이번 실행 동안, R 재시작에도 유지) [{ pattern, attack, type, err, room }] — 최근이 끝
+var death_counts := {}           ## 패턴 이름 → 사망 수
 var room_override := ""          ## 비어 있지 않으면 이 방 씬을 대신 엶 (테스트·옛 테스트 방 res://scenes/Room.tscn)
 
 
@@ -83,3 +85,20 @@ func label() -> String:
 	if room_override != "":
 		return "연습 방 (F12 = 돌아가기)"
 	return "%d장 - 방 %d/%d" % [chapter, room, room_count()]
+
+
+## 사망 원인 기록: cause = { pattern (예 "④ 속사"), attack (예 "속사"), type (Config.ATK_*), err (패링 오차 글자) }
+func log_death(cause: Dictionary) -> void:
+	var c := cause.duplicate()
+	c.room = room_key()
+	death_log.append(c)
+	if death_log.size() > 50:
+		death_log.pop_front()
+	var k: String = c.get("pattern", "?")
+	death_counts[k] = int(death_counts.get(k, 0)) + 1
+
+
+## 사망 뒤 늦게 누른 클릭 → 마지막 기록의 오차를 '+xxms 늦음' 으로
+func update_last_death_err(err: String) -> void:
+	if not death_log.is_empty():
+		death_log[-1].err = err

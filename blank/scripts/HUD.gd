@@ -128,6 +128,7 @@ func _draw_boss() -> void:
 		_draw_pose_viewer(b)
 	elif Debug.debug_mode():
 		_draw_boss_timing(b)
+		_draw_death_log()
 
 
 ## 디버그: 패턴 이름 + "패턴 시작 → 첫 플레이어 행동" · 행동 간격 · 패턴 사이 공백 (ms, 1초 넘으면 빨강)
@@ -157,6 +158,32 @@ func _draw_boss_timing(b: BossCheolgyeon) -> void:
 		var tx: String = parts[i][0] + ("  ·  " if i < parts.size() - 1 else "")
 		Fonts.text(self, parts[i][0], Vector2(x, y), 9, parts[i][1], "left", false, true)
 		x += Fonts.width(tx, 9, false, true)
+
+
+## 디버그: 사망 기록 — 패턴별 사망 수 + 최근 3번 (공격 · 종류 · 패링 실패 오차). 이번 실행 동안 R 재시작에도 유지
+const TYPE_LABELS := { "normal": "NORMAL", "opportunity": "OPPORTUNITY", "evade": "EVADE" }
+
+func _draw_death_log() -> void:
+	var entries: Array = GameState.death_log
+	if entries.is_empty():
+		return
+	var ui: Color = Config.colors.ui
+	var counts: Dictionary = GameState.death_counts
+	var parts := []
+	for k in counts:
+		parts.append("%s %d" % [String(k).split(" ")[0], int(counts[k])])
+	var x := 8.0
+	var y := 46.0
+	var recent := entries.slice(maxi(0, entries.size() - 3))
+	recent.reverse()
+	draw_rect(Rect2(x - 4, y - 7, 236, 12 + 10 * recent.size()), Color(0, 0, 0, 0.55))
+	Fonts.text(self, "사망 %d — %s" % [entries.size(), "  ".join(parts)], Vector2(x, y), 9, ui, "left", false, true)
+	for i in recent.size():
+		var d: Dictionary = recent[i]
+		var ty := String(d.get("type", ""))
+		var tc: Color = Config.colors.unparryable if ty == Config.ATK_EVADE else (Config.colors.parry if ty == Config.ATK_OPPORTUNITY else Config.colors.attack)
+		var line := "%s · %s · %s · %s" % [String(d.get("pattern", "?")), String(d.get("attack", "?")), TYPE_LABELS.get(ty, ty), String(d.get("err", ""))]
+		Fonts.text(self, line, Vector2(x, y + 10 * (i + 1)), 8, Color(tc, 1.0 - 0.25 * i))
 
 
 func _draw_pose_viewer(b: BossCheolgyeon) -> void:

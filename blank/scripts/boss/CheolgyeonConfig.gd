@@ -193,6 +193,9 @@ const GUN_FLY_TIME := 0.5              ## 패링하면 권총이 손에서 튕�
 const GUN_FLY_DIST := 72.0
 const GUN_FLY_HEIGHT := 46.0
 const OPEN_PICKUP := 0.28              ## 뒤로 대시해 집는 웅크림
+const OPEN_DODGE_AT := 0.3             ## 오프닝 속사를 구르기로 피함 → 발사 이 뒤 대사 (패링 판정이 끝난 뒤)
+const OPEN_DODGE_LINE := "피하기만 할 거냐?"
+const OPEN_DODGE_WAIT := 1.4           ## 대사 → 레터박스 해제 · 페이즈 1
 
 # ---------------------------------------------------------------- 피날레 (체력 0)
 const FINALE_RISE := 0.8               ## 마지막 반격 → 비틀거리며 일어남
@@ -206,7 +209,7 @@ const FINALE_HOLD_MUL := 2.0           ## 풀 패링 슬로우 유지 시간 배
 const FINALE_SPOT_R := 72.0            ## 정전 속 결투: 두 사람 둘레만 보이는 빛
 const FINALE_SPOT := 0.85
 const CUT_DIST := 34.0                 ## 일섬: 플레이어가 철견을 지나 반대편 이 거리로
-const RETRY_DUEL := 0.5                ## 오프닝 · 피날레 결투 탄이 빗나가면 이 뒤 다시
+const RETRY_DUEL := 0.5                ## 피날레 결투 탄이 빗나가면 이 뒤 다시 (오프닝은 피하면 대사 → 페이즈 1)
 
 # ---------------------------------------------------------------- 무대 (BossArena)
 const RAIN_COUNT := 70                 ## 화면 안 빗줄기 수 (폭우 = 2배)
