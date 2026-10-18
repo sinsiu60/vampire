@@ -4,6 +4,7 @@ extends Node
 ## 이전 방의 클리어 기록은 그대로 둔다.
 
 signal room_changed
+signal checkpoint_changed        ## 보스 체크포인트가 새로 정해짐 (SaveManager 가 저장)
 
 const CHAPTERS := {
 	1: {
@@ -22,13 +23,42 @@ const CHAPTERS := {
 var chapter := 1
 var room := 1                    ## 1부터
 var cleared := {}                ## "1-3" → true (클리어한 방)
-var boss_checkpoint := {}        ## 보스 체크포인트 { key: "1-6", phase, dead? } — 죽으면 R 로 지금 페이즈 시작부터
+var boss_checkpoint := {}:       ## 보스 체크포인트 { key: "1-6", phase, dead? } — 죽으면 R 로 지금 페이즈 시작부터
+	set(v):
+		boss_checkpoint = v
+		if not v.is_empty():
+			checkpoint_changed.emit()
+var stats := {}                  ## 장 통계 { time (실제 초), deaths, parries, counters } — 새로 시작에 0, 저장 · 이어하기에 같이
+var chapter_cleared := 0         ## 마지막으로 클리어한 장 (0 = 없음)
 var death_log: Array = []        ## 사망 기록 (이번 실행 동안, R 재시작에도 유지) [{ pattern, attack, type, err, room }] — 최근이 끝
 var death_counts := {}           ## 패턴 이름 → 사망 수
 var radio_seen := {}             ## 한 번만 나오는 무전 (RadioTrigger 키) — 이번 실행 동안
 var seen_intros := {}            ## 처음 만나는 적 소개를 이미 본 종류 (Config.intro.NAMES 키) — 이번 실행 동안, F11 초기화
 var room_death_counts := {}      ## 방 키 ("1-3") → 사망 수 (디버그 표시)
 var room_override := ""          ## 비어 있지 않으면 이 방 씬을 대신 엶 (테스트·옛 테스트 방 res://scenes/Room.tscn)
+
+
+func _init() -> void:
+	reset_stats()
+
+
+func reset_stats() -> void:
+	stats = { "time": 0.0, "deaths": 0, "parries": 0, "counters": 0 }
+
+
+func add_stat(key: String, n := 1) -> void:
+	stats[key] = int(stats.get(key, 0)) + n
+
+
+## 새로 시작: 1장 처음부터 — 클리어 · 체크포인트 · 본 적 소개 · 통계 · 무전 기록 지움
+func new_game() -> void:
+	chapter = 1
+	chapter_cleared = 0
+	cleared.clear()
+	seen_intros.clear()
+	radio_seen.clear()
+	reset_stats()
+	go_to(1)
 
 
 func room_path() -> String:

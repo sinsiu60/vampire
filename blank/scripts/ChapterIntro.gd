@@ -19,7 +19,6 @@ var _card_t := 0.0
 
 
 func _ready() -> void:
-	size = Vector2(Config.view.w, Config.view.h)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var d := TextData.chapter(chapter)
 	lines = d.get("intro", [])

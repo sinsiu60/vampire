@@ -10,13 +10,15 @@ class_name Boot
 const MAIN := preload("res://scenes/Main.tscn")
 const TITLE := preload("res://scenes/Title.tscn")
 const INTRO := preload("res://scenes/ChapterIntro.tscn")
+const CLEAR := preload("res://scenes/ChapterClear.tscn")
 
 static var logo_done := false    ## 로고는 실행 후 처음 한 번만
 static var skip_title := false   ## 테스트 · 디버그: 로고 뒤 타이틀 없이 바로 게임 (환경 변수 BLANK_SKIP_TITLE 도 같음)
 
 var title: Node = null           ## 지금 타이틀 화면 (없으면 null)
 var intro: Node = null           ## 지금 장 시작 카드
-var screen_name := ""            ## logo | title | intro | game (테스트)
+var clear_screen: Node = null    ## 지금 장 클리어 화면
+var screen_name := ""            ## logo | title | intro | game | chapter_clear (테스트)
 
 @onready var screen: SubViewportContainer = $Screen
 @onready var game: SubViewport = $Screen/Game
@@ -67,13 +69,14 @@ func _after_logo() -> void:
 
 ## 게임 화면 안의 지금 화면 (게임 · 타이틀 · 카드) 을 치움
 func _clear() -> void:
-	for n in [main, title, intro]:
+	for n in [main, title, intro, clear_screen]:
 		if n != null and is_instance_valid(n):
 			game.remove_child(n)
 			n.queue_free()
 	main = null
 	title = null
 	intro = null
+	clear_screen = null
 
 
 func _fade(to: float, time: float) -> void:
@@ -98,15 +101,13 @@ func show_title() -> void:
 	game.add_child(title)
 
 
-## 새로 시작: 1장 처음부터 (클리어 · 체크포인트 · 본 적 소개 지움) → 장 시작 카드
+## 새로 시작: 1장 처음부터 (클리어 · 체크포인트 · 본 적 소개 · 통계 지움) → 장 시작 카드
 func _on_new_game() -> void:
 	if _busy:
 		return
 	_busy = true
 	await _fade(1.0, float(Config.ui_style.FADE))
-	GameState.reset_chapter()
-	GameState.seen_intros.clear()
-	GameState.boss_checkpoint = {}
+	GameState.new_game()
 	_clear()
 	screen_name = "intro"
 	intro = INTRO.instantiate()
@@ -130,17 +131,58 @@ func _on_intro_done() -> void:
 	_busy = false
 
 
-## 이어하기 (4단계: 마지막 저장 지점) — 지금은 저장된 방부터
+## 이어하기: 마지막 저장 지점 (방 · 보스 페이즈) 처음부터. 장 클리어 기록이면 클리어 화면으로
 func _on_continue() -> void:
 	if _busy:
 		return
 	_busy = true
 	await _fade(1.0, float(Config.ui_style.FADE))
-	var d := SaveManager.load_data()
-	if d.has("room"):
-		GameState.go_to(int(d.room))
+	var to_clear := SaveManager.is_chapter_clear_save()
+	SaveManager.apply_save()
 	_clear()
-	_start_game(true)
+	if to_clear:
+		_open_clear_screen(true)
+	else:
+		_start_game(true)
+	await get_tree().process_frame
+	await _fade(0.0, float(Config.ui_style.FADE))
+	_busy = false
+
+
+## 마지막 방 출구 → 장 클리어: 클리어 기록 저장 → 페이드 → 클리어 화면 (타이핑 · 통계)
+func show_chapter_clear() -> void:
+	if _busy:
+		return
+	_busy = true
+	GameState.chapter_cleared = GameState.chapter
+	SaveManager.save_game("chapter_clear")
+	await _fade(1.0, float(Config.ui_style.FADE))
+	Audio.stop_all()
+	Audio.set_ambience("")
+	get_tree().paused = false
+	_clear()
+	_open_clear_screen(false)
+	await get_tree().process_frame
+	await _fade(0.0, float(Config.ui_style.FADE))
+	_busy = false
+
+
+func _open_clear_screen(from_save: bool) -> void:
+	screen_name = "chapter_clear"
+	clear_screen = CLEAR.instantiate()
+	clear_screen.chapter = GameState.chapter_cleared if GameState.chapter_cleared > 0 else GameState.chapter
+	clear_screen.from_save = from_save
+	clear_screen.to_title.connect(_on_clear_to_title)
+	game.add_child(clear_screen)
+	Audio.set_ambience("")
+
+
+func _on_clear_to_title() -> void:
+	if _busy:
+		return
+	_busy = true
+	await _fade(1.0, float(Config.ui_style.FADE))
+	show_title()
 	await get_tree().process_frame
 	await _fade(0.0, float(Config.ui_style.FADE))
 	_busy = false
@@ -201,6 +243,7 @@ func next_room() -> void:
 	tw.tween_property(_veil, "color:a", 1.0, half)
 	await tw.finished
 	GameState.advance()
+	SaveManager.save_game("room")            # 저장: 방 클리어 뒤 다음 방으로 넘어갈 때 (새 방 처음부터)
 	restart(true)
 	await get_tree().process_frame
 	var tw2 := create_tween()

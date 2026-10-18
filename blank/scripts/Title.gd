@@ -174,5 +174,4 @@ func _draw_ui() -> void:
 	if not _toast.is_empty():
 		UIKit.text(_ui, String(_toast.text), Vector2(W / 2.0, Config.view.h - 24), S.SIZE, Color(S.ACCENT, clampf(1.5 - float(_toast.t), 0.0, 1.0)), "center")
 	if Debug.debug_mode():
-		var d := SaveManager.load_data()
-		UIKit.text(_ui, "저장: %s" % ("없음" if d.is_empty() else JSON.stringify(d).left(60)), Vector2(8, Config.view.h - 10), 9, Color(S.TEXT, 0.5))
+		UIKit.text(_ui, SaveManager.summary(), Vector2(8, Config.view.h - 10), 9, Color(S.TEXT, 0.5))

@@ -163,6 +163,9 @@ func _physics_process(_delta: float) -> void:
 	if _shake_frame != Engine.get_physics_frames():
 		_update_shake(1.0 / Config.fps)
 	_update_zoom()
+	# 장 통계: 플레이 시간 (실제 시간, 일시정지 제외)
+	if game_state != "chapter_clear" and GameState.room_override == "":
+		GameState.stats.time = float(GameState.stats.get("time", 0.0)) + TimeManager.real_delta()
 	# 실제 시간으로 흐르는 표시들 (히트스톱·킬 스톱 중에도)
 	if kill_frame >= 0:
 		kill_frame += 1
@@ -242,7 +245,11 @@ func _check_exit() -> void:
 	player.input_locked = true
 	if GameState.is_last_room():
 		game_state = "chapter_clear"
-		Audio.clear()
+		var b0 := get_tree().get_first_node_in_group("boot")
+		if b0 != null:
+			b0.show_chapter_clear()          # 장 클리어 화면 (저장 + 통계)
+		else:
+			Audio.clear()
 		return
 	var boot := get_tree().get_first_node_in_group("boot")
 	if boot != null:
@@ -753,6 +760,7 @@ func pick_reflect_target(origin: Vector2, aim_angle: float, shooter: Enemy) -> E
 ## OPPORTUNITY (opp = true): 히트스톱 PARRY_HITSTOP + 실제 0.1초 동안 시간 50% (휘청은 부른 쪽이)
 ## 풀 패링 슬로우 시퀀스 (seq) 는 이 보스전에서 피날레에만
 func boss_parry_fx(pos: Vector2, angle: float, opp := false) -> void:
+	GameState.add_stat("parries")
 	_boss_light(pos, 60.0)
 	var CC: Dictionary = Config.colors
 	var F: Dictionary = Config.fx
@@ -909,6 +917,7 @@ func _dummy_slash(d: EnemyDummy) -> void:
 	p.mark_used()
 	var angle := (d.center() - p.center()).angle()
 	if d.can_counter():
+		GameState.add_stat("counters")
 		Audio.sfx("execute")
 		TimeManager.hitstop(CG.COUNTER_HITSTOP)
 		if Settings.on("screen_flash"):
@@ -937,6 +946,7 @@ func _parry_whip(b: BossCheolgyeon, i: int) -> void:
 ## 휘청 중 베기가 철견에 닿음 = 반격 베기 (플레이어는 Player._start_slash 에서 이미 자동 돌진)
 ##  execute.wav + 히트스톱 8 + 흰 섬광 1프레임 + 흔들림 6px + 코트 조각 파편 + 철견 30px 넉백 → 체력 -1. 컷인 · 긴 슬로우 없음
 func _counter_hit(b: BossCheolgyeon) -> void:
+	GameState.add_stat("counters")
 	var CC: Dictionary = Config.colors
 	var p := player
 	p.mark_used()
@@ -1030,6 +1040,7 @@ func _boss_block(b: BossCheolgyeon) -> void:
 ## 패링 성공 공통 연출 (pos = 칼에 맞부딪힌 지점, angle = 불꽃·흔들림 방향)
 ##  히트스톱 6틱 · 흰 섬광 · 칼 끝 노란 충격파 링 2겹 · 방향성 흔들림 · 노란/주황 불꽃 · parry_chang
 func parry_fx(pos: Vector2, angle: float, hitstop_frames := -1) -> void:
+	GameState.add_stat("parries")
 	var F: Dictionary = Config.fx
 	var C: Dictionary = Config.colors
 	var J: Dictionary = Config.juice
@@ -1312,6 +1323,7 @@ func _kill_player(angle: float, cause := {}) -> void:
 
 func _on_player_died() -> void:
 	game_state = "dead"
+	GameState.add_stat("deaths")
 	TimeManager.hitstop(roundi(Config.fx.death_hitstop * Config.fps))
 	Audio.death()
 

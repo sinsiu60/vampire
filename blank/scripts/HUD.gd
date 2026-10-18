@@ -66,7 +66,7 @@ func _draw() -> void:
 	if main.game_state == "clear" and main.room.exit_door() == null:
 		_glow_text("CLEAR", Vector2(W / 2.0, H / 2.0 - 18), 28, true)
 		_glow_text("방의 적을 모두 처치했다  ·  R 다시 하기", Vector2(W / 2.0, H / 2.0 + 10), 12, false)
-	elif main.game_state == "chapter_clear":
+	elif main.game_state == "chapter_clear" and get_tree().get_first_node_in_group("boot") == null:   # Boot 안이면 장 클리어 화면이 대신
 		_glow_text("%d장 클리어" % GameState.chapter, Vector2(W / 2.0, H / 2.0 - 18), 24, false)
 		_glow_text("%s  ·  R 처음부터" % GameState.chapter_name(), Vector2(W / 2.0, H / 2.0 + 10), 12, false)
 	elif main.game_state == "dead":
@@ -81,6 +81,11 @@ func _draw() -> void:
 	# 디버그 모드: 지금 장 · 방
 	if Debug.debug_mode():
 		Fonts.text(self, GameState.label(), Vector2(8, H - 22), 9, Color(ui, 0.7), "left", false, true)
+		# 디버그 모드: 오른쪽 아래 구석에 지금 저장 내용 요약 + 이번 판 통계
+		var st: Dictionary = GameState.stats
+		Fonts.text(self, SaveManager.summary(), Vector2(W - 6, H - 33), 9, Color(ui, 0.55), "right", false, true)
+		Fonts.text(self, "지금: %s · 사망 %d · 패링 %d · 반격 %d" % [SaveManager.format_time(float(st.time)), int(st.deaths), int(st.parries), int(st.counters)],
+			Vector2(W - 6, H - 22), 9, Color(ui, 0.55), "right", false, true)
 
 
 ## 철견: 화면 위 하늘색 체력 칸 (난이도 BOSS_HP 개) (반격 베기 명중마다 하나씩 빔) · 휘청 중이면 칸이 깜빡임
