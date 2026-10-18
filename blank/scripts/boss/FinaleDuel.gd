@@ -53,6 +53,8 @@ var _bx := 0.0
 var _flags := {}                 # 단계 안에서 한 번만 하는 일
 var _thunder_at := -1.0
 var _flash_ticks := 0            # 흰 화면 + 검은 실루엣 남은 틱 (번개 · 흑백 반전)
+var _smear := {}                 # 일섬 스미어 { ticks, from, spikes } — 끝나면 흑백 반전
+var smear_frames := 0            ## 그린 스미어 프레임 수 (테스트용)
 var _drop := {}                  # 빗방울 { from, to, pos }
 var _ripple := {}                # 물결 원 { pos, t }
 var _bullet := {}                # 총알 { pos, dir, speed }
@@ -126,6 +128,11 @@ func _physics_process(_d: float) -> void:
 	var rd := TimeManager.real_delta()
 	if _flash_ticks > 0:
 		_flash_ticks -= 1
+	if not _smear.is_empty():
+		_smear.ticks -= 1
+		if _smear.ticks <= 0:
+			_smear = {}
+			_flash_ticks = C.FIN_INVERT_FRAMES     # 스미어 다음 틱에 흑백 반전
 	st += rd
 	if _thunder_at >= 0.0 and now() >= _thunder_at - 1e-6:
 		_thunder_at = -1.0
@@ -404,7 +411,11 @@ func _cut(by: String) -> void:
 	# 철견을 지남
 	pass_real = cut_real
 	Audio.sfx("execute")
-	_flash_ticks = C.FIN_INVERT_FRAMES
+	if Settings.on("smear"):
+		_smear = { "ticks": C.FIN_SMEAR_FRAMES, "from": oc,
+			"spikes": SmearFX.make_spikes(Vector2(_side, 0.0), C.FIN_SMEAR_SPIKES, C.FIN_SMEAR_SPIKE_LEN, 0.9) }
+	else:
+		_flash_ticks = C.FIN_INVERT_FRAMES
 	_sparks(b.center())
 	_line = { "y": oc.y, "full": true }
 	_qi = { "a": oc.x - _side * C.FIN_QI_OVER, "b": p.center().x + _side * C.FIN_QI_OVER, "y": oc.y, "t": 0.0 }
@@ -756,3 +767,15 @@ func _draw_color() -> void:
 			x1 = v.end.x + 8.0 if _side > 0.0 else v.position.x - 8.0
 		ci.draw_line(Vector2(x0, y), Vector2(x1, y), Color(1, 1, 1, 0.35), C.FIN_LINE_W + 2.0)
 		ci.draw_line(Vector2(x0, y), Vector2(x1, y), Color.WHITE, C.FIN_LINE_W)
+	# 일섬 스미어 (클릭 직후 FIN_SMEAR_FRAMES 틱, 흑백 반전 전): 출발점 → 철견 뒤 뜨거운 궤적 + 크게 늘어난 공백 + 가시
+	if not _smear.is_empty():
+		smear_frames += 1
+		var k: float = 1.0 - float(_smear.ticks) / float(C.FIN_SMEAR_FRAMES)
+		var dir := Vector2(_side, 0.0)
+		var pc := p.center()
+		SmearFX.draw_trail(ci, Vector2(_smear.from), pc, C.FIN_SMEAR_TRAIL_W, k * 0.5)
+		SmearFX.draw_spikes(ci, pc, _smear.spikes, k * 0.5)
+		var lc := pc - p.global_position
+		SmearFX.draw_body(ci, p.body_parts(), Transform2D(0.0, p.global_position),
+			SmearFX.stretch_xf(lc, dir, lerpf(C.FIN_SMEAR_STRETCH, 2.0, k), lerpf(C.FIN_SMEAR_SQUASH, 0.75, k), C.FIN_SMEAR_BACK),
+			dir, C.FIN_SMEAR_CHROMA)

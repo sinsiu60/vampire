@@ -18,6 +18,7 @@ const JUICE := [
 	{ "key": "sound", "label": "사운드" },
 	{ "key": "screen_flash", "label": "화면 섬광(패링)" },
 	{ "key": "beam", "label": "빛줄기 + 흙먼지" },
+	{ "key": "smear", "label": "스미어 (돌진 왜곡)" },     # = 키
 ]
 
 var shake := 1.0

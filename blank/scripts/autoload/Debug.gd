@@ -137,6 +137,8 @@ func _juice_key(code: int) -> void:
 	var i := digits.find(code)
 	if i >= 0 and i < Settings.JUICE.size():
 		Settings.toggle_juice(i)
+	elif code == KEY_EQUAL and Settings.JUICE.size() > 10:
+		Settings.toggle_juice(10)
 	elif code == KEY_MINUS:
 		Settings.toggle_all_juice()
 	elif code == KEY_Z: Audio.swing()

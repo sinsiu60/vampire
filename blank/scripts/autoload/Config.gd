@@ -126,6 +126,16 @@ var approach := {                     # 발사 타이밍 원
 	"OFFSCREEN_MARGIN": 24.0,
 }
 
+# ---------------------------------------------------------------- 스미어 프레임 (산나비 식 돌진 왜곡 — SmearFX)
+## 돌진이 가장 빠른 첫 몇 틱만: 몸을 진행 방향으로 늘이고 (옆은 납작) · 뒤로 뻗는 하늘색 가시 · 분홍/하늘 색 갈라짐 · (반격) 뜨거운 궤적.
+## 히트스톱 중엔 틱을 세지 않아 그 일그러진 모습이 그대로 멈춰 보임. F2 패널 = 키로 끄고 켬
+var smear := {
+	"SLASH": { "STRETCH": 1.8, "SQUASH": 0.7, "TICKS": 2, "SPIKES": 5, "SPIKE_LEN": Vector2(10.0, 24.0), "SPREAD": 0.7,
+		"CHROMA": 1.0, "BACK": 3.0, "TRAIL": false, "TRAIL_W": 0.0 },            # 일반 베기 돌진 (약하게)
+	"COUNTER": { "STRETCH": 2.5, "SQUASH": 0.6, "TICKS": 3, "SPIKES": 7, "SPIKE_LEN": Vector2(14.0, 34.0), "SPREAD": 0.8,
+		"CHROMA": 2.0, "BACK": 5.0, "TRAIL": true, "TRAIL_W": 6.0 },             # 반격 베기 자동 돌진 (강하게, 궤적)
+}
+
 # ---------------------------------------------------------------- 난이도 프리셋 (옵션 메뉴, 기본 NORMAL)
 ## 지금 프리셋은 Config.diff (set_difficulty 로 바뀜). 철견 수치 중 이 표에 있는 것은 CheolgyeonConfig 대신 여기서 읽음.
 ##  PARRY_EARLY · PARRY_LATE · DIRECTIONAL_PARRY_ANGLE → Config.shot 에 그대로 써 넣음 (모든 적 공통 — 판정 띠도 같이 바뀜)

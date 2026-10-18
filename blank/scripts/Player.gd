@@ -25,6 +25,7 @@ var _air_up_used := false        # 공중 위쪽 돌진을 이미 썼나
 var _trail := {}                 # 반달 베기 궤적 { ticks, angle, flip } (비어 있으면 없음)
 var _queued_slash := false       # 히트스톱 중 누른 클릭 (월드가 다시 흐를 때 처리)
 var _lunge := false              # 지금 돌진이 반격 베기 자동 돌진인가 (끝나면 멈춤)
+var _smear := {}                 # 스미어 프레임 (돌진 첫 몇 틱 몸 왜곡) { ticks, max, dir, P, from, spikes } — SmearFX
 var _stun := 0.0                 # 경직 남은 시간 (철견이 막으면 0.2초) — 그동안 조작 불가
 var counter_lunges := 0          ## 반격 베기 자동 돌진 횟수 (테스트 · 디버그)
 
@@ -160,6 +161,11 @@ func _physics_process(delta: float) -> void:
 		if ctl and Input.is_action_just_pressed("jump"):
 			_jump_buf = c.jump_buffer
 		return
+	# 스미어: 멈추지 않은 틱에만 줄어듦 (히트스톱 동안엔 늘어난 모습 그대로 멈춤)
+	if not _smear.is_empty():
+		_smear.ticks -= 1
+		if _smear.ticks <= 0:
+			_smear = {}
 	var was_on_floor := is_on_floor()
 
 	# ---- 베기 타이머 · 헛스윙 · 경직
@@ -392,6 +398,7 @@ func _start_slash(aim: Vector2) -> void:
 		velocity = Vector2.from_angle(a) * float(lunge.speed)
 		_dash_t = CG.COUNTER_LUNGE_TIME
 		counter_lunges += 1
+	_begin_smear(velocity.normalized() if velocity.length() > 1.0 else Vector2.from_angle(a))
 	_jumping = false
 	# 돌진 방향으로 늘어남
 	_sx = 1.0 + Config.anim.dash_stretch
@@ -490,8 +497,38 @@ func _draw() -> void:
 				draw_rect(sh[1], c)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_draw_scarf()
-	_draw_body()
+	if _smear.is_empty():
+		_draw_body()
+	else:
+		_draw_smear()
 	_draw_trail()
+
+
+## 돌진 첫 몇 틱: 몸을 진행 방향으로 늘이고 색을 갈라 그림 (일반 베기 = SLASH, 반격 돌진 = COUNTER + 뜨거운 궤적)
+func _begin_smear(dir: Vector2) -> void:
+	if not Settings.on("smear"):
+		_smear = {}
+		return
+	var P: Dictionary = Config.smear.COUNTER if _lunge else Config.smear.SLASH
+	_smear = { "ticks": int(P.TICKS), "max": int(P.TICKS), "dir": dir, "P": P, "from": center(),
+		"spikes": SmearFX.make_spikes(dir, int(P.SPIKES), P.SPIKE_LEN, float(P.SPREAD)) }
+
+
+func is_smearing() -> bool:
+	return not _smear.is_empty()
+
+
+func _draw_smear() -> void:
+	var P: Dictionary = _smear.P
+	var dir: Vector2 = _smear.dir
+	var c := _center_local()
+	var k: float = 1.0 - float(_smear.ticks) / float(_smear.max)     # 0 = 첫 틱 (가장 셈)
+	if bool(P.TRAIL):
+		SmearFX.draw_trail(self, to_local(_smear.from), c, float(P.TRAIL_W), k)
+	SmearFX.draw_spikes(self, c, _smear.spikes, k)
+	var st: float = lerpf(float(P.STRETCH), 1.0 + (float(P.STRETCH) - 1.0) * 0.5, k)
+	var sq: float = lerpf(float(P.SQUASH), 1.0 - (1.0 - float(P.SQUASH)) * 0.5, k)
+	SmearFX.draw_body(self, body_parts(), Transform2D.IDENTITY, SmearFX.stretch_xf(c, dir, st, sq, float(P.BACK)), dir, float(P.CHROMA))
 
 
 func _draw_scarf() -> void:

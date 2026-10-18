@@ -254,7 +254,8 @@ func _draw_juice_panel() -> void:
 	for i in n:
 		var j: Dictionary = Settings.JUICE[i]
 		var on := Settings.on(j.key)
-		Fonts.text(self, "%d %s %s" % [(i + 1) % 10, "■" if on else "□", j.label], Vector2(x, y0 + lh * (i + 1)), 10,
+		var keyname := "=" if i == 10 else str((i + 1) % 10)
+		Fonts.text(self, "%s %s %s" % [keyname, "■" if on else "□", j.label], Vector2(x, y0 + lh * (i + 1)), 10,
 			Color(ui, 1.0 if on else 0.4))
 	Fonts.text(self, "-  전부 켜기/끄기", Vector2(x, y0 + lh * (n + 1)), 10, Color(ui, 0.7))
 	Fonts.text(self, "듣기: Z 휘두르기 X 처치 C 패링 V 사격", Vector2(x, y0 + lh * (n + 2)), 10, Color(ui, 0.7))
