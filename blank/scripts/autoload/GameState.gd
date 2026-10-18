@@ -83,7 +83,7 @@ func reset_chapter() -> void:
 ## "1장 - 방 3/6"
 func label() -> String:
 	if room_override != "":
-		return "연습 방 (F12 = 돌아가기)"
+		return "연습 방 (Shift+F12 = 돌아가기)"
 	return "%d장 - 방 %d/%d" % [chapter, room, room_count()]
 
 

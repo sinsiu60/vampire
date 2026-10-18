@@ -23,6 +23,7 @@ var blackout := false
 var phase_hint := 1              ## 번개 간격 (페이즈 3 이면 자주)
 var lightning_on := true         ## 피날레 결투 중엔 저절로 치지 않음
 var spots: Array = []            ## 정전 속에서도 둘레가 보이는 노드 (피날레 결투: 철견 · 플레이어)
+var rain_mul := 1.0              ## 빗줄기 낙하 속도 배율 (피날레 빗방울 구간 0.1). 시간 정지면 저절로 멈춤
 
 var _sign_t := 0.0
 var _sign_body: StaticBody2D
@@ -252,7 +253,7 @@ func _physics_process(delta: float) -> void:
 			s.vrot = 0.0
 	# 비
 	var n := C.RAIN_COUNT * (2 if storm else 1)
-	var sp: float = C.RAIN_SPEED * (1.25 if storm else 1.0)
+	var sp: float = C.RAIN_SPEED * (1.25 if storm else 1.0) * rain_mul
 	for i in n:
 		var d: Dictionary = _drops[i]
 		d.y += sp * delta / Config.view.h

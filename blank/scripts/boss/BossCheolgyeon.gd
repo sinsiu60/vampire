@@ -17,8 +17,8 @@ class_name BossCheolgyeon
 ## 체력 6 · 3 이 되는 반격 → 페이즈 전환 연출 (슬로우 · 레터박스 — 이 보스전에서 긴 연출은 여기만). 페이즈 시작 = 체크포인트
 ## 오프닝 (처음 들어올 때): 레터박스 · 정적 1.5초 → 이름 카드 + boss_intro → 대사 → 속사 한 판 → 패링하면 권총이 튕겨나가고
 ##  뒤로 대시해 다시 집음 → 페이즈 1. 재시작이면 카드 · 대사 없이 정적 0.5초
-## 피날레 (체력 0): 비틀거리며 일어남 + "마지막이다. 뽑아라." → 레터박스, 마주 서서 속사 최종판 (가짜 움찔 1~3번) →
-##  패링 = 풀 패링 슬로우 (유지 2배) → 일섬 (Main._final_cut) → 처치. 실패하면 피날레 시작부터
+## 피날레 (체력 0): "빗방울 결투" — FinaleDuel 이 실제 시간으로 진행하는 실패 없는 연출 (클릭 = 방아쇠).
+##  정적 → 대치 → 번개 → 가짜 움찔 → 모자 챙의 빗방울 → 착지 = 신호 → 일섬 → 멈춘 세계 → 납도 = 시간 재개 → 갈라진 총알 → 쓰러짐
 ## 디버그: F8 즉시 휘청 · F9 포즈 뷰어 · F10 패턴 강제 (①~⑤) · F11 페이즈 순환 1 → 2 → 3 → 피날레
 ##  (Shift+F11 = 다음 페이즈 전환 연출 / 페이즈 3 이면 피날레 시작)
 
@@ -125,7 +125,7 @@ func _ready() -> void:
 			if cp_phase == -1:
 				GameState.boss_checkpoint = { "key": GameState.room_key(), "phase": 0 }
 		"finale":
-			set_state("f_restart")
+			set_state("fin")
 		_:
 			set_state("intro")
 	_find_floor.call_deferred()
@@ -138,9 +138,8 @@ func _stage_begin() -> void:
 	var main := _main()
 	if main != null and stage != "fight":
 		main.cine_begin()
-	if stage == "finale" and arena != null:
-		arena.lightning_on = false
-		arena.spots = [self, _player()]
+	if stage == "finale":
+		_begin_finale(true)
 
 
 func _find_floor() -> void:
@@ -536,11 +535,6 @@ func on_opening_parried() -> void:
 	_gun_prop = { "from": from, "to": to, "t": 0.0, "rot": 0.0, "landed": false }
 
 
-## 피날레 속사를 패링함: 풀 패링 슬로우가 끝나면 Main 이 일섬으로 처치 — 그동안 뽑은 자세 그대로
-func on_finale_parried() -> void:
-	set_state("f_hit")
-
-
 ## 반격 베기 명중 → 체력 -1, 30px 넉백. 체력 6 · 3 이 되면 넉백 뒤 페이즈 전환, 0 이면 피날레. 반환 = 남은 체력
 func on_counter_hit(angle: float) -> int:
 	hp -= 1
@@ -577,6 +571,12 @@ func on_blocked(p: Player) -> bool:
 func _debug_to_fight() -> void:
 	if stage == "fight":
 		return
+	if stage == "finale":
+		var m := _main()
+		if m != null:
+			m.finale_abort()
+		body.rotation = 0.0
+		body.pose("idle")
 	stage = "fight"
 	_card_f = -1
 	_gun_prop = {}
@@ -641,7 +641,7 @@ func debug_force_pattern() -> int:
 ## F11: 페이즈 순환 1 → 2 → 3 → 피날레(4) → 1 (그 페이즈 시작 상태로 바로).
 ## cinematic = 다음 페이즈 전환 연출을 그대로 (페이즈 3 이면 피날레 시작)
 func debug_next_phase(cinematic := false) -> int:
-	if state == "cine" or state == "f_hit":
+	if state == "cine":
 		return phase
 	if viewer:
 		set_viewer(false)
@@ -666,7 +666,7 @@ func debug_next_phase(cinematic := false) -> int:
 		phase = 3
 		hp = 0
 		_apply_phase_state()
-		_begin_finale(false)
+		_begin_finale(true)
 		return 4
 	phase = phase + 1
 	hp = phase_hp(phase)
@@ -895,30 +895,8 @@ func _physics_process(delta: float) -> void:
 				stage = "fight"
 				main.cine_end()
 				_start_phase()
-		# ---- 피날레
-		"f_rise":
-			velocity.x = move_toward(velocity.x, 0.0, 900.0 * delta)
-			if t >= C.FINALE_RISE:
-				_finale_setup(main)
-		"f_restart":
-			velocity.x = 0.0
-			_face_player()
-			if t >= C.OPEN_STILL_RESTART:
-				_finale_setup(main)
-		"f_wait":
-			_face_player()
-			velocity.x = 0.0
-			if t >= C.FINALE_SETUP:
-				_start_stage_duel()
-		"f_dash":
-			velocity.x = _move.dir * C.DASH_SPEED
-			_dash_ghosts(delta)
-			if _arrived() or is_on_wall():
-				velocity.x = 0.0
-				_face_player()
-				body.snap("idle")
-				set_state("f_wait")
-		"f_hit":
+		# ---- 피날레: FinaleDuel 이 자세 · 위치를 움직임
+		"fin":
 			velocity.x = 0.0
 		"intro":
 			_face_player()
@@ -1085,10 +1063,6 @@ func _physics_process(delta: float) -> void:
 					set_state("op_dodged")
 					body.snap("idle")
 					say(C.OPEN_DODGE_LINE)
-			elif stage != "fight":
-				# 피날레: 탄이 빗나갔으면 (플레이어가 살아 있으면) 다시 한 판
-				if t >= C.RETRY_DUEL and not p.dead:
-					_start_stage_duel()
 			elif t >= C.DUEL_RECOVER:
 				body.pose("idle", C.BLEND_MOVE * 2.0)
 				_end_pattern()
@@ -1310,11 +1284,6 @@ func _start_pattern(n: int) -> void:
 			if stage == "opening":
 				hold = C.OPEN_DUEL_HOLD
 				role = "opening"
-			elif stage == "finale":
-				hold = randf_range(C.FINALE_HOLD.x, C.FINALE_HOLD.y)
-				fakes = randi_range(C.FINALE_FAKES.x, C.FINALE_FAKES.y)
-				gap = C.FINALE_FAKE_GAP
-				role = "finale"
 			elif phase >= 2 and randf() < float(Config.diff.FAKE_TWITCH_CHANCE.get(phase, 0.0)):
 				fakes = randi_range(1, C.FAKE_MAX)
 			_duel = { "hold": hold + fakes * gap, "fakes": [], "fake_t": INF, "punished": false, "role": role }
@@ -1517,49 +1486,36 @@ func _start_stage_duel() -> void:
 
 
 ## 피날레 시작 (마지막 반격 베기로 체력 0): rise = 비틀거리며 일어나는 연출부터 (아니면 바로 대사 · 결투 준비)
-func _begin_finale(rise := true) -> void:
+## restart = 재시작 · 디버그로 바로 피날레: 플레이어를 철견 가까이 (마지막 반격 직후와 같은 자리)에 두고 시작
+func _begin_finale(restart := false) -> void:
+	if restart:
+		var pl := _player()
+		if pl != null:
+			var side := signf(pl.global_position.x - global_position.x)
+			if side == 0.0:
+				side = -float(facing)
+			pl.global_position.x = _clamp_x(global_position.x + side * C.FIN_RESTART_GAP)
+			pl.velocity = Vector2.ZERO
+			var m := _main()
+			if m != null:
+				m.camera.reset_smoothing()
 	_stop_pattern(false)
 	_chain = 0
 	_move = {}
 	waves.clear()
 	stage = "finale"
 	hp = 0
+	velocity = Vector2.ZERO
 	GameState.boss_checkpoint = { "key": GameState.room_key(), "phase": 4 }
+	set_state("fin")
 	var main := _main()
 	if main != null:
-		main.cine_begin()
-	if arena != null:
-		arena.lightning_on = false
-		arena.spots = [self, _player()]
-	if rise:
-		set_state("f_rise")
-		body.snap("stagger")
-		body.set_flash(false)
-		Audio.sfx("stagger")
-	else:
-		_finale_setup(main)
+		main.start_finale(self)          # 빗방울 결투 (FinaleDuel 이 이 뒤를 모두 움직임)
 
 
-## 일어나 대사 → 거리가 가까우면 뒤로 대시 → 마주 섬
-func _finale_setup(main: Node) -> void:
+## 플레이어를 봄 (FinaleDuel)
+func face_player() -> void:
 	_face_player()
-	body.snap("idle")
-	say(C.FINALE_LINE)
-	var p := _player()
-	var dist := absf(p.global_position.x - global_position.x)
-	if dist < C.FINALE_DIST - 10.0:
-		var dir := 1 if p.global_position.x > global_position.x else -1
-		var tx := _clamp_x(p.global_position.x - dir * C.FINALE_DIST)
-		if absf(tx - p.global_position.x) < C.FINALE_DIST * 0.7:
-			tx = _clamp_x(p.global_position.x + dir * C.FINALE_DIST)
-		var d := 1 if tx > global_position.x else -1
-		_move = { "dir": d, "target_x": tx, "max_t": C.MOVE_MAX }
-		_set_facing(d)
-		set_state("f_dash")
-		body.snap("dash")
-		_ghost_t = 0.0
-	else:
-		set_state("f_wait")
 
 
 ## 오프닝: 튕겨나간 권총 (포물선, 빙글빙글)

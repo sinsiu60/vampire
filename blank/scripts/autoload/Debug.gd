@@ -10,7 +10,7 @@ extends Node
 ##  F8 철견 즉시 휘청 (반격 베기 감각 테스트) · F9 철견 포즈 뷰어 (숫자 키로 포즈, Shift+숫자 = 11번째부터)
 ##  F10 철견 패턴 강제 (① ~ ⑤ 차례로) · F11 철견 페이즈 순환 (1 → 2 → 3, Shift+F11 = 다음 페이즈 전환 연출 그대로)
 ##     — 디버그 빌드에서만
-##  F12 공격 종류 연습 방 (1겹 · 2겹 · 보라를 번갈아 쏘는 더미) ↔ 원래 방 — 디버그 빌드에서만
+##  F12 철견 피날레 "빗방울 결투" 만 바로 재생 · Shift+F12 공격 종류 연습 방 (1겹 · 2겹 · 보라 더미) ↔ 원래 방 — 디버그 빌드에서만
 
 signal changed
 
@@ -82,6 +82,9 @@ func _input(event: InputEvent) -> void:
 		KEY_F12:
 			var main := get_tree().get_first_node_in_group("game")
 			if not debug_mode() or main == null or menu_open:
+				return
+			if not event.shift_pressed:
+				main.debug_play_finale()
 				return
 			GameState.room_override = "" if GameState.room_override == ATTACK_ROOM else ATTACK_ROOM
 			GameState.boss_checkpoint = {}

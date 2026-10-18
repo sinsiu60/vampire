@@ -30,6 +30,9 @@ var counter_lunges := 0          ## 반격 베기 자동 돌진 횟수 (테스�
 
 # ---- 구르기 (Config.roll): 이동 방향(없으면 바라보는 방향)으로 64px · 0.3초, 처음 0.25초 무적, 바닥에서만
 var roll_enabled := true         ## 피날레 결투처럼 받아치기만 하는 곳에서 끔
+var finale_pose := ""            ## 피날레 연출 자세: "" | "cut_end" (휘두른 끝, 칼을 뻗은 채) | "sheathe" (칼을 칼집에 — finale_k 0 → 1)
+var finale_k := 0.0
+var auto_walk := {}              ## 입력이 잠긴 동안 연출이 시키는 걸음 { x (목표), speed, face } — 피날레 대치에서 물러섬
 var rolls := 0                   ## 구른 횟수 (테스트 · 디버그)
 var _roll_t := -1.0              # 구르기 경과 (-1 = 구르는 중 아님)
 var _roll_dir := 1
@@ -218,7 +221,15 @@ func _physics_process(delta: float) -> void:
 
 	# ---- 수평 이동: 목표 속도로 가속/감속, 방향 전환은 더 빠릿하게
 	var ax := int(Input.is_action_pressed("move_right")) - int(Input.is_action_pressed("move_left")) if ctl else 0
-	if ax != 0 and not is_slashing():
+	var top: float = c.run_speed
+	if not ctl and not auto_walk.is_empty():
+		var dx: float = float(auto_walk.x) - global_position.x
+		ax = int(signf(dx)) if absf(dx) > 1.0 else 0
+		top = minf(float(auto_walk.speed), absf(dx) * 10.0 + 8.0)       # 도착하면서 감속
+		facing = int(auto_walk.face)
+		if ax == 0:
+			velocity.x = 0.0
+	elif ax != 0 and not is_slashing():
 		facing = ax
 	var accel: float
 	if was_on_floor:
@@ -227,7 +238,7 @@ func _physics_process(delta: float) -> void:
 		accel = c.air_accel if ax != 0 else c.air_decel
 	if ax != 0 and signf(velocity.x) == -ax:
 		accel *= c.turn_accel_mul
-	velocity.x = move_toward(velocity.x, ax * c.run_speed, accel * delta)
+	velocity.x = move_toward(velocity.x, ax * top, accel * delta)
 
 	# ---- 점프: 버퍼 + 코요테 타임
 	var jumped := false
@@ -503,10 +514,57 @@ func _draw_body() -> void:
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
+## 잔상 하나 (pos = 전역 발 위치, 지금 자세) — 피날레 일섬 경로
+func add_ghost(pos: Vector2, strong := true) -> void:
+	_ghosts.append({ "pos": pos, "parts": body_parts(), "t": 0.0, "strong": strong })
+
+
+## 피날레 자세: 낮게 내디딘 다리 · 앞으로 숙인 몸 + 칼 (1px 점들). 오른쪽을 볼 때 기준, facing 으로 뒤집음
+func _finale_parts() -> Array:
+	var sh := []
+	sh.append(["rect", Rect2(-7, -5, 2, 5)])        # 뒷다리 (넓게)
+	sh.append(["rect", Rect2(-6, -6, 2, 1)])
+	sh.append(["rect", Rect2(3, -5, 2, 5)])         # 앞다리
+	sh.append(["rect", Rect2(2, -6, 2, 1)])
+	sh.append(["rect", Rect2(-3, -11, 6, 6)])       # 몸통 (낮게)
+	sh.append(["rect", Rect2(-1, -15, 5, 4)])       # 머리 (앞으로)
+	sh.append(["rect", Rect2(-3, -15, 2, 2)])       # 뒷머리
+	# 칼집: 허리에서 뒤로 비스듬히
+	var mouth := Vector2(-3, -7)
+	var back := Vector2(-1.0, 0.45).normalized()
+	for i in 6:
+		var q := (mouth + back * float(i)).round()
+		sh.append(["rect", Rect2(q, Vector2.ONE)])
+	# 칼: cut_end = 앞 아래로 뻗음 · sheathe = 손이 칼집 입구 위로 와서 (k 0 ~ 0.4) 칼날이 미끄러져 들어감 (0.4 ~ 1)
+	const BLADE := 13.0
+	var hand := Vector2(6, -9)
+	var dir := Vector2(1.0, 0.3).normalized()
+	var vis := BLADE
+	if finale_pose == "sheathe":
+		var a := clampf(finale_k / 0.4, 0.0, 1.0)
+		var b := clampf((finale_k - 0.4) / 0.6, 0.0, 1.0)
+		var e := a * a * (3.0 - 2.0 * a)
+		vis = BLADE * (1.0 - b * b)
+		var d := dir.lerp(back, e).normalized()              # 칼끝이 칼집 쪽으로 돌아감
+		var h := hand.lerp(mouth - back * BLADE, e) if b <= 0.0 else mouth - back * vis
+		for i in int(vis):
+			var q := (h + d * float(i)).round()
+			sh.append(["rect", Rect2(q, Vector2.ONE)])
+		sh.append(["rect", Rect2((h - d).round() + Vector2(-1, -1), Vector2(2, 2))])   # 손 · 칼자루
+		return sh
+	sh.append(["rect", Rect2(Vector2(3, -10), Vector2(3, 2))])   # 뻗은 팔
+	for i in int(vis):
+		var q := (hand + dir * float(i)).round()
+		sh.append(["rect", Rect2(q, Vector2.ONE)])
+	return sh
+
+
 ## 지금 자세의 실루엣 [{ xf, shapes, body, rim }] (노드 로컬) — 그리기와 사망 시 두 조각에 같이 씀
 func body_parts() -> Array:
 	var col: Color = Config.colors.player
 	var sh := []
+	if finale_pose != "":
+		return [{ "xf": Transform2D(0.0, Vector2(facing, 1), 0.0, Vector2.ZERO), "shapes": _finale_parts(), "body": col, "rim": Color(0, 0, 0, 0) }]
 	# 구르기: 몸을 둥글게 말아 회전
 	if is_rolling():
 		var u: float = clampf(_roll_t / Config.roll.ROLL_TIME, 0.0, 1.0)

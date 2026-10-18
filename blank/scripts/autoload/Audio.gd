@@ -111,6 +111,32 @@ func play_synced(name: String, impact_time: float, volume := -1.0, pitch := 1.0,
 	return job
 
 
+## play_synced 의 실제 시간판: 피크가 실제 시각 impact_real (TimeManager.real_time) 에 오게.
+## 시간 정지 · 슬로우와 상관없이 맞춤 (피날레 — 멈춘 세계 위로 들리는 납도 등). 이미 지났으면 앞부분을 건너뜀
+func play_synced_real(name: String, impact_real: float, volume := -1.0, pitch := 1.0) -> Dictionary:
+	var job := { "name": name, "impact": impact_real, "volume": volume_of(name) if volume < 0.0 else volume,
+		"pitch": pitch, "clear": true, "cancelled": false, "player": null, "real": true }
+	if not streams.has(name):
+		return job
+	if not _try_start(job):
+		_synced.append(job)
+	return job
+
+
+## 지금 나는 효과음 전부 sec 초 동안 줄여 멈춤 (반복 소리 · 배경음 제외, 실제 시간)
+func fade_all_sfx(sec := 0.08) -> void:
+	for p in _pool:
+		if not p.playing:
+			continue
+		if sec <= 0.0:
+			p.stop()
+			continue
+		var tw := create_tween()
+		tw.set_ignore_time_scale(true)
+		tw.tween_property(p, "volume_db", -80.0, sec)
+		tw.tween_callback(p.stop)
+
+
 func cancel_synced(job: Dictionary) -> void:
 	if job.is_empty():
 		return
@@ -126,16 +152,24 @@ func _try_start(job: Dictionary) -> bool:
 		return true
 	var rate := Engine.time_scale if not get_tree().paused else 0.0
 	var lead: float = float(PEAKS.get(job.name, 0.0)) / maxf(job.pitch, 0.01)
-	var left: float = job.impact - TimeManager.world_time
-	if left > 0.0 and rate <= 0.0:
-		return false                        # 히트스톱 · 일시정지: 월드가 다시 흐를 때까지
-	var left_real: float = left / rate if left > 0.0 else left
+	var left_real: float
+	if job.get("real", false):
+		if get_tree().paused:
+			return false
+		left_real = job.impact - TimeManager.real_time
+	else:
+		var left: float = job.impact - TimeManager.world_time
+		if left > 0.0 and rate <= 0.0:
+			return false                        # 히트스톱 · 일시정지: 월드가 다시 흐를 때까지
+		left_real = left / rate if left > 0.0 else left
 	if left_real > lead:
 		return false
 	var from: float = (lead - left_real) * job.pitch
 	if from >= length(job.name):
 		return true
 	job.player = play(job.name, job.volume, job.pitch, job.clear, maxf(from, 0.0))
+	job.started = TimeManager.real_time      # 시작한 실제 시각 · 건너뛴 앞부분 (확인 · 디버그)
+	job.from = maxf(from, 0.0)
 	return true
 
 

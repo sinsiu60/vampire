@@ -20,6 +20,7 @@ var _slow := 1.0                 # 슬로우 배율 (패링 시퀀스가 세팅)
 var _slow_left := 0.0            # slow_for: 남은 실제 시간 (0 = 끝나면 1.0 으로 돌아가는 타이머 없음)
 var _killstop := 0               # 남은 킬 스톱 틱
 var _last_delta := 0.0
+var held := false                ## 연출이 붙잡은 시간 정지 (피날레 멈춘 세계) — hold(false) 까지 월드 정지
 
 
 func _ready() -> void:
@@ -34,6 +35,7 @@ func reset() -> void:
 	_slow = 1.0
 	_slow_left = 0.0
 	world_time = 0.0
+	held = false
 	_apply()
 	frozen = false
 
@@ -61,6 +63,12 @@ func freeze_now() -> void:
 	frozen = true
 	world_time -= _last_delta
 	kill_stopped = _killstop > 0
+
+
+## 연출용 시간 정지: on 이면 다음 틱부터 월드가 멈춤 (풀 때까지). 연출 타이머는 real_tick · real_delta 로
+func hold(on: bool) -> void:
+	held = on
+	_apply()
 
 
 func kill_stop_left() -> int:
@@ -128,4 +136,4 @@ func _physics_process(delta: float) -> void:
 
 
 func _apply() -> void:
-	Engine.time_scale = 0.0 if _hitstop > 0 or _killstop > 0 else _slow * Debug.time_mul()
+	Engine.time_scale = 0.0 if held or _hitstop > 0 or _killstop > 0 else _slow * Debug.time_mul()

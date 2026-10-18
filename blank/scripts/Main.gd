@@ -12,6 +12,11 @@ var _boss_outro := -1.0           # 철견 처치 뒤 실제 시간 (무전 1초
 var letterbox := 0.0              # 레터박스 0~1 (철견 페이즈 전환 연출 — HUD 가 그림)
 var _letterbox_to := 0.0
 var cinematic := false            # 연출 중 (입력 잠금, 피격 없음)
+var letterbox_time := -1.0        # 레터박스 들어오고 나가는 시간 (실제 초, -1 = CG.TR_LETTERBOX)
+var cam_override := {}            # 연출 카메라 { center (전역), zoom } — 비어 있으면 플레이어를 따라감
+var _cam_local := Vector2.ZERO
+var _radio_at: float = CG.RADIO_DELAY
+var _exit_at: float = CG.EXIT_DELAY
 var _outro_radio := false
 @onready var player: Player = $Player
 @onready var camera: Camera2D = $Player/Camera
@@ -156,7 +161,7 @@ func _physics_process(_delta: float) -> void:
 	_try_open_exit()
 	_boss_outro_tick()
 	if _letterbox_to != letterbox:
-		letterbox = move_toward(letterbox, _letterbox_to, TimeManager.real_delta() / CG.TR_LETTERBOX)
+		letterbox = move_toward(letterbox, _letterbox_to, TimeManager.real_delta() / (letterbox_time if letterbox_time > 0.0 else CG.TR_LETTERBOX))
 	if TimeManager.frozen:
 		return
 	_opportunity_chimes()
@@ -195,10 +200,10 @@ func _boss_outro_tick() -> void:
 	if _boss_outro < 0.0:
 		return
 	_boss_outro += TimeManager.real_delta()
-	if not _outro_radio and _boss_outro >= CG.RADIO_DELAY:
+	if not _outro_radio and _boss_outro >= _radio_at:
 		_outro_radio = true
 		show_radio(CG.RADIO_TEXT, CG.RADIO_TIME)
-	if _boss_outro >= CG.EXIT_DELAY:
+	if _boss_outro >= _exit_at:
 		_boss_outro = -1.0
 		var d := room.exit_door()
 		if d != null:
@@ -353,6 +358,21 @@ func start_kill_shake(angle: float, stop_frames: int, mul := 1.0) -> void:
 
 func _update_zoom() -> void:
 	var P: Dictionary = Config.parry_seq
+	# 연출 카메라: 플레이어에서 떼어 지정한 곳 · 배율로 (피날레)
+	if not cam_override.is_empty():
+		if not camera.top_level:
+			_cam_local = camera.position
+			camera.top_level = true
+			camera.position_smoothing_enabled = false
+		zoom = float(cam_override.get("zoom", 1.0))
+		camera.global_position = cam_override.center
+		camera.zoom = Vector2(zoom, zoom)
+		return
+	if camera.top_level:
+		camera.top_level = false
+		camera.position = _cam_local
+		camera.position_smoothing_enabled = true
+		camera.reset_smoothing()
 	if seq.active:
 		zoom = 1.0 + P.ZOOM * pow(seq.return_u(), 2.0)
 	else:
@@ -687,15 +707,14 @@ func cine_shot(b: BossCheolgyeon, to: Vector2) -> void:
 	_boss_light(m)
 
 
-## 철견 탄 패링: 슬로우 시퀀스 없음 (피날레만). OPPORTUNITY 탄 (role = stagger: ④ 진짜 탄 · ⑤ 2번째 도탄)이면
+## 철견 탄 패링: 슬로우 시퀀스 없음. OPPORTUNITY 탄 (role = stagger: ④ 진짜 탄 · ⑤ 2번째 도탄)이면
 ## 반사탄이 철견에 맞고 (boss_armor) 철견 휘청 → 반격 기회
 func _parry_boss_shot(s: Dictionary) -> void:
 	var p := player
 	var b: BossCheolgyeon = s.shooter
 	var back: float = s.angle + PI
 	var spark: Vector2 = p.center() + Vector2.from_angle(back) * float(Config.slash.radius) * 0.6
-	if s.role != "finale":
-		boss_parry_fx(spark, back, s.get("attack_type", "") == Config.ATK_OPPORTUNITY)
+	boss_parry_fx(spark, back, s.get("attack_type", "") == Config.ATK_OPPORTUNITY)
 	effects.approach_success(s.muzzle)
 	if not is_instance_valid(b) or b.dead:
 		return
@@ -704,14 +723,6 @@ func _parry_boss_shot(s: Dictionary) -> void:
 		Audio.boss_armor()
 		effects.burst(b.body.muzzle(0), 10, Config.colors.parry, 200.0, (b.center() - p.center()).angle(), 1.2, 0.25, { "glow": true, "streak": true })
 		b.on_opening_parried()
-		return
-	if s.role == "finale":
-		# 피날레: 풀 패링 슬로우 (유지 2배) → 끝나는 틱에 일섬 (_reflect_hit → _final_cut)
-		var aim := (b.center() - p.center()).angle()
-		parry_fx(spark, back)
-		seq.start(b, aim, p.center().distance_to(b.center()), Config.juice.HITSTOP_PARRY_FRAMES if Settings.on("hitstop") else 0, CG.FINALE_HOLD_MUL)
-		p.input_locked = Config.parry_seq.LOCK_INPUT_DURING_SLOWMO
-		b.on_finale_parried()
 		return
 	if s.role == "stagger":
 		var c := b.center()
@@ -803,32 +814,56 @@ func _counter_hit(b: BossCheolgyeon) -> void:
 	b.on_counter_hit(angle)                  # 체력 0 이면 철견이 피날레를 시작 (처치는 피날레 일섬)
 
 
-## 피날레 일섬: 풀 패링 슬로우가 끝나는 틱 — 플레이어가 철견을 지나 반대편으로 번쩍 →
-## execute.wav + kill_sound → 16프레임 킬 연출 (흔들림 1.5배) → 번개 한 번 + thunder → 모자가 날아가고 쌍권총이 떨어짐
-func _final_cut(b: BossCheolgyeon) -> void:
-	var p := player
-	p.roll_enabled = true                 # 피날레 결투 동안 꺼 둔 구르기
-	var o := p.center()
-	var side := signf(b.global_position.x - p.global_position.x)
-	if side == 0.0:
-		side = 1.0
-	var land := Vector2(b.global_position.x + side * CG.CUT_DIST, p.global_position.y)
-	land.x = clampf(land.x, 16.0, room.size_px().x - 16.0)
-	p.global_position = land
-	p.velocity = Vector2.ZERO
-	p.facing = int(-side)
-	var angle := (b.center() - o).angle()
-	effects.add_tracer(o, p.center(), 4.0, Config.colors.player, 6)
-	effects.add_tracer(o, p.center(), 8.0, Color(Config.colors.player, 0.35), 6)
-	Audio.sfx("execute")
-	b.dying = true
-	_kill_enemy(b, angle, "slash")
-	var a := room.get_node_or_null("Arena")
-	if a != null:
-		a.spots = []
-		a.lightning_on = true
-		a.lightning()
+# ================================================================ 피날레 "빗방울 결투" (FinaleDuel)
+var _finale: FinaleDuel = null
+
+
+func start_finale(b: BossCheolgyeon) -> void:
+	if _finale != null and is_instance_valid(_finale) and not _finale.done:
+		return
+	pending_shots.clear()
+	seq.cancel()
+	_finale = FinaleDuel.new()
+	_finale.setup(self, b)
+	add_child(_finale)
+
+
+func finale() -> FinaleDuel:
+	return _finale if _finale != null and is_instance_valid(_finale) and not _finale.done else null
+
+
+## 디버그로 피날레를 벗어남 (F8 · F10 · F11)
+func finale_abort() -> void:
+	if finale() != null:
+		_finale.abort()
+	_finale = null
 	cine_end()
+
+
+## 11) 쓰러짐 순간: 철견 처치 확정 (체크포인트 · 방 클리어). 시체는 그 자리에 남고, 무전 · 출구는 radio_at · exit_at 초 뒤 (실제 시간)
+func finale_boss_down(b: BossCheolgyeon, radio_at: float, exit_at: float) -> void:
+	b.dying = true
+	for g in ["enemies", "aimers", "counter_targets"]:
+		b.remove_from_group(g)
+	GameState.boss_checkpoint = { "key": GameState.room_key(), "dead": true }
+	_radio_at = radio_at
+	_exit_at = exit_at
+	_boss_outro = 0.0
+	_outro_radio = false
+
+
+## 피날레 끝 (12 여운까지): 체력 칸 · 대사를 내림
+func finale_done(_f: FinaleDuel) -> void:
+	boss = null
+	_finale = null
+
+
+## F12: 피날레만 바로 (보스방 체크포인트 = 피날레)
+func debug_play_finale() -> void:
+	GameState.room_override = ""
+	GameState.go_to(GameState.room_count())
+	GameState.boss_checkpoint = { "key": GameState.room_key(), "phase": 4 }
+	restart()
 
 
 ## 휘청 아닐 때 철견을 벰: 권총으로 막음 — boss_armor + 불꽃, 피해 없음, 플레이어 0.2초 경직 (살짝 밀려남)
@@ -903,10 +938,7 @@ func _reflect_hit(target: Enemy, aim: float) -> void:
 			effects.burst(hit_pos, 8, Config.colors.parry, 120.0, aim + PI, 1.1, 0.22, { "glow": true, "streak": true })
 	effects.add_tracer(o, hit_pos, Sh.REFLECT_TRACER_WIDTH, Config.colors.parry, Sh.TRACER_FRAMES)
 	if victim is BossCheolgyeon:
-		if victim.in_finale():
-			_final_cut(victim)            # 피날레: 일섬
-		else:
-			victim.stagger()              # 철견은 반사탄에 맞으면 휘청 (반격 기회)
+		victim.stagger()                  # 철견은 반사탄에 맞으면 휘청 (반격 기회)
 	elif victim != null:
 		_kill_enemy(victim, angle, "reflect")
 
@@ -1008,24 +1040,7 @@ func _kill_enemy(e: Enemy, angle: float, cause := "slash") -> void:
 			K.BLOOD_LIFE * randf_range(0.75, 1.0), C.blood[i % C.blood.size()],
 			{ "size": 3.0 if randf() < 0.45 else 2.0, "grav": K.BLOOD_GRAVITY, "stain": true, "slow": true })
 	effects.burst(c, 8, C.parry if by_parry else C.player, 260.0, angle, 0.35, 0.18, { "glow": true, "streak": true })
-	# 철견: 흔들림 1.5배, 처치 뒤 무전 · 출구 (_boss_outro_tick). 모자 · 쌍권총 연출은 4단계 피날레에서
 	var shake_mul := 1.0
-	if e is BossCheolgyeon:
-		shake_mul = CG.KILL_SHAKE_MUL
-		# 모자는 위로 날아가고 쌍권총은 떨어짐 (킬 스톱이 끝나면 움직임)
-		var bb: BossCheolgyeon = e
-		for nm in ["Hat", "GunFShape", "GunBShape"]:
-			var parts: Array = bb.body.silhouette(bb.global_transform, [], [nm])
-			var sh := bb.body.part(nm)
-			if parts.is_empty() or sh == null:
-				continue
-			var pc: Vector2 = sh.global_transform * _centroid(sh.polygon)
-			var vel := Vector2(cos(angle) * 90.0 + randf_range(-30, 30), -320.0) if nm == "Hat" else Vector2(randf_range(-50, 50), randf_range(-120, -60))
-			gore.toss(parts, bb.global_position, pc, vel, randf_range(-14, 14))
-		GameState.boss_checkpoint = { "key": GameState.room_key(), "dead": true }
-		boss = null
-		_boss_outro = 0.0
-		_outro_radio = false
 	# 5) 킬 흔들림
 	start_kill_shake(angle, stop, shake_mul)
 	kill_frame = 0

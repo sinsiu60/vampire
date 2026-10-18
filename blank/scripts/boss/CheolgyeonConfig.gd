@@ -53,7 +53,7 @@ const BLOCK_PITCH := 1.15              ## boss_armor 피치
 const PARRY_HITSTOP := 5               ## 일반 패링 (콤보 중간 공격) 히트스톱
 const PARRY_SLOW := 0.5                ## 일반 패링 뒤 시간 속도
 const PARRY_SLOW_TIME := 0.1           ## 그 지속 (실제 시간)
-## 풀 패링 슬로우 시퀀스 (slowmo_in → loop → time_return) 는 페이즈 전환 · 피날레에만 (3·4단계)
+## 풀 패링 슬로우 시퀀스 (slowmo_in → loop → time_return) 는 페이즈 전환에만
 
 # ---------------------------------------------------------------- 사격 공통 (히트스캔 · 조준선 · 줄어드는 원)
 const SHOT_PITCH := 0.85               ## gun_fire 피치 (일반 적보다 묵직하게)
@@ -198,18 +198,80 @@ const OPEN_DODGE_LINE := "피하기만 할 거냐?"
 const OPEN_DODGE_WAIT := 1.4           ## 대사 → 레터박스 해제 · 페이즈 1
 
 # ---------------------------------------------------------------- 피날레 (체력 0)
-const FINALE_RISE := 0.8               ## 마지막 반격 → 비틀거리며 일어남
 const FINALE_LINE := "마지막이다. 뽑아라."
-const FINALE_DIST := 140.0             ## 마주 서는 거리 (가까우면 뒤로 대시)
-const FINALE_SETUP := 0.6              ## 대사 뒤 결투 시작까지
-const FINALE_HOLD := Vector2(0.5, 0.9) ## 정적 (가짜 움찔은 여기에 더해짐)
-const FINALE_FAKES := Vector2i(1, 3)   ## 가짜 움찔 1 ~ 3번
-const FINALE_FAKE_GAP := 0.5           ## 가짜 움찔 사이
-const FINALE_HOLD_MUL := 2.0           ## 풀 패링 슬로우 유지 시간 배율
-const FINALE_SPOT_R := 72.0            ## 정전 속 결투: 두 사람 둘레만 보이는 빛
+const FINALE_SPOT_R := 72.0            ## 정전 속 피날레: 두 사람 둘레만 보이는 빛
 const FINALE_SPOT := 0.85
-const CUT_DIST := 34.0                 ## 일섬: 플레이어가 철견을 지나 반대편 이 거리로
-const RETRY_DUEL := 0.5                ## 피날레 결투 탄이 빗나가면 이 뒤 다시 (오프닝은 피하면 대사 → 페이즈 1)
+
+# ---------------------------------------------------------------- 피날레 "빗방울 결투" (FinaleDuel — 모두 실제 시간)
+## 실패하지 않는 연출: 클릭은 방아쇠일 뿐 결과는 항상 일섬. 이동 · 구르기 · 점프 불가, 피격 없음
+const FIN_RESTART_GAP := 70.0          ## 재시작 · F12 로 피날레부터: 플레이어를 철견 옆 이 거리에 (마지막 반격 직후처럼)
+## 1) 정적
+const FIN_STILL := 2.0
+const FIN_RISE_AT := 0.4               ## 정적 시작 → 일어나기 시작 (stagger → idle 천천히)
+const FIN_RISE := 1.3                  ## 일어나는 데 걸리는 시간
+const FIN_LETTERBOX_IN := 0.8          ## 레터박스 진입
+const FIN_SFX_FADE := 0.5              ## 다른 효과음 페이드아웃
+const FIN_RAIN_VOL := 0.5              ## rain_loop 만 이 볼륨으로
+const FIN_HEARTBEAT_VOL := 0.6         ## heartbeat.wav 반복 (정적 ~ 움찔)
+## 2) 대치
+const FIN_FACE := 2.5
+const FIN_FACE_DIST := 260.0           ## 공백 ↔ 철견 거리 (화면 양 끝 — 가운데는 카메라가 벽에 막히지 않는 곳)
+const FIN_STEP_BACK := 0.9             ## 철견이 자리로 물러나는 시간 (멀면 FIN_STEP_SPEED 로) · 공백도 반대쪽 자리로 걸어 물러섬
+const FIN_STEP_SPEED := 180.0
+const FIN_ZOOM := 1.15                 ## 카메라 줌 1.0 → 이 값 (대치 동안 천천히)
+const FIN_LINE_AT := 0.5               ## 대치 시작 → 대사 "마지막이다. 뽑아라."
+## 3) 번개
+const FIN_FLASH := 0.5
+const FIN_THUNDER_DELAY := 0.3         ## 흰 화면 1프레임 → 이 뒤 thunder.wav
+## 4) 움찔 (가짜 — 이 구간 클릭은 무시, 버퍼에도 안 남김)
+const FIN_TWITCH := 1.5
+const FIN_TWITCH_AT := [0.35, 0.95]    ## 손가락 움찔 2회 (0.6초 간격)
+const FIN_TWITCH_LEN := 0.1
+const FIN_CAM_LEAN := 20.0             ## 카메라가 철견 쪽으로
+const FIN_CAM_LEAN_TIME := 0.5
+## 5) 빗방울
+const FIN_DROP := 1.2                  ## 모자 챙 끝 → 바닥 (아주 느리게)
+const FIN_DROP_SIZE := Vector2(2, 3)
+const FIN_DROP_COLOR := Color("#7fd8ff")
+const FIN_DROP_RAIN_MUL := 0.1         ## 빗줄기 속도 10%
+const FIN_DROP_RAIN_VOL := 0.2
+const FIN_DROP_CAM := 8.0              ## 빗방울을 따라 카메라가 아래로
+## 6) 신호
+const FIN_RIPPLE := 0.45               ## 바닥 물결 원 (시간 · 반지름)
+const FIN_RIPPLE_R := 12.0
+const FIN_RING_TIME := 0.35            ## 공백 둘레 2겹 원이 줄어드는 시간 (그 뒤 최소 크기에서 유지)
+const FINALE_AUTO_TIME := 2.5          ## 신호 뒤 이 시간 입력이 없으면 원이 한 번 번쩍 → 자동 일섬
+const FIN_AUTO_FLASH := 0.15
+## 7) 일섬
+const FIN_INVERT_FRAMES := 2           ## 흑백 반전 (흰 배경 + 검은 실루엣)
+const FIN_CUT_BEHIND := 40.0           ## 철견 뒤편 이 거리로 순간이동
+const FIN_GHOSTS := 6                  ## 이동 경로 잔상
+const FIN_LINE_W := 3.0                ## 화면을 가로지르는 흰 선 3px → 0px
+const FIN_LINE_TIME := 0.3
+const FIN_BULLET_AHEAD := 14.0         ## 철견 총알이 멈춰 있는 곳: 공백이 서 있던 자리에서 철견 쪽으로
+## 8) 멈춘 세계 · 9) 납도
+const FIN_FREEZE := 1.5                ## 시간 정지 (빗줄기 · 철견 · 총알 · 잔상 그대로, 모든 소리 무음)
+const FIN_SHEATHE := 0.45              ## 마지막 이 시간 동안 칼을 칼집에 — sheathe 의 "착" = 정지가 끝나는 순간 = 시간 재개
+const FIN_SFX_CUT := 0.06              ## 정지 순간 소리를 끊는 페이드
+## 10) 갈라진 총알
+const FIN_SPLIT := 0.3
+const FIN_SPLIT_DELAY := 0.1           ## 시간 재개 → 총알이 갈라지는 순간 ("착" 과 "팅" 을 살짝 떼어 놓음)
+const FIN_SPLIT_SPEED := 300.0         ## 두 조각: 날아가던 방향으로 · 위아래로 벌어짐
+const FIN_SPLIT_SPREAD := 160.0
+## 11) 쓰러짐
+const FIN_FALL := 2.0
+const FIN_CUT_FLASH := 0.25            ## 몸의 대각선 흰 선
+const FIN_FALL_SHAKE := 8.0
+const FIN_DOWN_LINE := "…빠르군."
+const FIN_DOWN_LINE_AT := 0.35
+const FIN_KNEEL_AT := 0.9              ## 무릎 꿇음 (land 포즈)
+const FIN_TOPPLE_AT := 1.3             ## 앞으로 쓰러짐 (발을 축으로 회전)
+const FIN_TOPPLE_TIME := 0.5
+const FIN_HAT_VEL := Vector2(-240.0, -230.0)   ## 페도라: 바람(빗줄기 방향)에 날려 화면 밖으로
+const FIN_GUN_VEL := Vector2(60.0, -150.0)     ## 쌍권총: 손에서 떨어져 바닥에 튕김
+## 12) 여운
+const FIN_AFTER := 2.0                 ## 번개 + 무전 → 이 뒤 출구 문 열림 (door_boss.wav)
+const FIN_CAM_RETURN := 1.2            ## 카메라가 플레이어를 다시 따라가기까지
 
 # ---------------------------------------------------------------- 무대 (BossArena)
 const RAIN_COUNT := 70                 ## 화면 안 빗줄기 수 (폭우 = 2배)
@@ -255,8 +317,7 @@ const RAIN_VOL := 0.35                 ## 보스방 빗소리 (Config.audio.SFX_
 const RAIN_VOL_STORM := 0.6            ## 페이즈 2 폭우 (3단계)
 const RAIN_FADE := 0.6                 ## 빗소리 페이드인 (실제 시간)
 
-# ---------------------------------------------------------------- 처치 뒤 (피날레 일섬 → 16프레임 킬 연출)
-const KILL_SHAKE_MUL := 1.5
+# ---------------------------------------------------------------- 처치 뒤 (피날레 쓰러짐 → 무전 · 출구, 시간은 FinaleDuel 이 FIN_FALL · FIN_AFTER 로 정함)
 const RADIO_DELAY := 1.0               ## 처치 → 잡음 무전 (실제 시간)
 const RADIO_TEXT := "철견 처리 확인. ...공백, 너 방금 웃었어?"
 const RADIO_TIME := 3.2
