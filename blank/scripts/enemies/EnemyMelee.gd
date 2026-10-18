@@ -12,7 +12,7 @@ class_name EnemyMelee
 @export_enum("melee", "charger") var variant := "melee"
 @export_enum("default", "slam", "charge") var first_attack := "default"   ## 돌격병 첫 공격 (default = Config.charger.FIRST)
 @export var aggro_range := 0.0   ## 0 = 기본값. 작게 하면 플레이어가 가까이 올 때까지 제자리 (방 4: 척탄병 앞에 모여 있음)
-@export_multiline var intro_radio := ""   ## 처음 만날 때 무전 (비우면 Config.intro.RADIO 기본값) — 돌격병만
+@export var intro_radio_key := ""   ## 처음 만날 때 무전 키 (data/radio_lines.json, 비우면 Config.intro.RADIO_KEYS)
 
 var attack_type := "normal"      ## 이번 공격 종류 (Config.ATK_*) — 보라 EVADE = 패링 불가
 var parryable: bool:             # 이번 공격이 패링 가능한가

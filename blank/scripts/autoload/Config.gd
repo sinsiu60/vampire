@@ -162,13 +162,12 @@ var intro := {                        # 처음 만나는 적 소개 (GameState.s
 	"TOWARD": 0.85,                   # 카메라 중심: 플레이어 → 적 이 비율 (멀리 있는 적도 화면 안에)
 	"IN": 0.25, "HOLD": 0.7, "OUT": 0.3,   # 카메라 들어감 · 머묾 · 돌아옴 (실제 초)
 	"NAME_TIME": 1.0,                 # 머리 위 이름
-	"RADIO_TIME": 3.0,                # 무전 표시 시간
 	"GAP": 0.15,                      # 한 방에 새 적이 둘이면 사이 간격
 	"NAMES": { "burst": "연사병", "charger": "돌격병", "grenadier": "척탄병" },
-	"RADIO": {                        # 방 씬에서 적마다 intro_radio 로 바꿀 수 있음 (비우면 이 기본값)
-		"burst": "두 발씩 쏘는 놈이다. 조심하라고.",
-		"charger": "막을 수 없는 공격을 하는 녀석이군. 피해라..",
-		"grenadier": "수류탄은 칼로 쳐서 돌려줘. 저 녀석에겐 선물일거다.",
+	"RADIO_KEYS": {                   # 무전 키 (data/radio_lines.json) — 방 씬에서 적마다 intro_radio_key 로 바꿀 수 있음
+		"burst": "intro_burst_gunner",
+		"charger": "intro_charger",
+		"grenadier": "intro_grenadier",
 	},
 }
 
@@ -428,6 +427,16 @@ var ui_style := {
 	"TITLE_GLITCH_TIME": 0.1,
 	"TITLE_RAIN_VOL": 0.3,
 	"VERSION": "v0.1",
+	# 잡음 무전 (RadioDialog) — 화면 왼쪽 아래 작은 판, 게임을 멈추지 않음
+	"RADIO_RECT": Rect2(8, 206, 200, 36),    # 판 (가로 200, 2줄)
+	"RADIO_NAME": "잡음",
+	"RADIO_CHAR": 0.03,                      # 글자당
+	"RADIO_LINE_GAP": 0.45,                  # 여러 줄이면 다음 줄까지
+	"RADIO_HOLD": 2.5,                       # 문장이 끝나고 사라질 때까지
+	"RADIO_NOISE_EVERY": Vector2(0.25, 0.7), # 한 글자가 깨지는 간격
+	"RADIO_NOISE_TIME": 0.05,
+	"RADIO_BLIP_EVERY": 3,                   # 글자 몇 개마다 radio_blip
+	"RADIO_ON_VOL": 0.6, "RADIO_OFF_VOL": 0.5, "RADIO_BLIP_VOL": 0.25,
 	# 장 시작 카드
 	"TYPE_CHAR": 0.04,                       # 글자당
 	"TYPE_LINE_GAP": 0.8,                    # 줄 사이

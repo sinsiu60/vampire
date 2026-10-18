@@ -40,7 +40,6 @@ door_type = "manhole"
 [node name="Grenadier1" type="CharacterBody2D" parent="Enemies" instance=ExtResource("5_xwemk")]
 position = Vector2(470, 240)
 script = ExtResource("6_kpxot")
-intro_radio = "수류탄은 칼로 쳐서 돌려줘. 저 녀석에겐 선물일거다."
 keep_max = 330.0
 aggro_range = 300.0
 

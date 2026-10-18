@@ -265,7 +265,7 @@ func _tick_face() -> void:
 		b.body.snap("duel")
 	if st >= C.FIN_LINE_AT and not _flags.has("line"):
 		_flags.line = true
-		b.say(C.FINALE_LINE, C.FIN_FACE - C.FIN_LINE_AT + C.FIN_FLASH)
+		b.say_key(C.FINALE_LINE, C.FIN_FACE - C.FIN_LINE_AT + C.FIN_FLASH)
 	if st >= C.FIN_FACE:
 		p.auto_walk = {}
 		p.velocity.x = 0.0
@@ -557,7 +557,7 @@ func _resume() -> void:
 	_enter(12)
 
 
-# ---- 12) 쓰러짐: 페도라는 바람에 · 쌍권총은 바닥에 → "…빠르군." → 무릎 → 앞으로
+# ---- 12) 쓰러짐: 페도라는 바람에 · 쌍권총은 바닥에 → 대사 (death) → 무릎 → 앞으로
 func _enter_fall() -> void:
 	for nm in ["Hat", "GunFShape", "GunBShape"]:
 		var sh := b.body.part(nm)
@@ -573,7 +573,7 @@ func _enter_fall() -> void:
 func _tick_fall() -> void:
 	if st >= C.FIN_DOWN_LINE_AT and not _flags.has("line"):
 		_flags.line = true
-		b.say(C.FIN_DOWN_LINE, C.FIN_FALL - C.FIN_DOWN_LINE_AT + 0.6)
+		b.say_key(C.FIN_DOWN_LINE, C.FIN_FALL - C.FIN_DOWN_LINE_AT + 0.6)
 	if st >= C.FIN_KNEEL_AT and not _flags.has("kneel"):
 		_flags.kneel = true
 		b.body.pose("land", 0.25)

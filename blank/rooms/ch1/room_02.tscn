@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://scripts/Door.gd" id="4_i1i4t"]
 [ext_resource type="PackedScene" path="res://scenes/EnemyGunner.tscn" id="5_848e5"]
 [ext_resource type="Script" path="res://scripts/enemies/EnemyGunner.gd" id="6_h3c1m"]
+[ext_resource type="Script" path="res://scripts/RadioTrigger.gd" id="rt_radio"]
 
 [node name="room_02" type="Node2D"]
 script = ExtResource("1_bso2o")
@@ -40,3 +41,9 @@ script = ExtResource("6_h3c1m")
 aim_time = 1.0
 cooldown = 2.0
 first_delay = 0.8
+
+[node name="RadioStart" type="Area2D" parent="."]
+position = Vector2(72, 216)
+script = ExtResource("rt_radio")
+key = "room_02_start"
+size = Vector2(120, 60)

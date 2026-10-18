@@ -28,8 +28,8 @@ enum { LOCKED, OPENING, OPEN }
 	set(v):
 		door_type = v
 		queue_redraw()
-## 보스방 문이 열리는 동안 화면 아래에 잡음 섞여 나오는 무전 한 줄
-@export_multiline var radio_text := "철견이다. 쌍권총 조심해."
+## 보스방 문이 열리기 시작할 때 잡음 무전 (data/radio_lines.json 키, 비우면 없음)
+@export var radio_key := "boss_door"
 
 var state := LOCKED
 var is_open: bool:               ## 잠금이 풀렸는가 (열리는 중 포함)
@@ -159,6 +159,10 @@ func open(boss_sound := false) -> void:
 	t = 0.0
 	_fired = {}
 	_sound = Audio.door(door_type == "boss" or boss_sound)
+	if door_type == "boss" and radio_key != "":
+		var m := _main()
+		if m != null and m.has_method("radio"):
+			m.radio(radio_key)
 	queue_redraw()
 
 
@@ -176,19 +180,6 @@ func player_entered(p: Player) -> bool:
 				and absf(p.center().x - global_position.x) < cfg().MANHOLE_W / 2.0 + 2.0
 		_:
 			return g.has_point(p.center())
-
-
-## 보스방 문 무전: 열리는 동안 + 다 열린 뒤 RADIO_HOLD 초 → { text, t, alpha }, 아니면 빈 Dictionary
-func radio_state() -> Dictionary:
-	if door_type != "boss" or radio_text == "" or state == LOCKED:
-		return {}
-	var a := 1.0
-	if state == OPEN:
-		var hold: float = cfg().RADIO_HOLD
-		if open_t > hold:
-			return {}
-		a = clampf((hold - open_t) / 0.4, 0.0, 1.0)
-	return { "text": radio_text, "t": t, "alpha": a }
 
 
 ## 일반 문 진행도 0~1: DOOR_STUTTER_TIME 에 STUTTER_FRAMES 프레임 멈칫한 뒤 DOOR_OPEN_TIME 에 딱 끝나게

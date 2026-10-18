@@ -233,6 +233,11 @@ func say(text: String, dur := C.LINE_TIME) -> void:
 	_say = { "text": text, "t": 0.0, "dur": dur }
 
 
+## 대사 키 (data/boss_lines.json) 로 말함
+func say_key(key: String, dur := C.LINE_TIME) -> void:
+	say(TextData.boss(key), dur)
+
+
 ## 이 패턴이 끝에 휘청을 주는가 (페이즈 3 이어 붙인 첫 패턴은 아님)
 func _finisher() -> bool:
 	return _chain != 1
@@ -792,7 +797,7 @@ func _cine_tick(main: Node) -> void:
 			Audio.set_muffled(false)
 		main.cine_end()
 		phase = to
-		say(C.TR2_LINE if to == 2 else C.TR3_LINE)
+		say_key(C.TR2_LINE if to == 2 else C.TR3_LINE)
 		_cine = {}
 		_start_phase()
 
@@ -857,7 +862,7 @@ func _physics_process(delta: float) -> void:
 			velocity.x = 0.0
 			if _card_t >= C.OPEN_LINE_AT and _say.is_empty() and not _duel.has("said"):
 				_duel["said"] = true
-				say(C.OPEN_LINE, 2.4)
+				say_key(C.OPEN_LINE, 2.4)
 			if _card_t >= C.OPEN_DUEL_AT:
 				_start_stage_duel()
 		"op_gunfly":
@@ -1058,11 +1063,11 @@ func _physics_process(delta: float) -> void:
 		"d_end":
 			velocity.x = 0.0
 			if stage == "opening":
-				# 오프닝: 패링 안 하고 (구르기로) 피함 → "피하기만 할 거냐?" → 페이즈 1
+				# 오프닝: 패링 안 하고 (구르기로) 피함 → "도망만 다닐 거냐?" → 페이즈 1
 				if t >= C.OPEN_DODGE_AT and not p.dead:
 					set_state("op_dodged")
 					body.snap("idle")
-					say(C.OPEN_DODGE_LINE)
+					say_key(C.OPEN_DODGE_LINE)
 			elif t >= C.DUEL_RECOVER:
 				body.pose("idle", C.BLEND_MOVE * 2.0)
 				_end_pattern()

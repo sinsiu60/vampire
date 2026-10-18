@@ -166,7 +166,7 @@ const TR2_RAIN_AT := 1.35
 const TR2_SIGN_AT := 1.6
 const TR2_RETURN_AT := 2.3             ## time_return
 const TR2_END := 2.9
-const TR2_LINE := "…재밌군."
+const TR2_LINE := "phase2"            ## 대사 키 (data/boss_lines.json)
 const TR_TANK_SHAKE := 8.0
 ## 2 → 3: 조명 3개를 차례로 쏨 → 마지막이 깨지며 flashbang + 하얀 화면 0.2초 → 정전
 const TR3_LIGHTS_AT := [0.9, 1.25, 1.6]
@@ -174,7 +174,7 @@ const TR3_WHITE := 0.2
 const TR3_MUFFLE := 0.8                ## flashbang "삐-" 여운 동안 다른 효과음 로우패스
 const TR3_RETURN_AT := 2.4
 const TR3_END := 3.0
-const TR3_LINE := "불 꺼. 어둠 속에서도 맞힐 수 있나 보자."
+const TR3_LINE := "phase3"            ## 대사 키
 const LINE_TIME := 2.2                 ## 대사 표시 시간 (실제 시간)
 const LINE_CPS := 18.0
 
@@ -185,7 +185,7 @@ const CARD_SCALES := [1.9, 1.35, 1.1]  ## 이름 카드가 박히는 3프레임 
 const CARD_HOLD := 1.5
 const CARD_FADE := 0.3
 const CARD_SHAKE := 5.0
-const OPEN_LINE := "등록도 안 된 놈이… 칼을 들고 왔다고?"
+const OPEN_LINE := "opening"          ## 대사 키 (이름 카드 뒤)
 const OPEN_LINE_AT := 0.9              ## 카드 뒤 대사 시작
 const OPEN_DUEL_AT := 3.0              ## 카드 뒤 속사 한 판 시작 (대사가 끝날 즈음)
 const OPEN_DUEL_HOLD := 0.6            ## 오프닝 속사 정적 (가짜 움찔 없음)
@@ -194,11 +194,11 @@ const GUN_FLY_DIST := 72.0
 const GUN_FLY_HEIGHT := 46.0
 const OPEN_PICKUP := 0.28              ## 뒤로 대시해 집는 웅크림
 const OPEN_DODGE_AT := 0.3             ## 오프닝 속사를 구르기로 피함 → 발사 이 뒤 대사 (패링 판정이 끝난 뒤)
-const OPEN_DODGE_LINE := "피하기만 할 거냐?"
+const OPEN_DODGE_LINE := "opening_rolled"   ## 대사 키 (오프닝 속사를 구르기로 피함)
 const OPEN_DODGE_WAIT := 1.4           ## 대사 → 레터박스 해제 · 페이즈 1
 
 # ---------------------------------------------------------------- 피날레 (체력 0)
-const FINALE_LINE := "마지막이다. 뽑아라."
+const FINALE_LINE := "finale"        ## 대사 키 (피날레 대치)
 const FINALE_SPOT_R := 72.0            ## 정전 속 피날레: 두 사람 둘레만 보이는 빛
 const FINALE_SPOT := 0.85
 
@@ -227,7 +227,7 @@ const FIN_FACE_DIST := 260.0           ## 공백 ↔ 철견 거리 (화면 양 �
 const FIN_STEP_BACK := 0.9             ## 철견이 자리로 물러나는 시간 (멀면 FIN_STEP_SPEED 로) · 공백도 반대쪽 자리로 걸어 물러섬
 const FIN_STEP_SPEED := 180.0
 const FIN_ZOOM := 1.15                 ## 카메라 줌 1.0 → 이 값 (대치 동안 천천히)
-const FIN_LINE_AT := 0.5               ## 대치 시작 → 대사 "마지막이다. 뽑아라."
+const FIN_LINE_AT := 0.5               ## 대치 시작 → 대사 (finale)
 ## 3) 번개
 const FIN_FLASH := 0.5
 const FIN_THUNDER_DELAY := 0.3         ## 흰 화면 1프레임 → 이 뒤 thunder.wav
@@ -301,7 +301,7 @@ const FIN_CUT_FLASH := 0.25            ## 철견 몸의 대각선 흰 선
 const FIN_KILL_SHAKE := 8.0
 ## 12) 쓰러짐
 const FIN_FALL := 2.0
-const FIN_DOWN_LINE := "…빠르군."
+const FIN_DOWN_LINE := "death"       ## 대사 키 (쓰러질 때)
 const FIN_DOWN_LINE_AT := 0.35
 const FIN_KNEEL_AT := 0.9              ## 무릎 꿇음 (land 포즈)
 const FIN_TOPPLE_AT := 1.3             ## 앞으로 쓰러짐 (발을 축으로 회전)
@@ -417,8 +417,6 @@ const RAIN_FADE := 0.6                 ## 빗소리 페이드인 (실제 시간)
 
 # ---------------------------------------------------------------- 처치 뒤 (피날레 쓰러짐 → 무전 · 출구, 시간은 FinaleDuel 이 FIN_FALL · FIN_AFTER 로 정함)
 const RADIO_DELAY := 1.0               ## 처치 → 잡음 무전 (실제 시간)
-const RADIO_TEXT := "철견 처리 확인. ...공백, 너 방금 웃었어?"
-const RADIO_TIME := 3.2
 const EXIT_DELAY := 3.0                ## 처치 → 출구 문 열림 (무전 2초 뒤, door_boss.wav)
 
 # ---------------------------------------------------------------- 포즈 (CheolgyeonBody.tscn 의 AnimationPlayer 애니메이션 이름)

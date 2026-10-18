@@ -27,3 +27,16 @@ static func load_json(path: String) -> Dictionary:
 
 static func chapter(n: int) -> Dictionary:
 	return load_json(CHAPTERS).get(str(n), {})
+
+
+## 잡음 무전 한 묶음 (여러 줄) — 없으면 빈 배열
+static func radio(key: String) -> Array:
+	var v = load_json(RADIO).get(key, [])
+	if v is String:
+		return [v]
+	return v if v is Array else []
+
+
+## 보스 대사 한 문장 — 없으면 키 그대로 (빠진 걸 바로 알아보게)
+static func boss(key: String) -> String:
+	return String(load_json(BOSS).get(key, key))

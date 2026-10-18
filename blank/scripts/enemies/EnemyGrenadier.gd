@@ -7,7 +7,7 @@ class_name EnemyGrenadier
 
 const GRENADE_SCENE := preload("res://scenes/Grenade.tscn")
 
-@export_multiline var intro_radio := ""   ## 처음 만날 때 무전 (비우면 Config.intro.RADIO 기본값)
+@export var intro_radio_key := ""   ## 처음 만날 때 무전 키 (data/radio_lines.json, 비우면 Config.intro.RADIO_KEYS)
 @export var keep_min := 0.0      ## 0 = 기본값 (방마다 거리 유지 범위를 바꿀 때)
 @export var keep_max := 0.0      ## 크게 하면 제자리에서 던짐 (방 4: 앞에 모인 근접 적과 함께 서 있게)
 @export var aggro_range := 0.0

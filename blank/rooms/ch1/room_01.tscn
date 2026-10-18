@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://scripts/Door.gd" id="4_jh4m2"]
 [ext_resource type="PackedScene" path="res://scenes/EnemyMelee.tscn" id="5_wqu05"]
 [ext_resource type="Script" path="res://scripts/enemies/EnemyMelee.gd" id="6_exk41"]
+[ext_resource type="Script" path="res://scripts/RadioTrigger.gd" id="rt_radio"]
 
 [node name="room_01" type="Node2D"]
 script = ExtResource("1_hl8xn")
@@ -41,3 +42,9 @@ script = ExtResource("6_exk41")
 [node name="Melee2" type="CharacterBody2D" parent="Enemies" instance=ExtResource("5_wqu05")]
 position = Vector2(520, 240)
 script = ExtResource("6_exk41")
+
+[node name="RadioStart" type="Area2D" parent="."]
+position = Vector2(72, 216)
+script = ExtResource("rt_radio")
+key = "room_01_start"
+size = Vector2(120, 60)

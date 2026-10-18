@@ -25,6 +25,7 @@ var cleared := {}                ## "1-3" → true (클리어한 방)
 var boss_checkpoint := {}        ## 보스 체크포인트 { key: "1-6", phase, dead? } — 죽으면 R 로 지금 페이즈 시작부터
 var death_log: Array = []        ## 사망 기록 (이번 실행 동안, R 재시작에도 유지) [{ pattern, attack, type, err, room }] — 최근이 끝
 var death_counts := {}           ## 패턴 이름 → 사망 수
+var radio_seen := {}             ## 한 번만 나오는 무전 (RadioTrigger 키) — 이번 실행 동안
 var seen_intros := {}            ## 처음 만나는 적 소개를 이미 본 종류 (Config.intro.NAMES 키) — 이번 실행 동안, F11 초기화
 var room_death_counts := {}      ## 방 키 ("1-3") → 사망 수 (디버그 표시)
 var room_override := ""          ## 비어 있지 않으면 이 방 씬을 대신 엶 (테스트·옛 테스트 방 res://scenes/Room.tscn)

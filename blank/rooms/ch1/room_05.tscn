@@ -36,7 +36,6 @@ position = Vector2(44, 240)
 position = Vector2(918, 240)
 script = ExtResource("4_3u0ej")
 door_type = "boss"
-radio_text = "이제 철견이다. 조심하라고."
 
 [node name="Enemies" type="Node2D" parent="."]
 

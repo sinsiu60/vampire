@@ -28,6 +28,7 @@ var _outro_radio := false
 @onready var menu: Menu = $HUD/Menu
 @onready var debug_draw: DebugDraw = $DebugDraw
 @onready var fade: ColorRect = $HUD/Fade
+var radio_dialog: RadioDialog     # 잡음 무전 (HUD 층)
 
 var game_state := "play"          # play | dead | clear
 var pending_shots: Array = []     # 플레이어에 닿아 패링 입력을 기다리는 탄 { shooter, muzzle, fire_t, angle, parryable, attack_type, done }
@@ -42,7 +43,6 @@ var entering := false             # Boot 가 검은 전환으로 들여보냄 �
 var transitioning := false        # 출구로 나가는 중 (입력 잠금)
 var open_msg_t := -1.0            # "출구가 열렸다" 표시 경과 (실제 시간, -1 = 없음)
 var _exit_pending := false        # 방 클리어 → 마지막 적의 킬 연출이 끝나면 출구 보안 잠금 해제
-var _radio := {}                  # 화면 아래 잡음 섞인 무전 한 줄 { text, t, dur } (철견 처치 뒤 등)
 var _rumble := 0.0                # 이번 틱 미세 진동 (보스방 문 증기 구간) — 흔들림 갱신 때 쓰고 0 으로
 var kill_frame := -1              # 마지막 처치 후 실제 틱 수 (F3/F4 표시, 처치 없으면 -1)
 # F5 패링 입력 오차 표시: { text, ok, t } — 성공은 월드 시간, 실패 원인은 실제 시간 클릭 기준
@@ -99,6 +99,10 @@ func _ready() -> void:
 	camera.reset_smoothing()
 	hud.main = self
 	menu.main = self
+	radio_dialog = RadioDialog.new()
+	radio_dialog.name = "Radio"
+	$HUD.add_child(radio_dialog)
+	$HUD.move_child(radio_dialog, $HUD/Text.get_index() + 1)
 	debug_draw.main = self
 	background.build(size.x, GameState.chapter * 100 + GameState.room, room.spawn_position().y, room)
 	_queue_intros()
@@ -168,10 +172,6 @@ func _physics_process(_delta: float) -> void:
 		_late_watch = {}
 	if open_msg_t >= 0.0:
 		open_msg_t += TimeManager.real_delta()
-	if not _radio.is_empty():
-		_radio.t += TimeManager.real_delta()
-		if _radio.t > _radio.dur:
-			_radio = {}
 	_try_open_exit()
 	_boss_outro_tick()
 	_intro_tick()
@@ -215,14 +215,14 @@ func _try_open_exit() -> void:
 	open_msg_t = 0.0
 
 
-## 철견 처치 뒤: RADIO_DELAY 초 무전 "철견 처리 확인. ...공백, 너 방금 웃었어?", EXIT_DELAY 초 출구 문 열림 (실제 시간)
+## 철견 처치 뒤: RADIO_DELAY 초 무전 boss_clear, EXIT_DELAY 초 출구 문 열림 (실제 시간)
 func _boss_outro_tick() -> void:
 	if _boss_outro < 0.0:
 		return
 	_boss_outro += TimeManager.real_delta()
 	if not _outro_radio and _boss_outro >= _radio_at:
 		_outro_radio = true
-		show_radio(CG.RADIO_TEXT, CG.RADIO_TIME)
+		radio("boss_clear")
 	if _boss_outro >= _exit_at:
 		_boss_outro = -1.0
 		var d := room.exit_door()
@@ -361,7 +361,7 @@ func _update_shake(dt: float) -> void:
 
 # ================================================================ 처음 만나는 적 소개 (Config.intro)
 ## 방에 처음 보는 종류의 적 (연사병 · 돌격병 · 척탄병) 이 있으면: 입력 LOCK 초 잠금 · 그 적 쪽으로 카메라 살짝 줌인 ·
-## 머리 위 이름 NAME_TIME 초 · 잡음의 무전 한 줄 (적의 intro_radio, 방 씬에서 입력). 본 종류는 GameState.seen_intros (F11 초기화)
+## 머리 위 이름 NAME_TIME 초 · 잡음 무전 (적의 intro_radio_key → data/radio_lines.json). 본 종류는 GameState.seen_intros (F11 초기화)
 func _queue_intros() -> void:
 	var keys := {}
 	for e in enemies():
@@ -431,9 +431,9 @@ func _start_intro(e: Enemy) -> void:
 	GameState.seen_intros[k] = true
 	intros_shown.append(k)
 	e.show_name(String(I.NAMES.get(k, e.label())), I.NAME_TIME)
-	var line: String = e.intro_line()
-	if line != "":
-		show_radio(line, I.RADIO_TIME)
+	var key: String = e.intro_radio()
+	if key != "":
+		radio(key)
 	player.input_locked = true
 	_intro = { "e": e, "t": 0.0, "from_c": _cam_follow_center(), "to_c": e.center(), "locked": true }
 
@@ -461,17 +461,19 @@ func toast_state() -> Dictionary:
 	return _toast
 
 
-## 화면 아래 무전 한 줄 (실제 시간 dur 초)
-func show_radio(text: String, dur: float) -> void:
-	_radio = { "text": text, "t": 0.0, "dur": dur }
+## 잡음 무전 (RadioDialog — 화면 왼쪽 아래, 대기열로 차례로). key = data/radio_lines.json
+func radio(key: String) -> void:
+	radio_dialog.say_key(key)
 
 
-## 지금 보여 줄 무전 { text, t, alpha } — Main 이 띄운 것 우선, 없으면 보스방 문 무전
+## 키 없이 한 줄 (디버그 · 옛 호출)
+func show_radio(text: String, _dur := 0.0) -> void:
+	radio_dialog.say_lines([text])
+
+
+## 지금 무전 { key, text, lines, line, t, alpha } — 없으면 빈 Dictionary
 func radio_state() -> Dictionary:
-	if not _radio.is_empty():
-		return { "text": _radio.text, "t": _radio.t, "alpha": clampf((_radio.dur - _radio.t) / 0.4, 0.0, 1.0) }
-	var d: Door = room.exit_door() if room != null else null
-	return d.radio_state() if d != null else {}
+	return radio_dialog.state()
 
 
 ## 이번 틱 미세 진동 (문 등 연출 노드가 매 틱 부름)

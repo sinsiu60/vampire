@@ -20,7 +20,7 @@ var laser_end := Vector2.ZERO    ## 조준선 끝점 (벽까지, 전역)
 @export var cooldown := 0.0      ## 발사 후 다음 조준까지 (기본 1.35초)
 @export var first_delay := 0.0   ## 발견 후 첫 조준까지 (기본 0.5초)
 @export_range(1, 2) var burst_count := 1   ## 2 = 연사병 (2연발)
-@export_multiline var intro_radio := ""     ## 처음 만날 때 무전 (비우면 Config.intro.RADIO 기본값) — 연사병만
+@export var intro_radio_key := ""   ## 처음 만날 때 무전 키 (data/radio_lines.json, 비우면 Config.intro.RADIO_KEYS)
 
 var burst_i := 0                 ## 이번 연사에서 다음에 쏠 탄 번호 (0 = 첫 탄)
 

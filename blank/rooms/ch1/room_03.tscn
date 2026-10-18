@@ -42,10 +42,8 @@ position = Vector2(330, 240)
 script = ExtResource("6_ga2y7")
 variant = "charger"
 first_attack = "charge"
-intro_radio = "막을 수 없는 공격을 하는 녀석이군. 피해라.."
 
 [node name="Burst1" type="CharacterBody2D" parent="Enemies" instance=ExtResource("7_co5ux")]
 position = Vector2(600, 192)
 script = ExtResource("8_5d36f")
 burst_count = 2
-intro_radio = "두 발씩 쏘는 놈이다. 조심하라고."

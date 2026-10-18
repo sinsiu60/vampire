@@ -79,12 +79,12 @@ func intro_key() -> String:
 	return ""
 
 
-## 소개 무전 (방 씬 export intro_radio 가 있으면 그것, 없으면 Config 기본값)
-func intro_line() -> String:
-	var v = get("intro_radio")
+## 소개 무전 키 (data/radio_lines.json) — 방 씬 export intro_radio_key 가 있으면 그것, 없으면 Config.intro.RADIO_KEYS
+func intro_radio() -> String:
+	var v = get("intro_radio_key")
 	if v != null and String(v) != "":
 		return String(v)
-	return String(Config.intro.RADIO.get(intro_key(), ""))
+	return String(Config.intro.RADIO_KEYS.get(intro_key(), ""))
 
 
 ## 머리 위 이름 dur 초 (실제 시간)
