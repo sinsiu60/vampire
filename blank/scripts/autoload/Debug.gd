@@ -91,6 +91,12 @@ func _input(event: InputEvent) -> void:
 			main.restart()
 		KEY_F8, KEY_F9, KEY_F10, KEY_F11:
 			var b = _boss()
+			# F11 (보스방 밖): 적 소개 기록 초기화
+			if event.physical_keycode == KEY_F11 and b == null and debug_mode() and not menu_open:
+				var main := get_tree().get_first_node_in_group("game")
+				if main != null:
+					main.debug_reset_intros()
+				return
 			if not debug_mode() or b == null or menu_open:
 				return
 			if event.physical_keycode == KEY_F8:

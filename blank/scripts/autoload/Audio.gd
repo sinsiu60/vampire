@@ -28,7 +28,7 @@ const VOLUME_KEYS := {
 	"stagger": "SFX_STAGGER", "explosion": "SFX_EXPLOSION", "flashbang": "SFX_FLASHBANG", "thunder": "SFX_THUNDER",
 	"rain_loop": "SFX_RAIN", "gun_fire": "SFX_GUN", "parry_chang": "SFX_PARRY", "boss_armor": "SFX_BOSS_ARMOR",
 	"boss_intro": "SFX_BOSS_INTRO", "kill_sound": "SFX_KILL", "dash_whoosh": "SFX_DASH", "slide": "SFX_SLIDE", "jump": "SFX_JUMP",
-	"roll": "SFX_ROLL",
+	"roll": "SFX_ROLL", "grenade_pin": "SFX_GRENADE_PIN",
 	"heartbeat": "SFX_HEARTBEAT", "drip": "SFX_DRIP", "sheathe": "SFX_SHEATHE", "bullet_split": "SFX_BULLET_SPLIT",
 }
 const POOL_SIZE := 16

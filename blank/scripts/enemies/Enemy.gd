@@ -5,11 +5,17 @@ class_name Enemy
 
 signal died(enemy: Enemy)
 
+## 처음 만나는 적 소개 중 (Main 이 켜고 끔) — 카메라가 다른 곳을 보는 동안 적 · 수류탄은 멈춰 기다림
+static var intro_hold := false
+
 var cfg: Dictionary
 var facing := -1                 # 처음엔 왼쪽(플레이어 시작 쪽)을 봄
 var state := "idle"
 var t := 0.0                     # 지금 상태에 들어온 뒤 경과 시간 (월드 시간)
 var dead := false
+
+var _name_tag := {}              # 머리 위 이름 { text, at (실제 시각), dur } — 처음 만나는 적 소개
+var _blocked_slash := -INF       # 막아낸 베기 (Player.last_slash_t) — 한 번 베기에 한 번만 막음 연출
 
 var _rec = null                  # 실루엣 기록 중이면 Array (capture_silhouette)
 var _xf := Transform2D.IDENTITY  # 지금 그리기 변환 (기록용)
@@ -63,6 +69,49 @@ func apply_physics(delta: float) -> void:
 	move_and_slide()
 
 
+## 사망 기록 · 소개에 쓰는 이름
+func label() -> String:
+	return "적"
+
+
+## 처음 만나는 적 소개 키 (Config.intro.NAMES / RADIO) — "" = 소개 없음
+func intro_key() -> String:
+	return ""
+
+
+## 소개 무전 (방 씬 export intro_radio 가 있으면 그것, 없으면 Config 기본값)
+func intro_line() -> String:
+	var v = get("intro_radio")
+	if v != null and String(v) != "":
+		return String(v)
+	return String(Config.intro.RADIO.get(intro_key(), ""))
+
+
+## 머리 위 이름 dur 초 (실제 시간)
+func show_name(text: String, dur: float) -> void:
+	_name_tag = { "text": text, "at": TimeManager.real_time, "dur": dur }
+	queue_redraw()
+
+
+## 지금 베면 무기로 막아내는가 (돌격병 멈칫 · 돌진) — 막히면 헛스윙 (처치 안 됨)
+func guarding() -> bool:
+	return false
+
+
+## 이름표가 떠 있는 동안 매 프레임 다시 그림 (소개 중엔 적 AI · 물리가 멈춰 있어도)
+func _process(_delta: float) -> void:
+	if not _name_tag.is_empty():
+		queue_redraw()
+
+
+## 막아냄 (Main): 한 번 베기에 한 번만 true
+func take_block(slash_t: float) -> bool:
+	if slash_t == _blocked_slash:
+		return false
+	_blocked_slash = slash_t
+	return true
+
+
 ## 공격 판정 사각형 (전역). 공격 중이 아니면 빈 Rect2
 func attack_box() -> Rect2:
 	return Rect2()
@@ -86,6 +135,14 @@ func _draw_pose() -> void:
 func _draw() -> void:
 	_xf = Transform2D.IDENTITY
 	_draw_pose()
+	if not _name_tag.is_empty():
+		var u: float = (TimeManager.real_time - float(_name_tag.at)) / float(_name_tag.dur)
+		if u >= 1.0:
+			_name_tag = {}
+		else:
+			draw_set_transform_matrix(Transform2D.IDENTITY)
+			var a := clampf(minf(u / 0.1, (1.0 - u) / 0.2), 0.0, 1.0)
+			Fonts.text(self, String(_name_tag.text), Vector2(0, -cfg.h - 10 - 3.0 * (1.0 - a)), 10, Color(Config.colors.ui, a), "center", false, true)
 
 
 func capturing() -> bool:

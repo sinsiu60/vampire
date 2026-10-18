@@ -25,6 +25,8 @@ var cleared := {}                ## "1-3" → true (클리어한 방)
 var boss_checkpoint := {}        ## 보스 체크포인트 { key: "1-6", phase, dead? } — 죽으면 R 로 지금 페이즈 시작부터
 var death_log: Array = []        ## 사망 기록 (이번 실행 동안, R 재시작에도 유지) [{ pattern, attack, type, err, room }] — 최근이 끝
 var death_counts := {}           ## 패턴 이름 → 사망 수
+var seen_intros := {}            ## 처음 만나는 적 소개를 이미 본 종류 (Config.intro.NAMES 키) — 이번 실행 동안, F11 초기화
+var room_death_counts := {}      ## 방 키 ("1-3") → 사망 수 (디버그 표시)
 var room_override := ""          ## 비어 있지 않으면 이 방 씬을 대신 엶 (테스트·옛 테스트 방 res://scenes/Room.tscn)
 
 
@@ -96,6 +98,18 @@ func log_death(cause: Dictionary) -> void:
 		death_log.pop_front()
 	var k: String = c.get("pattern", "?")
 	death_counts[k] = int(death_counts.get(k, 0)) + 1
+	room_death_counts[c.room] = int(room_death_counts.get(c.room, 0)) + 1
+
+
+## 이 방의 사망 기록 (최근이 끝)
+func room_deaths(key := "") -> Array:
+	var k := room_key() if key == "" else key
+	return death_log.filter(func(d): return d.get("room", "") == k)
+
+
+## 처음 만나는 적 소개 기록 지우기 (F11)
+func reset_intros() -> void:
+	seen_intros.clear()
 
 
 ## 사망 뒤 늦게 누른 클릭 → 마지막 기록의 오차를 '+xxms 늦음' 으로

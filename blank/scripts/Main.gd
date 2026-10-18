@@ -49,6 +49,16 @@ var timing_msg := {}
 var _last_click_real := -INF
 var _chimed := {}                 # 기회 공격 '칭' 을 이미 울린 공격 { 쏘는 적 id: fire_t }
 var _late_watch := {}             # 아직 안 누른 채 맞음 → 0.5초 안에 누르면 '+xxms 늦음'
+var intros_shown: Array = []      ## 이 방에서 소개한 적 종류 (테스트)
+var _intro_queue: Array = []      # 소개할 적 [Enemy]
+var _intro := {}                  # 지금 소개 { e, t, from_c, from_z, to_c, to_z, locked }
+var _intro_wait := -1.0           # 다음 소개까지 (실제 초)
+var _toast := {}                  # 디버그 알림 한 줄 { text, t }
+var burst_misses := 0             ## 연사병 첫 탄 패링 (반사탄이 벽에 빗나감) 수 — 테스트
+var blocks := 0                   ## 돌격병이 막아낸 베기 수 — 테스트
+var grenade_bats := 0             ## 수류탄 되치기 수 — 테스트
+var blasts := 0                   ## 수류탄 폭발 수
+var blast_kills := 0              ## 폭발에 휘말려 처치된 적 수
 
 
 func _ready() -> void:
@@ -90,6 +100,7 @@ func _ready() -> void:
 	menu.main = self
 	debug_draw.main = self
 	($BackdropLayer/Backdrop as Backdrop).build(size.x)
+	_queue_intros()
 	# 재시작 직후 짧게 밝아지는 페이드 (실제 시간, 입력은 바로 받음). 방 이동은 Boot 가 따로 검게 전환
 	if not entering:
 		fade.color = Color(0, 0, 0, 1)
@@ -160,6 +171,12 @@ func _physics_process(_delta: float) -> void:
 			_radio = {}
 	_try_open_exit()
 	_boss_outro_tick()
+	_intro_tick()
+	Enemy.intro_hold = intro_active() or (_intro_wait >= 0.0 and not _intro_queue.is_empty())
+	if not _toast.is_empty():
+		_toast.t += TimeManager.real_delta()
+		if _toast.t > 1.6:
+			_toast = {}
 	if _letterbox_to != letterbox:
 		letterbox = move_toward(letterbox, _letterbox_to, TimeManager.real_delta() / (letterbox_time if letterbox_time > 0.0 else CG.TR_LETTERBOX))
 	if TimeManager.frozen:
@@ -330,6 +347,108 @@ func _update_shake(dt: float) -> void:
 	camera.offset = o * Settings.shake
 
 
+# ================================================================ 처음 만나는 적 소개 (Config.intro)
+## 방에 처음 보는 종류의 적 (연사병 · 돌격병 · 척탄병) 이 있으면: 입력 LOCK 초 잠금 · 그 적 쪽으로 카메라 살짝 줌인 ·
+## 머리 위 이름 NAME_TIME 초 · 잡음의 무전 한 줄 (적의 intro_radio, 방 씬에서 입력). 본 종류는 GameState.seen_intros (F11 초기화)
+func _queue_intros() -> void:
+	var keys := {}
+	for e in enemies():
+		var k: String = e.intro_key()
+		if k == "" or GameState.seen_intros.has(k) or keys.has(k):
+			continue
+		keys[k] = true
+		_intro_queue.append(e)
+	if not _intro_queue.is_empty():
+		_intro_wait = Config.intro.DELAY
+
+
+func intro_active() -> bool:
+	return not _intro.is_empty()
+
+
+func _exit_tree() -> void:
+	Enemy.intro_hold = false
+
+
+func _intro_tick() -> void:
+	var I: Dictionary = Config.intro
+	var rd := TimeManager.real_delta()
+	if _intro.is_empty():
+		if _intro_wait < 0.0:
+			return
+		_intro_wait -= rd
+		if _intro_wait > 0.0:
+			return
+		_intro_wait = -1.0
+		while not _intro_queue.is_empty() and (not is_instance_valid(_intro_queue[0]) or _intro_queue[0].dead):
+			_intro_queue.pop_front()
+		if _intro_queue.is_empty() or player.dead or not cam_override.is_empty():
+			return
+		_start_intro(_intro_queue.pop_front())
+		return
+	_intro.t += rd
+	var e: Enemy = _intro.e if is_instance_valid(_intro.e) else null
+	if _intro.locked and _intro.t >= I.LOCK:
+		_intro.locked = false
+		if not seq_active:
+			player.input_locked = false
+	var tin: float = I.IN
+	var th: float = I.IN + I.HOLD
+	var tout: float = th + I.OUT
+	var target_c: Vector2 = _intro.to_c
+	if e != null:
+		target_c = player.center().lerp(e.center(), I.TOWARD)
+	if _intro.t < tin:
+		var k := _ease(_intro.t / tin)
+		cam_override = { "center": Vector2(_intro.from_c).lerp(target_c, k), "zoom": lerpf(1.0, I.ZOOM, k) }
+	elif _intro.t < th:
+		cam_override = { "center": target_c, "zoom": I.ZOOM }
+	elif _intro.t < tout:
+		var k := _ease((_intro.t - th) / I.OUT)
+		cam_override = { "center": target_c.lerp(_cam_follow_center(), k), "zoom": lerpf(I.ZOOM, 1.0, k) }
+	else:
+		cam_override = {}
+		_intro = {}
+		if not _intro_queue.is_empty():
+			_intro_wait = I.GAP
+
+
+func _start_intro(e: Enemy) -> void:
+	var I: Dictionary = Config.intro
+	var k: String = e.intro_key()
+	GameState.seen_intros[k] = true
+	intros_shown.append(k)
+	e.show_name(String(I.NAMES.get(k, e.label())), I.NAME_TIME)
+	var line: String = e.intro_line()
+	if line != "":
+		show_radio(line, I.RADIO_TIME)
+	player.input_locked = true
+	_intro = { "e": e, "t": 0.0, "from_c": _cam_follow_center(), "to_c": e.center(), "locked": true }
+
+
+## 플레이어를 따라갈 때의 화면 중심 (카메라 한계 안으로)
+func _cam_follow_center() -> Vector2:
+	var half := Vector2(Config.view.w, Config.view.h) / 2.0
+	var size := room.size_px()
+	var c := player.center() + Vector2(0, -8)
+	return Vector2(clampf(c.x, half.x, maxf(half.x, size.x - half.x)), clampf(c.y, half.y, maxf(half.y, size.y - half.y)))
+
+
+static func _ease(x: float) -> float:
+	x = clampf(x, 0.0, 1.0)
+	return x * x * (3.0 - 2.0 * x)
+
+
+## F11 (보스방 밖): 적 소개 기록 초기화
+func debug_reset_intros() -> void:
+	GameState.reset_intros()
+	_toast = { "text": "적 소개 기록 초기화 — 방에 다시 들어오면 소개", "t": 0.0 }
+
+
+func toast_state() -> Dictionary:
+	return _toast
+
+
 ## 화면 아래 무전 한 줄 (실제 시간 dur 초)
 func show_radio(text: String, dur: float) -> void:
 	_radio = { "text": text, "t": 0.0, "dur": dur }
@@ -453,22 +572,27 @@ func hitscan(from: Vector2, angle: float, dist: float, hit_player: bool, hit_ene
 ## 총잡이 g 가 지금 조준을 더 진행하면 안 되는가
 ##  - 패링 시퀀스 중 (플레이어 입력이 잠겨 피할 수 없으므로)
 ##  - 다른 총잡이의 (예정된) 발사와 MIN_SHOT_GAP 안으로 겹칠 때, 나중 순서인 쪽이 기다림
+##    연사병은 연사 안 탄들을 모두 비교 (자기 연사 안 간격은 제외 — 다른 적과 사이에만)
 func should_hold_aim(g: EnemyGunner, nt: float) -> bool:
 	if seq_active:
 		return true
 	var gap: float = Config.shot.MIN_SHOT_GAP
-	var mine: float = TimeManager.world_time + (g.cfg.AIM_TIME - nt)
+	var m0: float = TimeManager.world_time + (g.cfg.AIM_TIME - nt)
+	var mine := []
+	for i in g.burst_count:
+		mine.append(m0 + float(Config.burst.SHOT_GAP) * i)
 	var gunners := get_tree().get_nodes_in_group("gunners")
 	var gi := gunners.find(g)
 	for o in gunners:
 		if o == g or o.dead:
 			continue
-		var of: float = o.expected_fire_t()
-		if is_inf(of):
-			continue
-		var other_first := of < mine or (of == mine and gunners.find(o) < gi)
-		if other_first and mine - of < gap:
-			return true
+		for of in o.fire_times():
+			if is_inf(of):
+				continue
+			for m in mine:
+				var other_first: bool = of < m or (of == m and gunners.find(o) < gi)
+				if other_first and m - of < gap:
+					return true
 	return false
 
 
@@ -487,7 +611,8 @@ func fire_shot(g: EnemyGunner) -> void:
 		effects.burst(hit.pos, 7, col, 110.0, g.aim + PI, 1.1, 0.2, { "glow": true, "streak": true })
 	if hit.player:
 		pending_shots.append({ "shooter": g, "muzzle": m, "fire_t": TimeManager.world_time, "fire_real": TimeManager.real_time,
-			"angle": g.aim, "parryable": g.next_parryable, "attack_type": g.next_type, "done": false, "aim_time": g.cfg.AIM_TIME })
+			"angle": g.aim, "parryable": g.next_parryable, "attack_type": g.next_type, "done": false, "aim_time": g.cfg.AIM_TIME,
+			"burst_i": g.burst_i, "burst_n": g.burst_count })
 
 
 ## 플레이어에 닿은 탄: 발사 -PARRY_EARLY ~ +PARRY_LATE 안에 베기를 시작했으면 패링, 아니면 즉사.
@@ -516,6 +641,8 @@ func _resolve_shots() -> void:
 				_parry_boss_shot(s)
 			elif is_instance_valid(s.shooter) and s.shooter is EnemyDummy:
 				_parry_dummy_shot(s)
+			elif int(s.get("burst_i", 0)) < int(s.get("burst_n", 1)) - 1:
+				_parry_burst_first(s)
 			else:
 				_parry_shot(s)
 			continue
@@ -551,6 +678,10 @@ func _shot_cause(s: Dictionary) -> Dictionary:
 		pat = s.get("pattern", s.shooter.cause_pattern())
 	elif is_instance_valid(s.shooter) and s.shooter is EnemyDummy:
 		pat = "연습 더미"
+	elif is_instance_valid(s.shooter) and s.shooter.has_method("label"):
+		pat = s.shooter.label()
+	if int(s.get("burst_n", 1)) > 1 and not s.has("label"):
+		s.label = "연사 %d탄" % (int(s.burst_i) + 1)
 	if timing_msg.get("text", "") == "입력 없음" and not _late_watch.is_empty():
 		_late_watch.death = true           # 0.5초 안에 늦게 누르면 기록도 '+xxms 늦음' 으로
 	return { "pattern": pat, "attack": s.get("label", "사격"), "type": ty,
@@ -563,8 +694,9 @@ func _melee_cause(e: Enemy) -> Dictionary:
 	if e is BossCheolgyeon:
 		c = e.melee_cause()
 	else:
-		var impact := TimeManager.world_time - (e.t if e.state == "attack" else 0.0)
-		c = { "pattern": "근접 적", "attack": "베기", "type": e.get("attack_type") if e.get("attack_type") != null else Config.ATK_NORMAL, "impact_t": impact }
+		var impact := TimeManager.world_time - (e.t if e.state in ["attack", "slam", "charge"] else 0.0)
+		c = { "pattern": e.label(), "attack": e.attack_label() if e.has_method("attack_label") else "베기",
+			"type": e.get("attack_type") if e.get("attack_type") != null else Config.ATK_NORMAL, "impact_t": impact }
 	if c.type == Config.ATK_EVADE:
 		c.err = "패링 불가"
 	else:
@@ -914,6 +1046,24 @@ func _parry_shot(s: Dictionary) -> void:
 	p.input_locked = Config.parry_seq.LOCK_INPUT_DURING_SLOWMO
 
 
+## 연사병 첫 탄 패링: 슬로우 시퀀스 없이 짧은 히트스톱 · 반사탄은 쏜 적에서 위로 MISS_ANGLE 비껴 벽에 맞음 (처치 아님)
+## → 바로 이어지는 두 번째 탄을 다시 패링하면 그 반사탄이 연사병을 처치
+func _parry_burst_first(s: Dictionary) -> void:
+	var p := player
+	var o := p.center()
+	var back: float = s.angle + PI
+	parry_fx(o + Vector2.from_angle(back) * float(Config.slash.radius) * 0.6, back, Config.burst.FIRST_PARRY_HITSTOP)
+	effects.approach_success(s.muzzle)
+	var to: Vector2 = s.shooter.center() if is_instance_valid(s.shooter) else s.muzzle
+	var a := (to - o).angle()
+	var miss := deg_to_rad(Config.burst.MISS_ANGLE)
+	a += -miss if cos(a) >= 0.0 else miss        # 화면 위쪽으로 비낌
+	var r := hitscan(o, a, Config.shot.RANGE, false, false)
+	effects.add_tracer(o, r.pos, Config.shot.REFLECT_TRACER_WIDTH, Config.colors.parry, Config.shot.TRACER_FRAMES)
+	effects.burst(r.pos, 8, Config.colors.parry, 120.0, a + PI, 1.1, 0.22, { "glow": true, "streak": true })
+	burst_misses += 1
+
+
 ## 시퀀스 끝 틱 (월드 갱신 전): 입력 잠금 풀고 반사탄 명중
 func _on_seq_finished(target: Enemy, dir: float) -> void:
 	player.input_locked = false
@@ -963,9 +1113,19 @@ func _resolve_combat() -> void:
 			var wi := boss.whip_vulnerable()
 			if wi >= 0 and (p.slash_hits_rect(boss.threat_box(), reach) or p.slash_hits_rect(boss.body_rect(), reach)):
 				_parry_whip(boss, wi)
-	# 2) 칼이 적 몸통에 직접 닿음 → 즉사
+	# 1.5) 수류탄 되치기: 날아오는 (또는 바닥의) 수류탄을 베면 마우스 방향으로 (조준 스냅 — 던진 적 우선)
+	if p.is_slashing() and p.slash_t < S.hit_time and not p.slash_used:
+		for g in get_tree().get_nodes_in_group("grenades"):
+			if g.can_bat() and p.slash_hits(g.global_position, Config.grenade.SLASH_PAD):
+				_bat_grenade(g)
+				break
+	# 2) 칼이 적 몸통에 직접 닿음 → 즉사 (돌격병이 막는 중이면 헛스윙)
 	if S.direct_kill and p.is_slashing() and p.slash_t < S.hit_time:
 		for e in enemies():
+			if e.guarding():
+				if not p.slash_used and p.slash_hits_rect(e.body_rect()) and e.take_block(p.last_slash_t):
+					_enemy_block(e)
+				continue
 			if p.slash_hits_rect(e.body_rect()):
 				if e is EnemyDummy:
 					if not p.slash_used:
@@ -993,6 +1153,69 @@ func _resolve_combat() -> void:
 		if box.has_area() and box.intersects(p.body_rect()):
 			_kill_player((p.center() - e.center()).angle(), _melee_cause(e))
 			return
+
+
+## 돌격병이 무기 · 몸으로 베기를 막아냄: 불꽃 + 쇳소리. 베기는 쓰이지 않은 채 → 헛스윙 잠금 (일찍 누르면 패링 기회를 놓침)
+func _enemy_block(e: Enemy) -> void:
+	var p := player
+	p.slash_used = true                  # 이 베기는 막혀서 끝남 — 이어서 패링 창에 들어와도 패링 안 됨 (쿨타임 그대로)
+	var away := (p.center() - e.center()).angle()
+	var at: Vector2 = p.tip()
+	effects.burst(at, 8, Config.colors.parry, 200.0, away, 0.9, 0.18, { "glow": true, "streak": true })
+	effects.burst(at, 3, Config.colors.player, 120.0, away, 1.2, 0.14, { "glow": true })
+	Audio.boss_armor(1.3)
+	add_shake(1.5, 0.1, away)
+	var C: Dictionary = Config.charger
+	p.stun(C.BLOCK_STUN, Vector2(signf(p.center().x - e.center().x) if absf(p.center().x - e.center().x) > 0.5 else -float(e.facing), -0.1).normalized() * C.BLOCK_PUSH)
+	blocks += 1
+
+
+## 수류탄 되치기: 쏜 적 우선 조준 스냅 → 없으면 마우스 방향. 짧은 히트스톱 + 패링음
+func _bat_grenade(g: Grenade) -> void:
+	var p := player
+	p.mark_used()
+	var aim := (get_global_mouse_position() - p.center()).angle()
+	var th: Enemy = g.thrower as Enemy if is_instance_valid(g.thrower) else null
+	var target := pick_reflect_target(p.center(), aim, th)
+	var a := aim
+	if target != null:
+		a = (target.center() - g.global_position).angle()
+	g.bat(a)
+	TimeManager.hitstop(Config.grenade.BAT_HITSTOP)
+	effects.burst(g.global_position, 10, Config.colors.parry, 220.0, a, 0.8, 0.2, { "glow": true, "streak": true })
+	effects.ring(g.global_position, 14.0, 0.18, 2.0, Config.colors.parry)
+	Audio.parry(1.15, 0.8)
+	add_shake(3.0, 0.1, a)
+	grenade_bats += 1
+
+
+## 수류탄 폭발 (Grenade 가 부름): 반경 안 적은 모두 처치 · 플레이어 즉사 (구르기 무적이면 통과, 되친 수류탄은 플레이어를 해치지 않음)
+func grenade_blast(g: Grenade) -> void:
+	var G: Dictionary = Config.grenade
+	var CC: Dictionary = Config.colors
+	var c := g.global_position
+	var R: float = G.RADIUS
+	Audio.sfx("explosion")
+	add_shake(G.SHAKE, 0.25, -PI / 2.0)
+	effects.ring(c, R, G.BLAST_TIME, 4.0, CC.parry_hot)
+	effects.ring(c, R * 0.6, G.BLAST_TIME * 0.7, 3.0, CC.player)
+	effects.burst(c, 22, CC.parry_hot, 260.0, -PI / 2.0, PI, 0.4, { "glow": true, "streak": true })
+	effects.burst(c, 12, CC.parry, 180.0, -PI / 2.0, PI, 0.3, { "glow": true })
+	effects.burst(c, 10, CC.dust[0], 90.0, -PI / 2.0, 1.2, 0.6, { "size": 2.0, "grav": 200.0 })
+	blasts += 1
+	for e in enemies():
+		if e is BossCheolgyeon or e is EnemyDummy:
+			continue
+		if _rect_dist(c, e.body_rect()) <= R:
+			_kill_enemy(e, (e.center() - c).angle(), "blast")
+			blast_kills += 1
+	if not g.is_batted() and not player.dead and _rect_dist(c, player.body_rect()) <= R:
+		_kill_player((player.center() - c).angle(), { "pattern": "척탄병", "attack": "수류탄 폭발", "type": Config.ATK_EVADE, "err": "패링 불가" })
+
+
+static func _rect_dist(p: Vector2, r: Rect2) -> float:
+	var q := Vector2(clampf(p.x, r.position.x, r.end.x), clampf(p.y, r.position.y, r.end.y))
+	return p.distance_to(q)
 
 
 func _parry_melee(e: Enemy) -> void:
@@ -1023,8 +1246,8 @@ func _kill_enemy(e: Enemy, angle: float, cause := "slash") -> void:
 	# 2) 빛줄기: 타격 지점(적 중심)을 지나 화면 밖에서 화면 밖으로
 	if Settings.on("beam"):
 		effects.beam(c, angle, view_rect())
-	# 3) 3겹 궤적 (칼로 벤 경우 — 흰 반달 대신) + 반동 · 명중 스미어 (킬 스톱 동안 멈춘 채)
-	if cause != "reflect" and not p.dead:
+	# 3) 3겹 궤적 (칼로 벤 경우 — 흰 반달 대신) + 반동 · 명중 스미어 (킬 스톱 동안 멈춘 채). 반사탄 · 폭발은 없음
+	if cause in ["slash", "parry"] and not p.dead:
 		p.impact_smear()
 		if Settings.on("slash_trail"):
 			var tr := p.take_trail()

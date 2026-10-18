@@ -60,7 +60,7 @@ func say(text: String, color: Color) -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if dead or TimeManager.frozen:
+	if dead or TimeManager.frozen or Enemy.intro_hold:
 		return
 	if not _msg.is_empty():
 		_msg.t += delta

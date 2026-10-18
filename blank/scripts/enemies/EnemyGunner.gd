@@ -3,6 +3,9 @@ class_name EnemyGunner
 ## 총잡이: 가는 몸 + 긴 코트 + 앞으로 튀어나온 총. 히트스캔 사격.
 ## idle → (보이면) engage: 거리 유지 → aim AIM_TIME: 빨간 조준선이 플레이어 추적, 점점 굵고 밝게
 ##   → 발사 AIM_LOCK_TIME 전 조준 고정 (흰색 2번 깜빡 + 총구 빨간 빛) → 발사 (Main.fire_shot) → engage
+## 연사병 (burst_count = 2): 같은 조준 뒤 Config.burst.SHOT_GAP 간격으로 2연발 (모두 NORMAL). 줄어드는 원 2개가 시간차로
+##   (다음 탄 100%, 그다음 50%). 첫 탄 패링 = 반사탄이 빗나가 벽에, 두 번째 탄 패링 = 반사탄이 연사병 처치.
+##   어깨가 넓고 총 두 자루. 철견 "슬라이드 사격" 연속 탄 연습
 
 var aim := PI                    ## 조준 각도 (전역, 라디안)
 var cool := 0.0                  # 다음 조준까지
@@ -16,6 +19,10 @@ var laser_end := Vector2.ZERO    ## 조준선 끝점 (벽까지, 전역)
 @export var aim_time := 0.0      ## 조준 시작 → 발사 (기본 0.8초)
 @export var cooldown := 0.0      ## 발사 후 다음 조준까지 (기본 1.35초)
 @export var first_delay := 0.0   ## 발견 후 첫 조준까지 (기본 0.5초)
+@export_range(1, 2) var burst_count := 1   ## 2 = 연사병 (2연발)
+@export_multiline var intro_radio := ""     ## 처음 만날 때 무전 (비우면 Config.intro.RADIO 기본값) — 연사병만
+
+var burst_i := 0                 ## 이번 연사에서 다음에 쏠 탄 번호 (0 = 첫 탄)
 
 
 func _ready() -> void:
@@ -23,6 +30,8 @@ func _ready() -> void:
 	if aim_time > 0.0: c.AIM_TIME = aim_time
 	if cooldown > 0.0: c.cooldown = cooldown
 	if first_delay > 0.0: c.first_delay = first_delay
+	if burst_count > 1:
+		c.cooldown = Config.burst.COOLDOWN if cooldown <= 0.0 else cooldown
 	_setup(c)
 	add_to_group("gunners")
 	add_to_group("aimers")
@@ -42,30 +51,69 @@ func lock_start() -> float:
 
 
 func is_aiming() -> bool:
-	return state == "aim" and not dead
+	return (state == "aim" or state == "burst") and not dead
+
+
+## 연사병인가
+func is_burst() -> bool:
+	return burst_count > 1
+
+
+## 처음 만나는 적 소개 키 (Config.intro) — 보통 총잡이는 소개 없음
+func intro_key() -> String:
+	return "burst" if is_burst() else ""
+
+
+func label() -> String:
+	return "연사병" if is_burst() else "총잡이"
+
+
+## 연사 안 다음 탄까지 간격
+func _gap() -> float:
+	return float(Config.burst.SHOT_GAP)
 
 
 func is_locked() -> bool:
+	if state == "burst":
+		return t >= _gap() - cfg.AIM_LOCK_TIME
 	return is_aiming() and t >= lock_start()
 
 
 ## 발사까지 남은 시간 (월드 시간) — 발사 타이밍 원 반지름 계산에 사용
 func remaining() -> float:
-	return cfg.AIM_TIME - t
+	return _gap() - t if state == "burst" else cfg.AIM_TIME - t
 
 
 ## 예정된(또는 마지막) 발사 시각 — 여러 총잡이 발사 간격 조정용
 func expected_fire_t() -> float:
-	return TimeManager.world_time + remaining() if state == "aim" else last_fire_t
+	return TimeManager.world_time + remaining() if is_aiming() else last_fire_t
+
+
+## 앞으로 쏠 탄들의 발사 시각 (연사 포함) — 조준 중이 아니면 마지막 발사 시각 하나. MIN_SHOT_GAP 은 다른 적과 사이에만
+func fire_times() -> Array:
+	if not is_aiming():
+		return [last_fire_t]
+	var out := []
+	var f0 := expected_fire_t()
+	for i in burst_count - burst_i:
+		out.append(f0 + _gap() * i)
+	return out
 
 
 ## 발사 타이밍 원 정보 (Effects.approach_infos 가 모음) — 조준 중일 때 하나
+##  연사병: 남은 탄마다 하나씩 (두 번째 탄 원은 조준 시간 + 간격 동안 줄어듦 → 첫 탄 원보다 크게 시작해 간격만큼 늦게 닿음)
 func approach_infos() -> Array:
 	if not is_aiming():
 		return []
-	return [{ "pos": muzzle(), "remaining": remaining(), "aim_time": cfg.AIM_TIME, "locked": is_locked(),
-		"k": clampf(t / lock_start(), 0.0, 1.0), "parryable": next_parryable, "attack_type": next_type, "fire_t": expected_fire_t(),
-		"owner": self, "aim": aim, "t": t }]
+	var out := []
+	var tt: float = t if state == "aim" else cfg.AIM_TIME + _gap() * (burst_i - 1) + t   # 조준 시작부터 흐른 시간
+	for i in range(burst_i, burst_count):
+		var at: float = cfg.AIM_TIME + _gap() * i
+		var lk: float = at - cfg.AIM_LOCK_TIME
+		out.append({ "pos": muzzle(), "remaining": at - tt, "aim_time": at, "locked": tt >= lk,
+			"k": clampf(tt / lk, 0.0, 1.0), "parryable": next_parryable, "attack_type": next_type,
+			"fire_t": TimeManager.world_time + at - tt, "owner": self, "aim": aim, "t": tt, "burst_i": i })
+	return out
 
 
 ## 다음 사격 종류. 보통 총잡이 = NORMAL (unparryable_chance 확률로 EVADE). 더미는 번갈아
@@ -79,7 +127,7 @@ func _aim_at(player: Player) -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if dead or TimeManager.frozen:
+	if dead or TimeManager.frozen or Enemy.intro_hold:
 		return
 	var C := cfg
 	var game := get_tree().get_first_node_in_group("game")
@@ -90,7 +138,7 @@ func _physics_process(delta: float) -> void:
 	# 벽에 가려 플레이어가 안 보이면 조준을 시작하지 않음
 	var sees: bool = not player.dead and absf(d.x) < C.aggro_range and absf(d.y) < C.aggro_height \
 		and game.line_of_sight(pivot(), player.center())
-	if state != "aim":
+	if state != "aim" and state != "burst":   # 조준 · 연사는 아래에서 직접 셈 (기다림 · 패링 시퀀스)
 		t += delta
 	match state:
 		"idle":
@@ -128,12 +176,34 @@ func _physics_process(delta: float) -> void:
 					_aim_at(player)                       # 고정 전까지 추적
 				laser_end = game.raycast_wall(muzzle(), aim, Config.shot.RANGE)
 				if t >= C.AIM_TIME:
-					game.fire_shot(self)
-					last_fire_t = TimeManager.world_time
-					cool = C.cooldown
-					set_state("engage")
+					_fire(game)
+		"burst":     # 연사 다음 탄: 간격 동안 다시 추적 → AIM_LOCK_TIME 전 고정 → 발사 (패링 시퀀스 중엔 멈춤)
+			walk(0, 0.0, C.accel * 2.0, delta)
+			if player.dead:
+				set_state("idle")
+			else:
+				if not game.seq_active:
+					t += delta
+				if not is_locked():
+					_aim_at(player)
+				laser_end = game.raycast_wall(muzzle(), aim, Config.shot.RANGE)
+				if t >= _gap():
+					_fire(game)
 	apply_physics(delta)
 	queue_redraw()
+
+
+## 한 발 쏨. 연사 중이면 다음 탄으로 (burst), 마지막 탄이면 engage
+func _fire(game: Node) -> void:
+	game.fire_shot(self)
+	last_fire_t = TimeManager.world_time
+	burst_i += 1
+	if burst_i < burst_count:
+		set_state("burst")
+		return
+	burst_i = 0
+	cool = cfg.cooldown
+	set_state("engage")
 
 
 func _draw_pose() -> void:
@@ -157,6 +227,15 @@ func _draw_pose() -> void:
 	# 몸 (오른쪽을 볼 때 기준으로 그리고 facing 으로 뒤집음)
 	var base := Transform2D(0.0, Vector2(facing, 1), 0.0, Vector2.ZERO)
 	set_xf(base)
+	var local_aim := aim if facing > 0 else PI - aim
+	if is_burst():
+		# 연사병: 뒤쪽 손의 두 번째 총 (몸 뒤에 먼저 그림)
+		set_xf(base * Transform2D(local_aim, Vector2(-2, -15)))
+		draw_rimmed([["rect", Rect2(0, -1, 5, 2)], ["rect", Rect2(4, -2, 7, 3)], ["rect", Rect2(5, 1, 2, 2)], ["rect", Rect2(11, -1, 2, 1)]],
+			col.enemy_weapon, col.enemy_rim)
+		set_xf(base)
+		draw_rimmed([["poly", PackedVector2Array([Vector2(-6, -18), Vector2(6, -18), Vector2(4, -14), Vector2(-5, -14)])]],
+			col.enemy_body, col.enemy_rim)       # 넓은 어깨
 	draw_rimmed([
 		["rect", Rect2(-3, -8, 2, 8)], ["rect", Rect2(1, -8, 2, 8)],
 		["poly", PackedVector2Array([Vector2(-3, -16), Vector2(3, -16), Vector2(3, -6), Vector2(-5, -5)])],  # 뒤로 날리는 긴 코트
@@ -165,7 +244,6 @@ func _draw_pose() -> void:
 		["rect", Rect2(-2, -23, 4, 3)],      # 모자
 	], col.enemy_body, col.enemy_rim)
 	# 팔 + 총 (조준 각도로 회전)
-	var local_aim := aim if facing > 0 else PI - aim
 	set_xf(base * Transform2D(local_aim, Vector2(1, -14)))
 	draw_rimmed([
 		["rect", Rect2(0, -1, 5, 2)], ["rect", Rect2(4, -2, 8, 3)],

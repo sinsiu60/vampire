@@ -73,6 +73,12 @@ func _draw() -> void:
 		_glow_text("R  —  재시작", Vector2(W / 2.0, H / 2.0), 12, false)
 	_draw_boss()
 	_draw_radio()
+	# 디버그 모드 (보스방 밖): 이 방 사망 수 + 최근 원인 · F11 알림
+	if Debug.debug_mode() and (main.boss == null or not is_instance_valid(main.boss)):
+		_draw_room_deaths()
+	var ts: Dictionary = main.toast_state()
+	if not ts.is_empty():
+		Fonts.text(self, String(ts.text), Vector2(W / 2.0, 24), 10, Color(ui, clampf(1.6 - float(ts.t), 0.0, 1.0)), "center", false, true)
 	# 디버그 모드: 지금 장 · 방
 	if Debug.debug_mode():
 		Fonts.text(self, GameState.label(), Vector2(8, H - 22), 9, Color(ui, 0.7), "left", false, true)
@@ -178,6 +184,25 @@ func _draw_death_log() -> void:
 	recent.reverse()
 	draw_rect(Rect2(x - 4, y - 7, 236, 12 + 10 * recent.size()), Color(0, 0, 0, 0.55))
 	Fonts.text(self, "사망 %d — %s" % [entries.size(), "  ".join(parts)], Vector2(x, y), 9, ui, "left", false, true)
+	for i in recent.size():
+		var d: Dictionary = recent[i]
+		var ty := String(d.get("type", ""))
+		var tc: Color = Config.colors.unparryable if ty == Config.ATK_EVADE else (Config.colors.parry if ty == Config.ATK_OPPORTUNITY else Config.colors.attack)
+		var line := "%s · %s · %s · %s" % [String(d.get("pattern", "?")), String(d.get("attack", "?")), TYPE_LABELS.get(ty, ty), String(d.get("err", ""))]
+		Fonts.text(self, line, Vector2(x, y + 10 * (i + 1)), 8, Color(tc, 1.0 - 0.25 * i))
+
+
+## 디버그 (보스방 밖): 왼쪽 위 — 이 방 사망 수 + 최근 3번 원인 (어떤 적의 어떤 공격 · 종류 · 패링 오차)
+func _draw_room_deaths() -> void:
+	var ui: Color = Config.colors.ui
+	var n: int = int(GameState.room_death_counts.get(GameState.room_key(), 0))
+	var x := 8.0
+	var y := 24.0
+	var recent: Array = GameState.room_deaths()
+	recent = recent.slice(maxi(0, recent.size() - 3))
+	recent.reverse()
+	draw_rect(Rect2(x - 4, y - 7, 236, 12 + 10 * recent.size()), Color(0, 0, 0, 0.5))
+	Fonts.text(self, "이 방 사망 %d" % n, Vector2(x, y), 9, Color(ui, 0.9), "left", false, true)
 	for i in recent.size():
 		var d: Dictionary = recent[i]
 		var ty := String(d.get("type", ""))

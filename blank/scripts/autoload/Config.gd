@@ -97,6 +97,81 @@ var gunner := {                       # 총잡이: 가늘고 총이 튀어나온
 	"unparryable_chance": 0.0,
 }
 
+# ---------------------------------------------------------------- 1장 적 (3단계: 새 적 + 변형)
+## 공격 종류 규칙 (일반 적): 원히트 · 총탄과 근접 공격은 NORMAL (패링 → 반사 · 처치, 구르기로도 피함) · 보라 = EVADE.
+## 일반 적은 OPPORTUNITY(2겹 원)를 쓰지 않음 — 2겹 원은 보스 전용 신호
+var burst := {                        # 연사병 (EnemyGunner, burst_count = 2) — 철견 슬라이드 사격 연습
+	"SHOT_GAP": 0.45,                 # 연사 안 탄 간격 (MIN_SHOT_GAP 은 다른 적과 사이에만)
+	"MISS_ANGLE": 28.0,               # 첫 탄 패링: 반사탄이 쏜 적에서 이만큼 (°) 위로 비껴 벽에 맞음 (두 번째 탄 패링 = 처치)
+	"FIRST_PARRY_HITSTOP": 4,         # 첫 탄 패링 히트스톱 (슬로우 시퀀스 없음 — 바로 두 번째 탄)
+	"COOLDOWN": 1.8,                  # 두 번째 탄 뒤 다음 조준까지
+}
+
+var charger := {                      # 돌격병 (EnemyMelee, variant = charger) — 지연 내려치기 (NORMAL) ↔ 몸통 돌진 (EVADE) 번갈아
+	"w": 20, "h": 30,
+	"speed": 70.0, "accel": 800.0,
+	"aggro_range": 240.0, "aggro_height": 70.0,
+	"FIRST": "charge",                # 첫 공격 (방 씬 export first_attack 로 바꿀 수 있음)
+	# 지연 내려치기: 무기를 치켜든 채 HOLD 초 멈칫 → 내려침. 빨간 점멸은 내려치기 BLINK_LEAD 초 전부터
+	"SLAM_RANGE": 20.0,               # 몸 사이 간격이 이 이하면 내려치기 시작
+	"SLAM_HOLD": 0.5,
+	"SLAM_BLINK_LEAD": 0.3,           # 그 전 (멈칫 앞부분) 에 베면 무기로 막힘 → 헛스윙 (패링 기회 놓침)
+	"SLAM_ACTIVE": 0.14, "SLAM_LUNGE": 150.0, "SLAM_RECOVER": 0.7,
+	"SLAM_HITBOX": Vector2(30, 34),
+	# 몸통 돌진: 몸 전체가 보라로 GLOW 초 빛남 → SPEED px/s 로 DIST px 직선 → 숨 고르기 WINDED 초 (무방비)
+	"CHARGE_MIN": 30.0, "CHARGE_MAX": 200.0,   # 몸 사이 간격이 이 범위면 돌진
+	"CHARGE_GLOW": 0.4, "CHARGE_SPEED": 300.0, "CHARGE_DIST": 150.0,
+	"CHARGE_HITBOX": Vector2(22, 30),
+	"WINDED": 0.6,
+	"BLOCK_STUN": 0.15, "BLOCK_PUSH": 140.0,   # 막아냈을 때 플레이어 경직 · 뒤로 밀림 (돌진이 적을 지나쳐 버리지 않게)
+}
+
+var grenadier := {                    # 척탄병 — 거리 유지 · 4초마다 수류탄. 투척 모션 동안 무방비
+	"w": 16, "h": 22,
+	"speed": 46.0, "accel": 500.0,
+	"aggro_range": 300.0, "aggro_height": 140.0,
+	"keep_min": 120.0, "keep_max": 250.0,
+	"first_delay": 1.0,               # 발견 후 첫 투척 모션까지
+	"THROW_EVERY": 4.0,               # 투척 간격
+	"THROW_WINDUP": 0.5,              # 투척 모션 (팔을 뒤로 → 던짐)
+}
+
+var grenade := {                      # 수류탄 (scenes/Grenade.tscn — 나중에 재사용)
+	"FUSE": 1.2,                      # 던진 뒤 폭발까지
+	"FLIGHT": 0.6,                    # 던질 때 플레이어 발밑에 닿을 때까지 (포물선)
+	"GRAVITY": 900.0,
+	"RADIUS": 50.0,                   # 폭발 반경 — 플레이어 즉사, 다른 적도 휘말려 처치
+	"SIZE": 4.0,
+	"BOUNCE": 0.3, "FRICTION": 900.0,
+	"LAND_KEEP": 0.12,                # 착지할 때 남기는 가로 속도 비율 (착지 지점에서 거의 멈춤)
+	"BLINK_SLOW": 0.25, "BLINK_FAST": 0.06,   # 빨간 불빛 깜빡임 간격 (터질수록 빨라짐)
+	"BAT_SPEED": 360.0,               # 베어서 되치면 이 속도로 마우스 방향 (조준 스냅 적용)
+	"BAT_LIFT": 0.12,                 # 바닥의 수류탄을 아래 · 수평으로 쳐도 이만큼 위로 (라디안). 되친 수류탄은 곧게 날아감
+	"BAT_FUSE": 0.9,                  # 되친 뒤 이 시간 안에 아무 데도 안 닿으면 공중 폭발
+	"BAT_HIT_PAD": 6.0,               # 되친 수류탄이 적 몸통에 이만큼 가까우면 그 자리에서 폭발
+	"BAT_HITSTOP": 4,
+	"SLASH_PAD": 6.0,                 # 칼 판정 여유 (수류탄이 작아서)
+	"BLAST_TIME": 0.35,               # 폭발 원 · 섬광
+	"SHAKE": 6.0,
+}
+
+var intro := {                        # 처음 만나는 적 소개 (GameState.seen_intros 에 기록, F11 초기화)
+	"DELAY": 0.35,                    # 방에 들어온 뒤 (검은 전환이 걷힌 뒤) 소개 시작
+	"LOCK": 0.3,                      # 입력 잠금
+	"ZOOM": 1.2,                      # 카메라 살짝 줌인 (적 쪽으로)
+	"TOWARD": 0.85,                   # 카메라 중심: 플레이어 → 적 이 비율 (멀리 있는 적도 화면 안에)
+	"IN": 0.25, "HOLD": 0.7, "OUT": 0.3,   # 카메라 들어감 · 머묾 · 돌아옴 (실제 초)
+	"NAME_TIME": 1.0,                 # 머리 위 이름
+	"RADIO_TIME": 3.0,                # 무전 표시 시간
+	"GAP": 0.15,                      # 한 방에 새 적이 둘이면 사이 간격
+	"NAMES": { "burst": "연사병", "charger": "돌격병", "grenadier": "척탄병" },
+	"RADIO": {                        # 방 씬에서 적마다 intro_radio 로 바꿀 수 있음 (비우면 이 기본값)
+		"burst": "두 발씩 쏘는 놈이다. 조심하라고.",
+		"charger": "막을 수 없는 공격을 하는 녀석이군. 피해라..",
+		"grenadier": "수류탄은 칼로 쳐서 돌려줘. 저 녀석에겐 선물일거다.",
+	},
+}
+
 # ---------------------------------------------------------------- 사격 · 패링
 var shot := {                         # 히트스캔 사격 + 타이밍 패링
 	"PARRY_EARLY": 0.14,              # 발사 이 시간 전부터 베기 시작이면 패링 (난이도 프리셋이 덮어씀)
@@ -357,7 +432,8 @@ var audio := {
 	"SFX_WHIP": 0.9,                  # pistol_whip.wav (건카타 내려치기)
 	"SFX_EXECUTE": 1.0,               # execute.wav (반격 베기 명중)
 	"SFX_STAGGER": 0.8,               # stagger.wav (철견 휘청)
-	"SFX_EXPLOSION": 1.0,             # explosion.wav (물탱크 폭발)
+	"SFX_EXPLOSION": 1.0,             # explosion.wav (물탱크 폭발 · 수류탄)
+	"SFX_GRENADE_PIN": 0.8,           # grenade_pin.wav (척탄병 투척)
 	"SFX_FLASHBANG": 0.9,             # flashbang.wav (조명 파괴 · 정전)
 	"SFX_THUNDER": 0.7,               # thunder.wav (번개)
 	"SFX_RAIN": 0.35,                 # rain_loop.wav (보스방 빗소리, 반복)
