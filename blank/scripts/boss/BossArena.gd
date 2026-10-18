@@ -3,7 +3,8 @@ class_name BossArena
 ## 철견 보스방 무대 (room_06 의 "Arena"): 물탱크 · 네온 간판 · 조명 3개, 비 (폭우 = 2배), 정전 어둠 + 빛, 번개.
 ## 페이즈 전환 연출에서 Main 이 부름: burst_tank · drop_sign · break_lamp · set_storm · set_blackout.
 ## 체크포인트 재시작은 apply_phase(페이즈) 로 그 페이즈 시작 상태를 바로 만듦.
-## 그리기 층 (z, 절대값): 무대 소품 -1 · 비 9 · 어둠 20 (조준선 · 원 · 보라 예고는 30 — 어둠 위)
+## 그리기 층 (z, 절대값): 무대 소품 -1 · 비 (1장 공통 Rain — Background.tscn 의 RainBack -1 · RainFront 9) · 어둠 20
+##   (조준선 · 원 · 보라 예고는 30 — 어둠 위). 비 강도: 평소 normal · 폭우 heavy · 정전 dark
 
 const C := preload("res://scripts/boss/CheolgyeonConfig.gd")
 const DARK_SHADER := preload("res://shaders/darkness.gdshader")
@@ -27,9 +28,7 @@ var rain_mul := 1.0              ## 빗줄기 낙하 속도 배율 (피날레 �
 
 var _sign_t := 0.0
 var _sign_body: StaticBody2D
-var _rain: Node2D
 var _dark: Node2D
-var _drops: Array = []           # { x, y } (화면 비율 0~1)
 var _lights: Array = []          # 정전 중 빛 { pos, r, t, life, k }
 var _reveal := 0.0               # 번개로 어둠이 걷힌 정도 0~1
 var _next_bolt := 0.0
@@ -54,12 +53,7 @@ func _ready() -> void:
 	add_child(_sign_body)
 	_sign_body.process_mode = Node.PROCESS_MODE_DISABLED
 	_sign_body.visible = false
-	# 비 · 어둠 층
-	_rain = Node2D.new()
-	_rain.z_index = 9
-	_rain.z_as_relative = false
-	_rain.draw.connect(_draw_rain)
-	add_child(_rain)
+	# 어둠 층
 	_dark = Node2D.new()
 	_dark.z_index = 20
 	_dark.z_as_relative = false
@@ -68,8 +62,6 @@ func _ready() -> void:
 	_dark.material = mat
 	_dark.draw.connect(_draw_dark)
 	add_child(_dark)
-	for i in C.RAIN_COUNT * 2:
-		_drops.append({ "x": randf(), "y": randf() })
 	_schedule_bolt()
 	_find_floor.call_deferred()
 
@@ -251,20 +243,11 @@ func _physics_process(delta: float) -> void:
 			s.pos.y = floor_y - 1.0
 			s.vel = Vector2(s.vel.x * 0.4, 0.0)
 			s.vrot = 0.0
-	# 비
-	var n := C.RAIN_COUNT * (2 if storm else 1)
-	var sp: float = C.RAIN_SPEED * (1.25 if storm else 1.0) * rain_mul
-	for i in n:
-		var d: Dictionary = _drops[i]
-		d.y += sp * delta / Config.view.h
-		d.x -= sp * 0.18 * delta / Config.view.w
-		if d.y > 1.0:
-			d.y -= 1.0
-			d.x = randf()
-		if d.x < 0.0:
-			d.x += 1.0
+	# 비 (1장 공통 Rain): 정전 = dark · 폭우 = heavy · 평소 normal, 피날레 빗방울 구간은 느리게
+	var main := _main()
+	if main != null and main.background != null:
+		main.background.set_rain("dark" if blackout else ("heavy" if storm else "normal"), rain_mul)
 	queue_redraw()
-	_rain.queue_redraw()
 	_dark.queue_redraw()
 
 
@@ -331,18 +314,6 @@ func _draw_neon(c: Vector2, rot: float, lit: bool) -> void:
 	for k in 4:
 		draw_rect(Rect2(-w / 2.0 + 4 + k * 6.5, -2, 4, 4), neon)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-
-
-func _draw_rain() -> void:
-	var v := _view()
-	var n := C.RAIN_COUNT * (2 if storm else 1)
-	var col: Color = C.RAIN_COLOR
-	var len: float = C.RAIN_LEN * (1.4 if storm else 1.0)
-	var dirv := Vector2(-0.18, 1.0).normalized()
-	for i in n:
-		var d: Dictionary = _drops[i]
-		var p := v.position + Vector2(d.x * v.size.x, d.y * v.size.y)
-		_rain.draw_line(p, p + dirv * len, col, 1.0)
 
 
 func _draw_dark() -> void:

@@ -44,6 +44,33 @@ func _ready() -> void:
 	_anim.mixer_applied.connect(_apply_aim)
 	facing = facing
 	pose("idle")
+	(_group.material as ShaderMaterial).set_shader_parameter("rim_color", Palette.RIM)
+
+
+## 빛 받은 명암: 가장 가까운 켜진 조명 쪽을 향한 가장자리에 림라이트 띠 (정전이면 옅게 위쪽에서). 실제 프레임마다
+func _process(_delta: float) -> void:
+	var mat := _group.material as ShaderMaterial
+	var dir := Vector2(0.0, -1.0)
+	var strength := C.LIGHT_DARK_STRENGTH
+	var b := get_parent()
+	var arena = b.get("arena") if b != null else null
+	if arena != null and is_instance_valid(arena) and not arena.blackout:
+		var c := global_position + Vector2(0, -28)
+		var best := INF
+		for i in arena.lamps.size():
+			if not arena.lamps[i]:
+				continue
+			var lp: Vector2 = arena.lamp_pos(i)
+			var d := c.distance_to(lp)
+			if d < best:
+				best = d
+				dir = (lp - c).normalized()
+		if best < INF:
+			strength = 1.0
+	# 너무 옆으로 누우면 몸 옆면 전체가 하얘짐 → 위쪽 성분을 남김
+	dir = Vector2(dir.x, minf(dir.y, -0.45)).normalized()
+	mat.set_shader_parameter("light_dir", dir)
+	mat.set_shader_parameter("light_strength", strength)
 
 
 func _collect(n: Node) -> void:

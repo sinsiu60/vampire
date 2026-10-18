@@ -7,7 +7,7 @@
 [ext_resource type="Script" path="res://scripts/OffscreenIndicators.gd" id="6_off"]
 [ext_resource type="Script" path="res://scripts/ParrySeq.gd" id="7_seq"]
 [ext_resource type="Script" path="res://scripts/ScreenFX.gd" id="8_sfx"]
-[ext_resource type="Script" path="res://scripts/Backdrop.gd" id="9_bg"]
+[ext_resource type="PackedScene" path="res://scenes/Background.tscn" id="9_bg"]
 [ext_resource type="Script" path="res://scripts/HUD.gd" id="10_hud"]
 [ext_resource type="Script" path="res://scripts/Menu.gd" id="11_menu"]
 [ext_resource type="Script" path="res://scripts/DebugDraw.gd" id="12_dbg"]
@@ -15,11 +15,7 @@
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
 
-[node name="BackdropLayer" type="CanvasLayer" parent="."]
-layer = -10
-
-[node name="Backdrop" type="Node2D" parent="BackdropLayer"]
-script = ExtResource("9_bg")
+[node name="Background" parent="." instance=ExtResource("9_bg")]
 
 [node name="Player" parent="." instance=ExtResource("3_player")]
 

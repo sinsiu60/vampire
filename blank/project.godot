@@ -18,6 +18,7 @@ config/features=PackedStringArray("4.5", "GL Compatibility")
 [autoload]
 
 Config="*res://scripts/autoload/Config.gd"
+Palette="*res://scripts/autoload/Palette.gd"
 Settings="*res://scripts/autoload/Settings.gd"
 Debug="*res://scripts/autoload/Debug.gd"
 GameState="*res://scripts/autoload/GameState.gd"

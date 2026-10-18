@@ -19,6 +19,7 @@ var _radio_at: float = CG.RADIO_DELAY
 var _exit_at: float = CG.EXIT_DELAY
 var _outro_radio := false
 @onready var player: Player = $Player
+@onready var background: Background = $Background   # 1장 공통 배경 · 비 (scenes/Background.tscn)
 @onready var camera: Camera2D = $Player/Camera
 @onready var effects: Effects = $Effects
 @onready var seq: ParrySeq = $ParrySeq
@@ -99,7 +100,7 @@ func _ready() -> void:
 	hud.main = self
 	menu.main = self
 	debug_draw.main = self
-	($BackdropLayer/Backdrop as Backdrop).build(size.x)
+	background.build(size.x, GameState.chapter * 100 + GameState.room, room.spawn_position().y, room)
 	_queue_intros()
 	# 재시작 직후 짧게 밝아지는 페이드 (실제 시간, 입력은 바로 받음). 방 이동은 Boot 가 따로 검게 전환
 	if not entering:
@@ -109,13 +110,15 @@ func _ready() -> void:
 		tw.tween_property(fade, "color:a", 0.0, Config.restart_fade)
 
 
-## 지금 방 씬을 불러와 배경 바로 뒤(플레이어보다 먼저 틱을 받는 자리)에 둠
+## 지금 방 씬을 불러와 맨 앞 (플레이어보다 먼저 틱을 받는 자리) 에 두고, 배경 · 비는 그 바로 뒤
+## (같은 z 의 무대 소품보다 비가 나중에 그려지게)
 func _load_room() -> void:
 	var ps: PackedScene = load(GameState.room_path())
 	room = ps.instantiate()
 	room.name = "Room"
 	add_child(room)
-	move_child(room, $BackdropLayer.get_index() + 1)
+	move_child(room, 0)
+	move_child($Background, 1)
 
 
 func enemies() -> Array:
