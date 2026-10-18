@@ -13,7 +13,7 @@ class_name FinaleDuel
 
 const C := preload("res://scripts/boss/CheolgyeonConfig.gd")
 const GRAY_SHADER := preload("res://shaders/finale_gray.gdshader")
-const STEP_NAMES := { 1: "정적", 2: "대치", 3: "번개", 4: "움찔", 5: "빗방울", 7: "감속", 8: "멈춘 총알", 9: "일섬", 10: "납도",
+const STEP_NAMES := { 1: "정적", 2: "대치", 3: "번개", 4: "움찔", 5: "빗방울", 7: "감속", 8: "멈춘 총알", 9: "일섬", 10: "여세 · 납도",
 	12: "쓰러짐", 13: "여운" }
 const GRAY_LAYER := 2            ## 흑백 후처리 층 (ScreenFX 1 위, HUD 4 아래)
 const COLOR_LAYER := 3           ## 색 유지 층
@@ -67,7 +67,9 @@ var _line := {}                  # 일섬 흰 선 { y, full }
 var _orig := Vector2.ZERO        # 공백이 서 있던 발 위치
 var _dest_x := 0.0
 var _ghosts := 0
-var _qi := {}                    # 검기 { a, b, y, t } — 정지 동안 t 멈춤
+var _qi := {}                    # 검기 { a, b, y, t } — 실제 시간: 뻗기 → 부풀기 · 일렁임 → 꼬리부터 걷힘
+var _qi_bits: Array = []         # 검기가 걷히며 떨어져 나가는 색 조각 { pos, vel, t, life, col, size }
+var _drift_from := 0.0           # 여세 시작 x (일섬 도착점)
 var _cutflash := -1.0            # 철견 몸 대각선 흰 선
 var _topple := -1.0
 var _cam_ret := {}               # 13 카메라 되돌림 { c, z, t }
@@ -418,7 +420,7 @@ func _cut(by: String) -> void:
 		_flash_ticks = C.FIN_INVERT_FRAMES
 	_sparks(b.center())
 	_line = { "y": oc.y, "full": true }
-	_qi = { "a": oc.x - _side * C.FIN_QI_OVER, "b": p.center().x + _side * C.FIN_QI_OVER, "y": oc.y, "t": 0.0 }
+	_qi = { "a": oc.x - _side * C.FIN_QI_OVER, "b": p.center().x + _side * C.FIN_QI_OVER, "y": oc.y, "t": 0.0, "bits": false }
 	# 카메라: 공백을 확대
 	_cam_pre = _cam.duplicate()
 	_cam_anim = { "fc": Vector2(_cam.center), "fz": float(_cam.zoom), "tc": p.center() + Vector2(0, C.FIN_CUT_ZOOM_Y),
@@ -444,14 +446,49 @@ func _sparks(c: Vector2) -> void:
 			{ "glow": true, "streak": true })
 
 
-# ---- 10) 납도 (여전히 정지, 완전 무음): 베어낸 끝 자세 → 마지막 0.45초 칼을 칼집에 → "착" = 시간 재개
+# ---- 10) 여세 + 납도: 정지가 풀리며 시간이 FIN_DRIFT_SCALE0 → 1.0 으로 서서히 (ease-in) 돌아옴.
+##         공백은 일섬 끝 자세로 FIN_DRIFT_DIST 만큼 앞으로 미끄러지다 멈춤 (먼지 · 옅은 잔상) · 두 조각 · 불꽃 · 빗줄기도 시간과 함께 다시 움직임
+##         마지막 FIN_SHEATHE 초 칼을 칼집에 → "착" = 시간 1.0 = 색 복귀
 func _enter_sheathe() -> void:
-	resume_real = now() + C.FIN_SHEATHE_HOLD
+	resume_real = now() + C.FIN_DRIFT
 	Audio.play_synced_real("sheathe", resume_real)
+	_drift_from = p.global_position.x
+	TimeManager.hold(false)
+	TimeManager.set_slow(C.FIN_DRIFT_SCALE0)
+	var d: Vector2 = Vector2(-_side, 0.0)
+	for h in _halves:
+		h.vel = d * C.FIN_SPLIT_SPEED + Vector2(0.0, -C.FIN_SPLIT_SPREAD if h.up else C.FIN_SPLIT_SPREAD)
+	Audio.set_loop_volume(Audio.ambience_player(), C.FIN_RAIN_VOL, C.FIN_DRIFT)
+
+
+func _drift_scale(u: float) -> float:
+	return lerpf(C.FIN_DRIFT_SCALE0, 1.0, pow(clampf(u, 0.0, 1.0), C.FIN_DRIFT_POW))
 
 
 func _tick_sheathe() -> void:
-	var s0: float = C.FIN_SHEATHE_HOLD - C.FIN_SHEATHE
+	var u := clampf(st / C.FIN_DRIFT, 0.0, 1.0)
+	TimeManager.set_slow(_drift_scale(u))
+	contrast = lerpf(C.FIN_CONTRAST_DECEL, C.FIN_CONTRAST, u)
+	vignette = C.FIN_VIGNETTE * (1.0 - 0.5 * u)
+	# 미끄러짐: 점점 느려지며 멈춤
+	var su := clampf(st / C.FIN_DRIFT_SLIDE, 0.0, 1.0)
+	var w: float = main.room.size_px().x
+	var x := clampf(_drift_from + _side * C.FIN_DRIFT_DIST * (1.0 - pow(1.0 - su, 2.0)), 12.0, w - 12.0)
+	var moved := absf(x - p.global_position.x)
+	p.global_position.x = x
+	p.velocity = Vector2.ZERO
+	if moved > 0.05:
+		var tick := TimeManager.real_frames
+		if tick % 3 == 0:
+			main.effects.spawn(p.global_position + Vector2(-_side * 4.0 + randf_range(-2, 2), -1.0),
+				Vector2(-_side * randf_range(20.0, 50.0), -randf_range(8.0, 30.0)), randf_range(0.25, 0.4), Config.colors.dust[0],
+				{ "size": 2.0, "grav": 90.0 })
+		if tick % 5 == 0 and su < 0.7:
+			p.add_ghost(p.global_position, false)
+	# 카메라: 확대한 채 공백을 따라감
+	if _cam_anim.is_empty() and not _cam.is_empty():
+		_cam = { "center": Vector2(_cam.center).lerp(p.center() + Vector2(0, C.FIN_CUT_ZOOM_Y), 0.2), "zoom": float(_cam.zoom) }
+	var s0: float = C.FIN_DRIFT - C.FIN_SHEATHE
 	if st >= s0:
 		p.finale_pose = "sheathe"
 		p.finale_k = clampf((st - s0) / C.FIN_SHEATHE, 0.0, 1.0)
@@ -459,7 +496,7 @@ func _tick_sheathe() -> void:
 		_resume()
 
 
-# ---- 11) 시간 재개 + 색 복귀 (같은 프레임): 슬로우 복귀 없이 즉시 1.0 · 두 조각이 날아감 · 흰 선이 사라지며 철견 몸에 대각선 흰 선
+# ---- 11) 시간 1.0 + 색 복귀 (같은 프레임, 여세 끝): 흰 선이 사라지며 철견 몸에 대각선 흰 선
 ##          + kill_sound + 흔들림 8px · 빗줄기 정상 · rain_loop 0.5
 func _resume() -> void:
 	TimeManager.hold(false)
@@ -470,9 +507,6 @@ func _resume() -> void:
 	_apply_gray()
 	p.finale_pose = ""
 	p.finale_k = 0.0
-	var d: Vector2 = Vector2(-_side, 0.0)
-	for h in _halves:
-		h.vel = d * C.FIN_SPLIT_SPEED + Vector2(0.0, -C.FIN_SPLIT_SPREAD if h.up else C.FIN_SPLIT_SPREAD)
 	_line = {}
 	_cutflash = 0.0
 	Audio.kill()
@@ -602,15 +636,26 @@ func _tick_fx(rd: float) -> void:
 			_ripple = {}
 	if _hint_t >= 0.0:
 		_hint_t += rd
+	# 두 조각: 월드 시간으로 (여세 동안 느리게 출발 → 점점 빨라짐)
+	var wd := rd * Engine.time_scale
 	for h in _halves:
 		if Vector2(h.vel) != Vector2.ZERO:
-			h.t += rd
-			h.pos += Vector2(h.vel) * rd
+			h.t += wd
+			h.pos += Vector2(h.vel) * wd
 	_halves = _halves.filter(func(h): return h.t < 0.5)
-	if not _qi.is_empty() and step >= 12:
+	if not _qi.is_empty():
 		_qi.t += rd
+		if _qi.t >= C.FIN_QI_HOLD and not _qi.bits:
+			_qi.bits = true
+			_spawn_qi_bits()
 		if _qi.t >= C.FIN_QI_TIME:
 			_qi = {}
+	for q in _qi_bits:
+		q.t += rd
+		q.pos += Vector2(q.vel) * rd
+		q.vel *= 0.93
+		q.vel.y -= 30.0 * rd
+	_qi_bits = _qi_bits.filter(func(q): return q.t < q.life)
 	if _cutflash >= 0.0:
 		_cutflash += rd
 		if _cutflash >= C.FIN_CUT_FLASH:
@@ -691,24 +736,62 @@ func _draw() -> void:
 		draw_line(a0, a1, Color(1, 1, 1, k), 2.0 * k + 0.5)
 
 
-## 검기 한 겹: x0 → x1 수평 초승달 (가운데가 두껍고 위로 휨, 양 끝은 뾰족). k = 사라지는 정도
-func _draw_qi(ci: CanvasItem, x0: float, x1: float, y: float, thick: float, col: Color, k: float) -> void:
-	if thick <= 0.2 or col.a <= 0.01 or absf(x1 - x0) < 2.0:
+## 검기 모양: a → b 수평 초승달 (가운데가 두껍고 위로 휨, 양 끝은 뾰족) 의 s0 ~ s1 구간만. k = 사라지는 정도 (휨이 커짐)
+func _qi_point(a: float, b2: float, y: float, s: float, k: float) -> Vector2:
+	return Vector2(lerpf(a, b2, s), y - C.FIN_QI_BULGE * sin(s * PI) * (1.0 + k))
+
+
+func _draw_qi(ci: CanvasItem, a: float, b2: float, y: float, s0: float, s1: float, thick: float, col: Color, k: float) -> void:
+	if thick <= 0.2 or col.a <= 0.01 or absf(b2 - a) * (s1 - s0) < 2.0:
 		return
 	const N := 24
 	var top := PackedVector2Array()
 	var bot := PackedVector2Array()
 	for i in N + 1:
-		var s := float(i) / N
-		var x := lerpf(x0, x1, s)
-		var bulge := sin(s * PI)
-		var cy := y - C.FIN_QI_BULGE * bulge * (1.0 + k)
-		var h := thick * pow(bulge, 0.7) * 0.5
-		top.append(Vector2(x, cy - h))
+		var s := lerpf(s0, s1, float(i) / N)
+		# 잘린 끝도 뾰족하게: 구간 양 끝으로 갈수록 가늘게
+		var edge := minf(1.0, minf(float(i), float(N - i)) / 4.0)
+		var h := thick * pow(sin(s * PI), 0.7) * 0.5 * edge
+		var c := _qi_point(a, b2, y, s, k)
+		top.append(c + Vector2(0, -h))
 		if i > 0 and i < N:                    # 양 끝은 위쪽 줄만 (같은 점이 두 번 들어가지 않게)
-			bot.append(Vector2(x, cy + h * 0.6))
+			bot.append(c + Vector2(0, h * 0.6))
 	bot.reverse()
 	ci.draw_colored_polygon(top + bot, col)
+
+
+## 검기가 걷히기 시작할 때 초승달 위쪽을 따라 색 조각을 뿌림 (뒤쪽 · 위로 흩어지며 사라짐)
+func _spawn_qi_bits() -> void:
+	var CC: Dictionary = Config.colors
+	var cols := [CC.trail_outer, CC.trail_mid, Color.WHITE]
+	for i in C.FIN_QI_BITS:
+		var s := randf_range(0.08, 0.95)
+		var pt := _qi_point(float(_qi.a), float(_qi.b), float(_qi.y), s, 0.3) + Vector2(0, -randf_range(0.0, C.FIN_QI_THICK * 0.4))
+		var v := Vector2(-_side * randf_range(10.0, 70.0), -randf_range(15.0, 60.0))
+		_qi_bits.append({ "pos": pt, "vel": v, "t": 0.0, "life": randf_range(0.2, 0.4), "col": cols[i % cols.size()],
+			"size": 2.0 if i % 3 == 0 else 1.0 })
+
+
+## 검기 애니메이션 (실제 시간 t):
+##  뻗기 0 ~ FIN_QI_SWEEP: 머리가 출발점 → 도착점으로 / 부풀기: 두께가 FIN_QI_PUNCH 만큼 부풀었다 돌아옴 · 바깥 겹 일렁임
+##  걷힘 FIN_QI_HOLD ~ FIN_QI_TIME: 꼬리가 머리 쪽으로 쫓아가며 가늘어지고, 바깥 겹부터 옅어짐 + 색 조각
+func _draw_qi_anim(ci: CanvasItem) -> void:
+	var t: float = _qi.t
+	var head := 1.0 - pow(1.0 - clampf(t / C.FIN_QI_SWEEP, 0.0, 1.0), 2.0)
+	var f := clampf((t - C.FIN_QI_HOLD) / (C.FIN_QI_TIME - C.FIN_QI_HOLD), 0.0, 1.0)
+	var tail := f * f
+	var punch := 1.0 + C.FIN_QI_PUNCH * sin(PI * clampf(t / C.FIN_QI_PUNCH_TIME, 0.0, 1.0))
+	var shimmer := 0.85 + 0.15 * sin(t * 70.0)
+	var CC: Dictionary = Config.colors
+	var layers := [[CC.trail_outer, 1.0, 0.45, 2.0], [CC.trail_mid, 0.6, 0.75, 1.4], [Color.WHITE, 0.28, 1.0, 1.0]]
+	for L in layers:
+		var thick: float = C.FIN_QI_THICK * float(L[1]) * punch * (1.0 - f * 0.7)
+		var al: float = float(L[2]) * pow(1.0 - f, float(L[3])) * (shimmer if L[0] != Color.WHITE else 1.0)
+		_draw_qi(ci, float(_qi.a), float(_qi.b), float(_qi.y), tail, head, thick, Color(L[0], al), f)
+	# 머리 끝 번쩍 (뻗는 동안)
+	if t < C.FIN_QI_SWEEP * 1.5:
+		var hp := _qi_point(float(_qi.a), float(_qi.b), float(_qi.y), head, 0.0)
+		ci.draw_circle(hp, 4.0, Color(1, 1, 1, 0.8))
 
 
 # ---------------------------------------------------------------- 그리기 — 색 유지 층 (흑백 위): 빗방울 · 총알 · 2겹 원 · 일섬 흰 선
@@ -749,14 +832,13 @@ func _draw_color() -> void:
 	for h in _halves:
 		var a := clampf(1.0 - float(h.t) / 0.5, 0.0, 1.0)
 		ci.draw_rect(Rect2(Vector2(h.pos).round() - Vector2(1, 0), Vector2(2, 1)), Color(red, a))
-	# 검기: 하늘 · 분홍 · 흰 3겹 초승달 띠 (흑백에서도 색 유지, 정지 동안 번쩍인 그대로 → 재개 뒤 사라짐)
+	# 검기: 하늘 · 분홍 · 흰 3겹 초승달 띠 (흑백에서도 색 유지) — 뻗기 → 부풀기 → 꼬리부터 걷힘 + 색 조각 (_draw_qi_anim)
 	if not _qi.is_empty():
-		var k: float = clampf(float(_qi.t) / C.FIN_QI_TIME, 0.0, 1.0)
-		var CC: Dictionary = Config.colors
-		var layers := [[CC.trail_outer, 1.0, 0.45], [CC.trail_mid, 0.6, 0.75], [Color.WHITE, 0.28, 1.0]]
-		for L in layers:
-			_draw_qi(ci, float(_qi.a), float(_qi.b), float(_qi.y), C.FIN_QI_THICK * float(L[1]) * (1.0 - k * 0.6),
-				Color(L[0], float(L[2]) * (1.0 - k)), k)
+		_draw_qi_anim(ci)
+	for q in _qi_bits:
+		var a := 1.0 - float(q.t) / float(q.life)
+		var sz: float = q.size
+		ci.draw_rect(Rect2(Vector2(q.pos).round(), Vector2(sz, sz)), Color(q.col, a))
 	# 일섬 흰 선 (3px, 정지 동안 그대로): 베어나가는 동안은 지나온 곳까지, 끝나면 화면 전체
 	if not _line.is_empty():
 		var v: Rect2 = main.view_rect()

@@ -277,14 +277,23 @@ const FIN_GHOSTS := 6                  ## 이동 경로 잔상
 const FIN_INVERT_FRAMES := 2           ## 철견을 지나는 순간 흑백 반전 (흰 배경 + 검은 실루엣)
 const FIN_LINE_W := 3.0                ## 화면을 가로지르는 흰 선 (정지 동안 그대로)
 const FIN_HALF_GAP := 2.0              ## 갈라진 총알 두 조각이 위아래로 벌어진 거리 (정지 동안)
-const FIN_QI_THICK := 13.0             ## 검기 (하늘 · 분홍 · 흰 3겹 초승달 띠, 흑백에서도 색 유지) — 정지 동안 번쩍인 그대로
+const FIN_QI_THICK := 13.0             ## 검기 (하늘 · 분홍 · 흰 3겹 초승달 띠, 흑백에서도 색 유지) — 실제 시간으로 움직이고 금방 사라짐
 const FIN_QI_BULGE := 7.0
 const FIN_QI_OVER := 18.0              ## 검기가 출발점 · 도착점 너머로 뻗는 길이
-const FIN_QI_TIME := 0.6               ## 시간 재개 뒤 검기가 사라지는 시간
+const FIN_QI_SWEEP := 0.06             ## 출발점 → 도착점으로 뻗어 나가는 시간
+const FIN_QI_PUNCH := 0.4              ## 뻗은 직후 두께가 이만큼 더 부풀었다 돌아옴
+const FIN_QI_PUNCH_TIME := 0.16
+const FIN_QI_HOLD := 0.14              ## 꽉 찬 채 일렁이는 시간 (뻗기 포함) → 꼬리부터 머리 쪽으로 걷히며 사라짐
+const FIN_QI_TIME := 0.5               ## 일섬 순간부터 검기가 다 사라질 때까지
+const FIN_QI_BITS := 22                ## 걷힐 때 떨어져 나가는 색 조각
 const FIN_SPARKS := 30                 ## 철견을 지나는 순간 불꽃 (정지 동안 공중에 멈춤)
-## 10) 납도 (여전히 정지)
-const FIN_SHEATHE_HOLD := 1.0          ## 베어낸 끝 자세 → 납도 끝까지
-const FIN_SHEATHE := 0.45              ## 마지막 이 시간 동안 칼을 칼집에 — sheathe 의 "착" = 납도 끝 = 시간 재개
+## 10) 여세 + 납도: 일섬 끝 자세로 조금씩 앞으로 미끄러지며 시간이 0 → 1 로 서서히 돌아옴 → 마지막에 칼을 칼집에
+const FIN_DRIFT := 1.2                 ## 여세 시작 → 납도 "착" (= 시간 1.0 · 색 복귀) 까지
+const FIN_DRIFT_DIST := 22.0           ## 앞으로 미끄러지는 거리 (점점 느려지며 멈춤)
+const FIN_DRIFT_SLIDE := 0.8           ## 미끄러지는 시간 (여세 시작부터)
+const FIN_DRIFT_SCALE0 := 0.03         ## 여세 시작 시간 속도 → 1.0 (ease-in, 지수 FIN_DRIFT_POW)
+const FIN_DRIFT_POW := 2.0
+const FIN_SHEATHE := 0.45              ## 마지막 이 시간 동안 칼을 칼집에 — sheathe 의 "착" = 납도 끝 = 시간 1.0
 ## 11) 시간 재개 + 색 복귀 (같은 프레임)
 const FIN_SPLIT_SPEED := 420.0         ## 갈라진 두 조각이 공백이 서 있던 자리 양옆으로 날아가는 속도
 const FIN_SPLIT_SPREAD := 220.0
