@@ -202,9 +202,17 @@ const FINALE_LINE := "마지막이다. 뽑아라."
 const FINALE_SPOT_R := 72.0            ## 정전 속 피날레: 두 사람 둘레만 보이는 빛
 const FINALE_SPOT := 0.85
 
-# ---------------------------------------------------------------- 피날레 "빗방울 결투" (FinaleDuel — 모두 실제 시간)
+# ---------------------------------------------------------------- 피날레 "멈춘 총알" 흑백 결투 (FinaleDuel — 모두 실제 시간)
 ## 실패하지 않는 연출: 클릭은 방아쇠일 뿐 결과는 항상 일섬. 이동 · 구르기 · 점프 불가, 피격 없음
+## 흑백 세계에서 철견의 빨간 총알이 날아오며 시간이 서서히 느려져 공백 눈앞에서 멈추고, 클릭하면 멈춘 시간 속에서 공백만 움직여
+## 총알을 가르고 철견을 관통 → 납도 "착" 과 함께 시간 · 색이 한 번에 돌아옴
 const FIN_RESTART_GAP := 70.0          ## 재시작 · F12 로 피날레부터: 플레이어를 철견 옆 이 거리에 (마지막 반격 직후처럼)
+## 흑백 (화면 후처리 — 빗방울 · 총알 · 2겹 원 · 일섬 흰 선은 색 유지)
+const FIN_GRAY_IN := 1.5               ## 2) 대치 시작부터 이 시간에 걸쳐 채도 1 → 0
+const FIN_CONTRAST := 1.2              ## 흑백 대비 (1.0 → 이 값)
+const FIN_CONTRAST_DECEL := 1.3        ## 7) 감속 동안 더 강하게
+const FIN_CONTRAST_PIVOT := 0.12       ## 대비 기준 밝기 (어두운 화면이라 0.5 대신 — 어둠이 새까맣게 뭉개지지 않게)
+const FIN_VIGNETTE := 0.75             ## 7) 감속 동안 화면 가장자리가 이만큼 짙어짐
 ## 1) 정적
 const FIN_STILL := 2.0
 const FIN_RISE_AT := 0.4               ## 정적 시작 → 일어나기 시작 (stagger → idle 천천히)
@@ -236,49 +244,41 @@ const FIN_DROP_COLOR := Color("#7fd8ff")
 const FIN_DROP_RAIN_MUL := 0.1         ## 빗줄기 속도 10%
 const FIN_DROP_RAIN_VOL := 0.2
 const FIN_DROP_CAM := 8.0              ## 빗방울을 따라 카메라가 아래로
-## 6) 신호 → 총알: 철견이 먼저 뽑아 쏨 → 총알이 점점 느려지며 공백 바로 앞에서 거의 멈춤 → 그때 클릭 = 일섬
+## 6) 철견의 발사 (빗방울 착지 = 발사, 눈에 보이는 투사체)
 const FIN_RIPPLE := 0.45               ## 바닥 물결 원 (시간 · 반지름)
 const FIN_RIPPLE_R := 12.0
-const FIN_DRAW_DELAY := 0.1            ## 빗방울 착지 → 철견 발사 (quickdraw.wav 타격 = 발사)
-const FIN_BULLET_TRAVEL := 0.45        ## 총구 → 공백 앞 (처음엔 빠르고 점점 느려짐)
-const FIN_BULLET_SLOW := 0.12          ## 총알이 날아오는 동안 · 앞에 떠 있는 동안 월드 속도 (빗줄기 · 철견 · 불꽃)
-const FIN_BULLET_CREEP := 3.0          ## 앞에 멈춘 뒤에도 아주 조금씩 다가옴 (px/s) + 떨림
-const FIN_BULLET_JITTER := 0.5
-const FIN_SLOWMO_VOL := 0.55           ## 발사 순간 slowmo_in.wav (총알 시간)
-const FIN_RING_TIME := 0.35            ## 총알이 앞에 오면 공백 둘레 2겹 원 (줄어들다 최소 크기에서 유지)
-const FINALE_AUTO_TIME := 2.5          ## 총알이 앞에 온 뒤 이 시간 입력이 없으면 원이 한 번 번쩍 → 자동 일섬
-const FIN_AUTO_FLASH := 0.15
-## 7) 일섬
-const FIN_INVERT_FRAMES := 2           ## 흑백 반전 (흰 배경 + 검은 실루엣)
-const FIN_CUT_BEHIND := 40.0           ## 철견 뒤편 이 거리로 순간이동
+const FIN_GUN_PITCH := 0.85            ## gun_fire.wav
+const FIN_TAIL := 10.0                 ## 총알 꼬리 길이 (속도에 따라 짧아짐)
+## 7) 감속: 시간 속도 1.0 → 0.0 (ease-out) — 총알이 공백 앞 FIN_BULLET_AHEAD px 에서 정확히 멈추게 남은 거리로 계산
+const FIN_DECEL := 1.0
+const FIN_BULLET_AHEAD := 14.0
+## 8) 멈춘 총알 (입력 대기)
+const FIN_SLOWMO_LOOP_VOL := 0.4       ## slowmo_loop.wav 반복 (그 외 무음)
+const FIN_BREATH := 1.4                ## 총알 · 2겹 원이 숨쉬듯 밝아졌다 어두워지는 주기 (초)
+const FINALE_HINT_TIME := 3.0          ## 멈춘 뒤 이 시간 입력이 없으면 원이 한 번 크게 번쩍 (힌트)
+const FINALE_AUTO_TIME := 5.0          ## 멈춘 뒤 이 시간이면 자동 일섬
+const FIN_HINT_FLASH := 0.35
+## 9) 일섬 — 멈춘 시간 속에서 공백만 움직임
+const FIN_CUT_TIME := 0.25             ## 공백이 철견 뒤편까지 베어나가는 시간
+const FIN_CUT_BEHIND := 40.0           ## 철견 뒤편 이 거리까지
 const FIN_GHOSTS := 6                  ## 이동 경로 잔상
-const FIN_LINE_W := 3.0                ## 화면을 가로지르는 흰 선 3px → 0px
-const FIN_LINE_TIME := 0.3
-const FIN_BULLET_AHEAD := 14.0         ## 철견 총알이 멈춰 있는 곳: 공백이 서 있던 자리에서 철견 쪽으로
-const FIN_SLASH_SHAKE := 10.0          ## 베어 넘기는 순간 흔들림 (실제 시간 — 멈춘 세계 첫머리까지 흔들림)
-const FIN_SLASH_SHAKE_TIME := 0.32
-const FIN_QI_TIME := 0.6               ## 검기 (하늘 · 분홍 · 흰 3겹 초승달 띠) — 멈춘 세계 동안엔 번쩍인 그대로 멈춤, 재개 뒤 이 시간에 사라짐
-const FIN_QI_THICK := 13.0
-const FIN_QI_BULGE := 7.0
-const FIN_QI_OVER := 18.0              ## 검기가 출발점 · 도착점 너머로 뻗는 길이
-const FIN_SPARKS := 34                 ## 철견 몸에서 튀는 불꽃 (멈춘 세계에서 공중에 멈춤)
-const FIN_STOP_RING_R := 180.0         ## 시간 정지 순간 퍼지는 고리
-const FIN_STOP_RING_TIME := 0.4
-const FIN_STOP_TINT := Color(0.55, 0.75, 1.0, 0.13)   ## 멈춘 세계 색 (푸르스름하게)
-const FIN_RESUME_SHAKE := 5.0          ## 납도 "착" = 재개 순간 짧은 흔들림
-## 8) 멈춘 세계 · 9) 납도
-const FIN_FREEZE := 1.5                ## 시간 정지 (빗줄기 · 철견 · 총알 · 잔상 그대로, 모든 소리 무음)
-const FIN_SHEATHE := 0.45              ## 마지막 이 시간 동안 칼을 칼집에 — sheathe 의 "착" = 정지가 끝나는 순간 = 시간 재개
-const FIN_SFX_CUT := 0.06              ## 정지 순간 소리를 끊는 페이드
-## 10) 갈라진 총알
-const FIN_SPLIT := 0.3
-const FIN_SPLIT_DELAY := 0.1           ## 시간 재개 → 총알이 갈라지는 순간 ("착" 과 "팅" 을 살짝 떼어 놓음)
-const FIN_SPLIT_SPEED := 300.0         ## 두 조각: 날아가던 방향으로 · 위아래로 벌어짐
-const FIN_SPLIT_SPREAD := 160.0
-## 11) 쓰러짐
+const FIN_INVERT_FRAMES := 2           ## 철견을 지나는 순간 흑백 반전 (흰 배경 + 검은 실루엣)
+const FIN_LINE_W := 3.0                ## 화면을 가로지르는 흰 선 (정지 동안 그대로)
+const FIN_HALF_GAP := 2.0              ## 갈라진 총알 두 조각이 위아래로 벌어진 거리 (정지 동안)
+const FIN_QI_THICK := 11.0             ## 베어나간 길의 검기 (흑백 세계에선 회색 · 색이 돌아오면 3색으로 사라짐)
+const FIN_QI_BULGE := 6.0
+const FIN_QI_TIME := 0.5               ## 시간 재개 뒤 검기가 사라지는 시간
+const FIN_SPARKS := 30                 ## 철견을 지나는 순간 불꽃 (정지 동안 공중에 멈춤)
+## 10) 납도 (여전히 정지)
+const FIN_SHEATHE_HOLD := 1.0          ## 베어낸 끝 자세 → 납도 끝까지
+const FIN_SHEATHE := 0.45              ## 마지막 이 시간 동안 칼을 칼집에 — sheathe 의 "착" = 납도 끝 = 시간 재개
+## 11) 시간 재개 + 색 복귀 (같은 프레임)
+const FIN_SPLIT_SPEED := 420.0         ## 갈라진 두 조각이 공백이 서 있던 자리 양옆으로 날아가는 속도
+const FIN_SPLIT_SPREAD := 220.0
+const FIN_CUT_FLASH := 0.25            ## 철견 몸의 대각선 흰 선
+const FIN_KILL_SHAKE := 8.0
+## 12) 쓰러짐
 const FIN_FALL := 2.0
-const FIN_CUT_FLASH := 0.25            ## 몸의 대각선 흰 선
-const FIN_FALL_SHAKE := 8.0
 const FIN_DOWN_LINE := "…빠르군."
 const FIN_DOWN_LINE_AT := 0.35
 const FIN_KNEEL_AT := 0.9              ## 무릎 꿇음 (land 포즈)
@@ -286,10 +286,9 @@ const FIN_TOPPLE_AT := 1.3             ## 앞으로 쓰러짐 (발을 축으로 
 const FIN_TOPPLE_TIME := 0.5
 const FIN_HAT_VEL := Vector2(-240.0, -230.0)   ## 페도라: 바람(빗줄기 방향)에 날려 화면 밖으로
 const FIN_GUN_VEL := Vector2(60.0, -150.0)     ## 쌍권총: 손에서 떨어져 바닥에 튕김
-## 12) 여운
+## 13) 여운
 const FIN_AFTER := 2.0                 ## 번개 + 무전 → 이 뒤 출구 문 열림 (door_boss.wav)
 const FIN_CAM_RETURN := 1.2            ## 카메라가 플레이어를 다시 따라가기까지
-
 # ---------------------------------------------------------------- 무대 (BossArena)
 const RAIN_COUNT := 70                 ## 화면 안 빗줄기 수 (폭우 = 2배)
 const RAIN_SPEED := 420.0
@@ -333,6 +332,7 @@ const COL_KICK := Color("#b14dff")     ## 발차기 · 충격파 보라 (패링 
 const RAIN_VOL := 0.35                 ## 보스방 빗소리 (Config.audio.SFX_RAIN 과 같게)
 const RAIN_VOL_STORM := 0.6            ## 페이즈 2 폭우 (3단계)
 const RAIN_FADE := 0.6                 ## 빗소리 페이드인 (실제 시간)
+
 
 # ---------------------------------------------------------------- 처치 뒤 (피날레 쓰러짐 → 무전 · 출구, 시간은 FinaleDuel 이 FIN_FALL · FIN_AFTER 로 정함)
 const RADIO_DELAY := 1.0               ## 처치 → 잡음 무전 (실제 시간)

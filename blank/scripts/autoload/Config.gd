@@ -355,7 +355,7 @@ var audio := {
 	"SFX_HEARTBEAT": 0.6,             # heartbeat.wav (정적 · 대치 구간 반복, 분당 약 55회)
 	"SFX_DRIP": 0.9,                  # drip.wav (빗방울 착지 = 신호)
 	"SFX_SHEATHE": 1.0,               # sheathe.wav (납도 "착")
-	"SFX_BULLET_SPLIT": 0.8,          # bullet_split.wav (갈라진 총알 "팅")
+	"SFX_BULLET_SPLIT": 0.9,          # bullet_split.wav (갈라진 총알 "팅")
 	"SFX_DASH": 0.8, "SFX_SLIDE": 0.8, "SFX_JUMP": 0.8,   # dash_whoosh · slide · jump.wav (아직 없음 → 무음)
 	"SFX_ROLL": 0.6,                  # roll.wav (플레이어 구르기, 없으면 dash_whoosh 피치 1.3 → 그것도 없으면 무음)
 	"MUFFLE_CUTOFF": 650.0,           # 먹먹함 (World 버스 로우패스) 차단 주파수 Hz

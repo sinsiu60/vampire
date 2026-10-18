@@ -45,7 +45,7 @@ mouse_filter = 2
 script = ExtResource("8_sfx")
 
 [node name="HUD" type="CanvasLayer" parent="."]
-layer = 2
+layer = 4
 
 [node name="Offscreen" type="Control" parent="HUD"]
 layout_mode = 3
