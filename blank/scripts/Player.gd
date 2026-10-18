@@ -25,7 +25,10 @@ var _air_up_used := false        # 공중 위쪽 돌진을 이미 썼나
 var _trail := {}                 # 반달 베기 궤적 { ticks, angle, flip } (비어 있으면 없음)
 var _queued_slash := false       # 히트스톱 중 누른 클릭 (월드가 다시 흐를 때 처리)
 var _lunge := false              # 지금 돌진이 반격 베기 자동 돌진인가 (끝나면 멈춤)
-var _smear := {}                 # 스미어 프레임 (돌진 첫 몇 틱 몸 왜곡) { ticks, max, dir, P, from, spikes } — SmearFX
+var _smear := {}                 # 스미어 프레임 (돌진 첫 몇 틱 · 명중 순간 몸 왜곡) { ticks, max, dir, P, from, spikes } — SmearFX
+var _dash_from := Vector2.ZERO   # 이번 베기 돌진을 시작한 몸 중심 (전역) — 명중 스미어 궤적의 꼬리
+var _dash_dir := Vector2.RIGHT   # 이번 베기 돌진 방향
+var impact_smears := 0           ## 명중 스미어 수 (테스트)
 var _stun := 0.0                 # 경직 남은 시간 (철견이 막으면 0.2초) — 그동안 조작 불가
 var counter_lunges := 0          ## 반격 베기 자동 돌진 횟수 (테스트 · 디버그)
 
@@ -165,7 +168,7 @@ func _physics_process(delta: float) -> void:
 	if not _smear.is_empty():
 		_smear.ticks -= 1
 		if _smear.ticks <= 0:
-			_smear = {}
+			_end_smear()
 	var was_on_floor := is_on_floor()
 
 	# ---- 베기 타이머 · 헛스윙 · 경직
@@ -398,7 +401,9 @@ func _start_slash(aim: Vector2) -> void:
 		velocity = Vector2.from_angle(a) * float(lunge.speed)
 		_dash_t = CG.COUNTER_LUNGE_TIME
 		counter_lunges += 1
-	_begin_smear(velocity.normalized() if velocity.length() > 1.0 else Vector2.from_angle(a))
+	_dash_from = center()
+	_dash_dir = velocity.normalized() if velocity.length() > 1.0 else Vector2.from_angle(a)
+	_begin_smear(_dash_dir)
 	_jumping = false
 	# 돌진 방향으로 늘어남
 	_sx = 1.0 + Config.anim.dash_stretch
@@ -505,13 +510,33 @@ func _draw() -> void:
 
 
 ## 돌진 첫 몇 틱: 몸을 진행 방향으로 늘이고 색을 갈라 그림 (일반 베기 = SLASH, 반격 돌진 = COUNTER + 뜨거운 궤적)
-func _begin_smear(dir: Vector2) -> void:
+func _begin_smear(dir: Vector2, counter := _lunge, from := center()) -> void:
 	if not Settings.on("smear"):
-		_smear = {}
+		_end_smear()
 		return
-	var P: Dictionary = Config.smear.COUNTER if _lunge else Config.smear.SLASH
-	_smear = { "ticks": int(P.TICKS), "max": int(P.TICKS), "dir": dir, "P": P, "from": center(),
+	z_index = 0
+	var P: Dictionary = Config.smear.COUNTER if counter else Config.smear.SLASH
+	_smear = { "ticks": int(P.TICKS), "max": int(P.TICKS), "dir": dir, "P": P, "from": from,
 		"spikes": SmearFX.make_spikes(dir, int(P.SPIKES), P.SPIKE_LEN, float(P.SPREAD)) }
+
+
+## 베기가 적에 닿은 순간 (Main): 돌진 시작 스미어가 이미 끝났어도 여기서 다시 — 바로 이어지는 히트스톱 · 킬 스톱 동안
+## 늘어난 모습이 그대로 멈춰 임팩트 프레임이 됨. counter = 반격 명중 (반격 프리셋 + 돌진 시작점부터 궤적)
+func impact_smear(counter := false) -> void:
+	if dead or not Settings.on("smear"):
+		return
+	_begin_smear(_dash_dir, counter or _lunge, _dash_from)
+	z_index = IMPACT_Z                # 빛줄기 · 3겹 궤적 (Effects z 10) 에 가리지 않게 — 스미어가 끝나면 원래대로
+	impact_smears += 1
+	queue_redraw()
+
+
+const IMPACT_Z := 20             ## 명중 스미어 동안 플레이어 z (Effects 10 위, 발사 타이밍 원 30 아래)
+
+
+func _end_smear() -> void:
+	_smear = {}
+	z_index = 0
 
 
 func is_smearing() -> bool:

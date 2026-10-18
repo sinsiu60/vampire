@@ -769,6 +769,7 @@ func _dummy_slash(d: EnemyDummy) -> void:
 			screen_fx.flash()
 		add_shake(CG.COUNTER_SHAKE, CG.COUNTER_SHAKE_TIME, angle)
 		effects.burst(d.center(), 14, Config.colors.player, 280.0, angle, 0.7, 0.26, { "glow": true, "streak": true })
+		p.impact_smear(true)
 		d.on_counter_hit()
 	else:
 		effects.burst(p.tip(), 6, Config.colors.parry_hot, 140.0, angle + PI, 1.0, 0.15, { "glow": true })
@@ -811,6 +812,7 @@ func _counter_hit(b: BossCheolgyeon) -> void:
 		var v := randf_range(120.0, 260.0)
 		var o := c + Vector2(randf_range(-5, 5), randf_range(-4, 10))
 		gore.toss([part], o, o, Vector2(cos(a) * v, sin(a) * v - 140.0), randf_range(-18, 18))
+	p.impact_smear(true)
 	b.on_counter_hit(angle)                  # 체력 0 이면 철견이 피날레를 시작 (처치는 피날레 일섬)
 
 
@@ -1021,8 +1023,9 @@ func _kill_enemy(e: Enemy, angle: float, cause := "slash") -> void:
 	# 2) 빛줄기: 타격 지점(적 중심)을 지나 화면 밖에서 화면 밖으로
 	if Settings.on("beam"):
 		effects.beam(c, angle, view_rect())
-	# 3) 3겹 궤적 (칼로 벤 경우 — 흰 반달 대신) + 반동
+	# 3) 3겹 궤적 (칼로 벤 경우 — 흰 반달 대신) + 반동 · 명중 스미어 (킬 스톱 동안 멈춘 채)
 	if cause != "reflect" and not p.dead:
+		p.impact_smear()
 		if Settings.on("slash_trail"):
 			var tr := p.take_trail()
 			gore.kill_trail(p.center(), tr.get("angle", angle), tr.get("flip", 1))
