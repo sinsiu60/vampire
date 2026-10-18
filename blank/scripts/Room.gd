@@ -11,6 +11,8 @@ class_name Room
 @export var ambience := ""       ## 배경음 반복 (sounds/ 의 이름, 예: "rain_loop") — 없으면 ""
 @export var ambience_volume := -1.0   ## 배경음 볼륨 (-1 = Config.audio 기본값)
 @export var paint_terrain := false    ## 지형을 1장 팔레트로 다시 칠함 (Background 의 Floor 층 — 타일은 안 보이게, 충돌은 그대로)
+@export_enum("none", "alley") var art_style := "none"   ## alley = 비 내리는 시장 뒷골목 무대 (AlleyDressing — 가까운 건물 대신 골목 벽면)
+@export var lamp_xs: PackedFloat32Array = PackedFloat32Array()   ## 골목 조명 x (방마다 다르게)
 
 @onready var terrain: TileMapLayer = $Terrain
 

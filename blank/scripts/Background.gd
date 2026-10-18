@@ -20,6 +20,8 @@ var dark_sky := [Color("#030308"), Color("#0A0810")]
 var dark_window_p := 0.035
 var dark_tint := 0.45
 var _seed := 1
+var alley := false               ## 시장 뒷골목 무대 (가까운 건물 층 대신 AlleyDressing 벽면)
+var dressing: AlleyDressing = null
 
 var _room_w := 480.0
 var _rng := RandomNumberGenerator.new()
@@ -40,6 +42,7 @@ func build(room_w: float, seed: int, floor_y := 240.0, room: Node = null) -> voi
 	_room_w = room_w
 	base_y = floor_y
 	_seed = seed
+	alley = room != null and String(room.get("art_style")) == "alley"
 	_build_layers()
 	if room != null:
 		rain_back.room = room
@@ -56,8 +59,9 @@ func _build_layers() -> void:
 	var far := _city(Palette.PARALLAX_FAR, _dim(Palette.FAR_BUILDING, t), _dim(Palette.FAR_WINDOW, t), Vector2(90, 170), Vector2(26, 58),
 		dark_window_p if dark else 0.18, true)
 	layers.append(far)
-	layers.append(_city(Palette.PARALLAX_NEAR, _dim(Palette.NEAR_BUILDING, t), _dim(Palette.NEAR_WINDOW, t), Vector2(50, 110), Vector2(30, 64),
-		dark_window_p if dark else 0.12, false))
+	if not alley:   # 골목 방은 가까운 건물 대신 월드의 골목 벽면 (AlleyDressing)
+		layers.append(_city(Palette.PARALLAX_NEAR, _dim(Palette.NEAR_BUILDING, t), _dim(Palette.NEAR_WINDOW, t), Vector2(50, 110), Vector2(30, 64),
+			dark_window_p if dark else 0.12, false))
 	if _parallax != null:
 		_parallax.queue_redraw()
 
@@ -183,6 +187,17 @@ func _paint_terrain(room: Node) -> void:
 				_fill(img, x0 + t - 1, y0, 1, t, Palette.STRUCT_DARK)
 			if room.cell_kind(c + Vector2i(0, -1)) != 1:
 				_fill(img, x0, y0, t, 1, Palette.FLOOR_LINE)
+	# 5 Structures + 바닥 장식 (시장 뒷골목)
+	var st := $Structures as Node2D
+	for ch in st.get_children():
+		ch.queue_free()
+	if alley:
+		dressing = AlleyDressing.new()
+		var simg := dressing.build(room, room.lamp_xs, _seed, base_y, img)
+		var ss := Sprite2D.new()
+		ss.centered = false
+		ss.texture = ImageTexture.create_from_image(simg)
+		st.add_child(ss)
 	var fl := $Floor as Node2D
 	for ch in fl.get_children():
 		ch.queue_free()
