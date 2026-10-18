@@ -10,7 +10,8 @@ extends Node
 const SynthLib := preload("res://scripts/audio/Synth.gd")
 
 const FILES := ["gun_fire", "parry_chang", "slowmo_in", "slowmo_loop", "time_return", "kill_sound", "door_open", "door_boss", "boss_intro", "boss_armor",
-	"gun_cock", "quickdraw", "pistol_whip", "execute", "stagger", "explosion", "flashbang", "thunder", "rain_loop"]
+	"gun_cock", "quickdraw", "pistol_whip", "execute", "stagger", "explosion", "flashbang", "thunder", "rain_loop",
+	"heartbeat", "drip", "sheathe", "bullet_split"]
 # 있으면 쓰고 없으면 조용히 무음 (경고 없음)
 const OPTIONAL := ["dash_whoosh", "slide", "jump", "grenade_pin", "roll"]
 ## 파일 안에서 가장 큰 소리 위치 (초) — play_synced 가 이만큼 일찍 재생해 타격 순간에 맞춤
@@ -18,6 +19,8 @@ const PEAKS := {
 	"gun_cock": 0.07, "quickdraw": 0.22, "pistol_whip": 0.12, "execute": 0.0, "stagger": 0.0,
 	"explosion": 0.0, "flashbang": 0.0, "thunder": 0.17,
 	"gun_fire": 0.0, "parry_chang": 0.0, "boss_armor": 0.0, "kill_sound": 0.0,
+	# 피날레
+	"heartbeat": 0.0, "drip": 0.03, "sheathe": 0.45, "bullet_split": 0.30,
 }
 ## 소리 이름 → 기본 볼륨 키 (Config.audio) — sfx / play_synced 에서 볼륨을 안 주면 이것
 const VOLUME_KEYS := {
@@ -26,6 +29,7 @@ const VOLUME_KEYS := {
 	"rain_loop": "SFX_RAIN", "gun_fire": "SFX_GUN", "parry_chang": "SFX_PARRY", "boss_armor": "SFX_BOSS_ARMOR",
 	"boss_intro": "SFX_BOSS_INTRO", "kill_sound": "SFX_KILL", "dash_whoosh": "SFX_DASH", "slide": "SFX_SLIDE", "jump": "SFX_JUMP",
 	"roll": "SFX_ROLL",
+	"heartbeat": "SFX_HEARTBEAT", "drip": "SFX_DRIP", "sheathe": "SFX_SHEATHE", "bullet_split": "SFX_BULLET_SPLIT",
 }
 const POOL_SIZE := 16
 const WORLD_BUS := "World"       # 효과음 대부분 — 섬광탄 동안 로우패스 (귀가 멍함)
