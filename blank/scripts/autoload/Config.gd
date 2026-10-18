@@ -412,6 +412,29 @@ var door := {
 
 # 옵션(흔들림 강도·발사 타이밍 원)과 F2 타격감 토글은 Settings 오토로드
 
+# ---------------------------------------------------------------- UI (타이틀 · 장 카드 · 무전 · 메뉴) — 빨강 · 보라는 UI 에 쓰지 않음 (공격 신호 전용)
+var ui_style := {
+	"FONT": "res://fonts/Galmuri11.ttf",     # 한글 도트 폰트 — 없으면 시스템 글꼴 (안티앨리어싱 끔)
+	"SIZE": 11, "SIZE_BIG": 14,              # 내부 해상도 기준
+	"TEXT": Color("#D0D4E0"),                # 기본 글자
+	"ACCENT": Color("#5AC8E6"),              # 강조 (UI 전용 하늘색)
+	"PANEL": Color(Color("#0A0B12"), 0.85),  # 배경 판
+	"DIM": 0.4,                              # 비활성 글자 투명도
+	"SFX_MOVE": "ui_move", "SFX_SELECT": "ui_select", "SFX_BACK": "ui_back",   # 없으면 무음
+	"SFX_VOLUME": 0.6,
+	# 타이틀
+	"TITLE_DIM": 0.35,                       # 무대 위 어둡게
+	"TITLE_GLITCH_EVERY": Vector2(4.0, 7.0), # 제목 글리치 간격 (초)
+	"TITLE_GLITCH_TIME": 0.1,
+	"TITLE_RAIN_VOL": 0.3,
+	"VERSION": "v0.1",
+	# 장 시작 카드
+	"TYPE_CHAR": 0.04,                       # 글자당
+	"TYPE_LINE_GAP": 0.8,                    # 줄 사이
+	"CARD_TIME": 2.0,                        # 장 제목
+	"FADE": 0.5,
+}
+
 # ---------------------------------------------------------------- 연출 · UI
 var logo := { "text": "시우 공방", "fade_in": 0.6, "hold": 0.8, "fade_out": 0.6 }  # 합계 2초
 var scanline := { "alpha": 0.2 }

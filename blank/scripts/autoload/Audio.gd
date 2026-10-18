@@ -13,7 +13,7 @@ const FILES := ["gun_fire", "parry_chang", "slowmo_in", "slowmo_loop", "time_ret
 	"gun_cock", "quickdraw", "pistol_whip", "execute", "stagger", "explosion", "flashbang", "thunder", "rain_loop",
 	"heartbeat", "drip", "sheathe", "bullet_split"]
 # 있으면 쓰고 없으면 조용히 무음 (경고 없음)
-const OPTIONAL := ["dash_whoosh", "slide", "jump", "grenade_pin", "roll"]
+const OPTIONAL := ["dash_whoosh", "slide", "jump", "grenade_pin", "roll", "ui_move", "ui_select", "ui_back", "radio_on", "radio_off", "radio_blip"]
 ## 파일 안에서 가장 큰 소리 위치 (초) — play_synced 가 이만큼 일찍 재생해 타격 순간에 맞춤
 const PEAKS := {
 	"gun_cock": 0.07, "quickdraw": 0.22, "pistol_whip": 0.12, "execute": 0.0, "stagger": 0.0,

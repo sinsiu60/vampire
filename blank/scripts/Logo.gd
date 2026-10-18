@@ -17,13 +17,32 @@ func _ready() -> void:
 	_font.font_weight = 700
 
 
+var _done := false
+
+
 func _physics_process(_delta: float) -> void:
 	var L: Dictionary = Config.logo
 	t += 1.0 / Config.fps
 	queue_redraw()
 	if t >= L.fade_in + L.hold + L.fade_out:
-		set_physics_process(false)
-		finished.emit()
+		_finish()
+
+
+## 아무 키나 · 클릭 → 건너뛰기
+func _input(event: InputEvent) -> void:
+	if t < 0.1:
+		return
+	if (event is InputEventKey and event.pressed and not event.echo) or (event is InputEventMouseButton and event.pressed):
+		get_viewport().set_input_as_handled()
+		_finish()
+
+
+func _finish() -> void:
+	if _done:
+		return
+	_done = true
+	set_physics_process(false)
+	finished.emit()
 
 
 func alpha() -> float:
