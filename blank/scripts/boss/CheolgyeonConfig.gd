@@ -236,11 +236,17 @@ const FIN_DROP_COLOR := Color("#7fd8ff")
 const FIN_DROP_RAIN_MUL := 0.1         ## 빗줄기 속도 10%
 const FIN_DROP_RAIN_VOL := 0.2
 const FIN_DROP_CAM := 8.0              ## 빗방울을 따라 카메라가 아래로
-## 6) 신호
+## 6) 신호 → 총알: 철견이 먼저 뽑아 쏨 → 총알이 점점 느려지며 공백 바로 앞에서 거의 멈춤 → 그때 클릭 = 일섬
 const FIN_RIPPLE := 0.45               ## 바닥 물결 원 (시간 · 반지름)
 const FIN_RIPPLE_R := 12.0
-const FIN_RING_TIME := 0.35            ## 공백 둘레 2겹 원이 줄어드는 시간 (그 뒤 최소 크기에서 유지)
-const FINALE_AUTO_TIME := 2.5          ## 신호 뒤 이 시간 입력이 없으면 원이 한 번 번쩍 → 자동 일섬
+const FIN_DRAW_DELAY := 0.1            ## 빗방울 착지 → 철견 발사 (quickdraw.wav 타격 = 발사)
+const FIN_BULLET_TRAVEL := 0.45        ## 총구 → 공백 앞 (처음엔 빠르고 점점 느려짐)
+const FIN_BULLET_SLOW := 0.12          ## 총알이 날아오는 동안 · 앞에 떠 있는 동안 월드 속도 (빗줄기 · 철견 · 불꽃)
+const FIN_BULLET_CREEP := 3.0          ## 앞에 멈춘 뒤에도 아주 조금씩 다가옴 (px/s) + 떨림
+const FIN_BULLET_JITTER := 0.5
+const FIN_SLOWMO_VOL := 0.55           ## 발사 순간 slowmo_in.wav (총알 시간)
+const FIN_RING_TIME := 0.35            ## 총알이 앞에 오면 공백 둘레 2겹 원 (줄어들다 최소 크기에서 유지)
+const FINALE_AUTO_TIME := 2.5          ## 총알이 앞에 온 뒤 이 시간 입력이 없으면 원이 한 번 번쩍 → 자동 일섬
 const FIN_AUTO_FLASH := 0.15
 ## 7) 일섬
 const FIN_INVERT_FRAMES := 2           ## 흑백 반전 (흰 배경 + 검은 실루엣)
@@ -249,6 +255,17 @@ const FIN_GHOSTS := 6                  ## 이동 경로 잔상
 const FIN_LINE_W := 3.0                ## 화면을 가로지르는 흰 선 3px → 0px
 const FIN_LINE_TIME := 0.3
 const FIN_BULLET_AHEAD := 14.0         ## 철견 총알이 멈춰 있는 곳: 공백이 서 있던 자리에서 철견 쪽으로
+const FIN_SLASH_SHAKE := 10.0          ## 베어 넘기는 순간 흔들림 (실제 시간 — 멈춘 세계 첫머리까지 흔들림)
+const FIN_SLASH_SHAKE_TIME := 0.32
+const FIN_QI_TIME := 0.6               ## 검기 (하늘 · 분홍 · 흰 3겹 초승달 띠) — 멈춘 세계 동안엔 번쩍인 그대로 멈춤, 재개 뒤 이 시간에 사라짐
+const FIN_QI_THICK := 13.0
+const FIN_QI_BULGE := 7.0
+const FIN_QI_OVER := 18.0              ## 검기가 출발점 · 도착점 너머로 뻗는 길이
+const FIN_SPARKS := 34                 ## 철견 몸에서 튀는 불꽃 (멈춘 세계에서 공중에 멈춤)
+const FIN_STOP_RING_R := 180.0         ## 시간 정지 순간 퍼지는 고리
+const FIN_STOP_RING_TIME := 0.4
+const FIN_STOP_TINT := Color(0.55, 0.75, 1.0, 0.13)   ## 멈춘 세계 색 (푸르스름하게)
+const FIN_RESUME_SHAKE := 5.0          ## 납도 "착" = 재개 순간 짧은 흔들림
 ## 8) 멈춘 세계 · 9) 납도
 const FIN_FREEZE := 1.5                ## 시간 정지 (빗줄기 · 철견 · 총알 · 잔상 그대로, 모든 소리 무음)
 const FIN_SHEATHE := 0.45              ## 마지막 이 시간 동안 칼을 칼집에 — sheathe 의 "착" = 정지가 끝나는 순간 = 시간 재개

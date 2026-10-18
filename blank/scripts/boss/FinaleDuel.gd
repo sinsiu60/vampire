@@ -3,10 +3,10 @@ class_name FinaleDuel
 ## 철견 피날레 "빗방울 결투" — 실패하지 않는 연출. 플레이어의 클릭은 방아쇠일 뿐, 결과는 항상 일섬.
 ## 모든 타이머는 실제 시간 (TimeManager.real_delta) — 시간 정지 · 슬로우와 상관없이 흐름. 수치는 CheolgyeonConfig (FIN_*)
 ##
-##  1 정적 → 2 대치 → 3 번개 → 4 움찔(가짜) → 5 빗방울 → 6 신호 (입력 대기) → 7 일섬 → 8 멈춘 세계 (끝 = 9 납도 · 시간 재개)
-##  → 10 갈라진 총알 → 11 쓰러짐 → 12 여운 → 끝 (출구 문은 Main 의 보스 처치 뒤 타이머)
-## 입력: 신호 전 클릭 = 버퍼 → 신호 순간 일섬 · 신호 뒤 클릭 = 즉시 · 신호 뒤 FINALE_AUTO_TIME 동안 없으면 원이 번쩍 → 자동.
-##       4 움찔 중 클릭은 무시 (버퍼에도 안 남김)
+##  1 정적 → 2 대치 → 3 번개 → 4 움찔(가짜) → 5 빗방울 → 6 신호: 철견이 먼저 쏨 → 총알이 공백 바로 앞에서 거의 멈춤 (입력 대기)
+##  → 7 일섬 → 8 멈춘 세계 (끝 = 9 납도 · 시간 재개) → 10 갈라진 총알 → 11 쓰러짐 → 12 여운 → 끝 (출구 문은 Main 의 보스 처치 뒤 타이머)
+## 입력: 총알이 앞에 오기 전 클릭 = 버퍼 → 총알이 앞에 오는 순간 일섬 · 그 뒤 클릭 = 즉시 ·
+##       총알이 앞에 온 뒤 FINALE_AUTO_TIME 동안 없으면 원이 번쩍 → 자동. 4 움찔 중 클릭은 무시 (버퍼에도 안 남김)
 ## Main 의 자식으로 붙음 (월드 좌표로 그림, 어둠 · 비 위 z 100)
 
 const C := preload("res://scripts/boss/CheolgyeonConfig.gd")
@@ -23,6 +23,8 @@ var st := 0.0                    ## 지금 단계 경과 (실제 초)
 var buffered := false            ## 신호 전에 누른 클릭이 있음
 var cut_by := ""                 ## 일섬을 부른 것: buffer | click | auto
 var signal_real := -1.0          ## 신호 (빗방울 착지) 실제 시각
+var fire_real := -1.0            ## 철견 발사 실제 시각 (quickdraw 타격)
+var arrive_real := -1.0          ## 총알이 공백 앞에 와서 거의 멈춘 실제 시각 (이때부터 입력 = 일섬)
 var cut_real := -1.0             ## 일섬 실제 시각
 var resume_real := -1.0          ## 시간 재개 (= sheathe "착") 실제 시각
 var split_real := -1.0           ## 총알이 갈라지는 실제 시각
@@ -53,6 +55,12 @@ var _halves: Array = []          # 갈라진 두 조각 { pos, vel, t }
 var _cutflash := -1.0            # 철견 몸 대각선 흰 선
 var _topple := -1.0
 var _cam_ret := {}               # 12 카메라 되돌림 { from_c, from_z, t }
+var _bstart := Vector2.ZERO      # 총알 출발 (총구) · 멈출 곳 (공백 앞)
+var _bstop := Vector2.ZERO
+var _qi := {}                    # 검기 { a, b, y, t } — 멈춘 세계 동안 t 가 멈춤
+var _xcut := {}                  # 철견 몸을 가르는 X 자 { c, t }
+var _stop_ring := -1.0           # 시간 정지 순간 퍼지는 고리 (실제 시간)
+var _tint := 0.0                 # 멈춘 세계 색 0~1
 
 
 func setup(m: Node, boss: BossCheolgyeon) -> void:
@@ -129,13 +137,10 @@ func _enter(n: int) -> void:
 		12: _enter_after()
 
 
-## 신호 전 클릭: 버퍼 (5 빗방울 중이면 신호 순간에 맞춰 quickdraw 예약)
+## 총알이 앞에 오기 전 클릭: 버퍼 (총알이 앞에 오는 순간 일섬)
 func _buffer(click: bool) -> void:
-	if not click or buffered:
-		return
-	buffered = true
-	if step == 5:
-		_qd = Audio.play_synced_real("quickdraw", signal_real)
+	if click:
+		buffered = true
 
 
 # ---- 1) 정적
@@ -246,9 +251,9 @@ func _enter_drop() -> void:
 	var from := brim_tip()
 	_drop = { "from": from, "to": Vector2(from.x, b.global_position.y - 1.0), "pos": from }
 	signal_real = now() + C.FIN_DROP
+	fire_real = signal_real + C.FIN_DRAW_DELAY
 	Audio.play_synced_real("drip", signal_real)
-	if buffered:
-		_qd = Audio.play_synced_real("quickdraw", signal_real)
+	_qd = Audio.play_synced_real("quickdraw", fire_real)     # 철견이 뽑아 쏘는 순간에 맞춰
 
 
 func _tick_drop(click: bool) -> void:
@@ -262,51 +267,90 @@ func _tick_drop(click: bool) -> void:
 		_enter(6)
 
 
-# ---- 6) 신호: 물결 원 + 공백 둘레 2겹 원 → 입력 (버퍼면 바로)
+# ---- 6) 신호: 물결 원 → 철견이 먼저 뽑아 쏨 → 총알이 점점 느려지며 공백 바로 앞에서 거의 멈춤 (월드도 느려짐) → 입력
 func _enter_signal() -> void:
 	_ripple = { "pos": _drop.to, "t": 0.0 }
 	_drop = {}
-	_ring_t = 0.0
-	if buffered:
-		_cut("buffer")
-		return
-	_qd = Audio.play_synced_real("quickdraw", now() + C.FINALE_AUTO_TIME)
 
 
 func _tick_signal(click: bool) -> void:
+	var arrived := arrive_real >= 0.0
 	if click:
-		_cut("click")
+		if arrived:
+			_cut("click")
+			return
+		buffered = true                       # 총알이 오기 전 클릭 → 오는 순간 일섬
+	if _bullet.is_empty() and now() >= fire_real - 1e-6:
+		_fire()
+	if _bullet.is_empty():
 		return
-	if st >= C.FINALE_AUTO_TIME - C.FIN_AUTO_FLASH and _auto_flash < 0.0:
+	var d: Vector2 = _bullet.dir
+	if not arrived:
+		var u := clampf((now() - fire_real) / C.FIN_BULLET_TRAVEL, 0.0, 1.0)
+		var e := 1.0 - pow(1.0 - u, 3.0)      # 처음엔 빠르고 점점 느려짐
+		_bullet.pos = _bstart.lerp(_bstop, e)
+		_bullet.speed = 3.0 * pow(1.0 - u, 2.0) * _bstart.distance_to(_bstop) / C.FIN_BULLET_TRAVEL
+		if u >= 1.0:
+			_arrive()
+		return
+	# 앞에 떠 있음: 아주 조금씩 다가오며 떨림
+	var held := now() - arrive_real
+	_bullet.pos = _bstop + d * C.FIN_BULLET_CREEP * held
+	_bullet.speed = C.FIN_BULLET_CREEP
+	_bullet.jit = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * C.FIN_BULLET_JITTER
+	if held >= C.FINALE_AUTO_TIME - C.FIN_AUTO_FLASH and _auto_flash < 0.0:
 		_auto_flash = 0.0
-	if st >= C.FINALE_AUTO_TIME - 1e-6:
+	if held >= C.FINALE_AUTO_TIME - 1e-6:
 		_cut("auto")
 
 
-# ---- 7) 일섬: 철견도 동시에 뽑아 쏨 · 흑백 반전 2프레임 · 철견 뒤 40px 로 순간이동 (잔상 6) · 화면을 가로지르는 흰 선
-func _cut(by: String) -> void:
-	cut_by = by
-	cut_real = now()
-	if by == "click":
-		Audio.cancel_synced(_qd)               # 자동 일섬 예약 취소 → 지금 맞춰서
-		_qd = {}
-	if _qd.is_empty():
-		_qd = Audio.play_synced_real("quickdraw", cut_real)
-	Audio.sfx("execute")
-	_ring_t = -1.0
-	_auto_flash = -1.0
-	# 철견 발사 (총알은 공백이 서 있던 자리 앞에서 멈춤)
-	var orig := p.global_position
+## 철견 발사: 뽑아 쏜 자세 · 총구 섬광 · 반동 흔들림 · 월드가 느려지며 총알 시간
+func _fire() -> void:
 	var oc := p.center()
 	b.body.snap("draw_fire")
 	var m := b.body.muzzle(0)
 	var dir := (oc - m).normalized()
 	b.body.set_aim(0, dir.angle())
 	m = b.body.muzzle(0)
-	main.effects.burst(m, 6, Config.colors.attack, 90.0, dir.angle(), 0.5, 0.12, { "glow": true })
+	dir = (oc - m).normalized()
+	_bstart = m
+	_bstop = oc - dir * C.FIN_BULLET_AHEAD
+	_bullet = { "pos": m, "dir": dir, "speed": 0.0, "jit": Vector2.ZERO }
+	main.effects.burst(m, 10, Config.colors.attack, 160.0, dir.angle(), 0.5, 0.3, { "glow": true, "streak": true })
+	main.effects.approach_flash(m)
 	if arena != null:
-		arena.flash_light(m)
-	_bullet = { "pos": oc - dir * C.FIN_BULLET_AHEAD, "dir": dir }
+		arena.flash_light(m, 70.0, 0.4)
+	main.add_shake(3.0, 0.12, dir.angle())
+	TimeManager.set_slow(C.FIN_BULLET_SLOW)
+	Audio.play("slowmo_in", C.FIN_SLOWMO_VOL, 1.0, true)
+	timeline.append([-6, now()])               # 발사
+
+
+## 총알이 공백 앞에 옴: 2겹 원 → 입력 대기 (먼저 눌렀으면 바로 일섬)
+func _arrive() -> void:
+	arrive_real = now()
+	_bullet.pos = _bstop
+	_ring_t = 0.0
+	timeline.append([-7, now()])               # 앞에 옴
+	if buffered:
+		_cut("buffer")
+
+
+# ---- 7) 일섬: 흑백 반전 2프레임 · 철견 뒤 40px 로 순간이동 (잔상 6) · 화면을 가로지르는 흰 선 · 검기 · X 자 · 불꽃 · 흔들림
+func _cut(by: String) -> void:
+	cut_by = by
+	cut_real = now()
+	TimeManager.set_slow(1.0)
+	Audio.sfx("execute")
+	Audio.swing()
+	_ring_t = -1.0
+	_auto_flash = -1.0
+	var orig := p.global_position
+	var oc := p.center()
+	if _bullet.is_empty():                      # (안전) 아직 안 쐈으면 지금 쏜 것으로
+		_fire()
+		_bullet.pos = _bstop
+	_bullet.jit = Vector2.ZERO
 	# 공백: 철견을 관통해 뒤편으로
 	p.finale_pose = "cut_end"
 	p.facing = int(_side)
@@ -319,12 +363,31 @@ func _cut(by: String) -> void:
 	p.velocity = Vector2.ZERO
 	_line = { "y": oc.y, "t": 0.0 }
 	_flash_ticks = C.FIN_INVERT_FRAMES
+	# 검기 · X 자 · 불꽃 (불꽃 · 충격파는 월드 시간이라 멈춘 세계에서 공중에 멈춤)
+	var bc := b.center()
+	var ang := 0.0 if _side > 0.0 else PI
+	_qi = { "a": oc.x - _side * C.FIN_QI_OVER, "b": p.center().x + _side * C.FIN_QI_OVER, "y": oc.y, "t": 0.0 }
+	_xcut = { "c": bc, "t": 0.0 }
+	var CC: Dictionary = Config.colors
+	# 불꽃은 이미 퍼진 자리에서 시작 → 멈춘 세계에서 폭발이 공중에 활짝 핀 채로 멈춤
+	for i in C.FIN_SPARKS + C.FIN_SPARKS / 2:
+		var core := i < C.FIN_SPARKS
+		var a := ang + randf_range(-1.0, 1.0) * (1.1 if core else 1.6)
+		var v := Vector2.from_angle(a) * (300.0 if core else 220.0) * randf_range(0.35, 1.0)
+		var pre := randf_range(0.02, 0.1)
+		main.effects.spawn(bc + v * pre, v, randf_range(0.6, 1.0) * (0.6 if core else 0.7),
+			CC.trail_core if core else CC.trail_outer, { "glow": true, "streak": true })
+	main.effects.burst(_bullet.pos, 10, CC.parry, 160.0, ang + PI, 1.2, 0.4, { "glow": true, "streak": true })
+	main.effects.ring(bc, 46.0, 0.35, 3.0, Color.WHITE)
+	main.effects.ring(bc, 26.0, 0.25, 2.0, CC.trail_outer)
+	main.add_shake(C.FIN_SLASH_SHAKE, C.FIN_SLASH_SHAKE_TIME, ang)
 	_enter(7)
 
 
 # ---- 8) 멈춘 세계: 시간 정지, 모든 소리 무음. 마지막 0.45초 납도 → "착" 과 동시에 시간 재개
 func _enter_freeze() -> void:
 	TimeManager.hold(true)
+	_stop_ring = 0.0
 	Audio.fade_all_sfx(C.FIN_SFX_CUT)
 	Audio.set_loop_volume(Audio.ambience_player(), 0.0, C.FIN_SFX_CUT)
 	resume_real = now() + C.FIN_FREEZE
@@ -343,6 +406,7 @@ func _tick_freeze() -> void:
 		TimeManager.hold(false)
 		p.finale_pose = ""
 		p.finale_k = 0.0
+		main.add_shake(C.FIN_RESUME_SHAKE, 0.15, PI / 2.0)
 		timeline.append([9, now()])
 		_enter(10)
 
@@ -447,6 +511,7 @@ func abort() -> void:
 		return
 	done = true
 	TimeManager.hold(false)
+	TimeManager.set_slow(1.0)
 	Audio.stop_loop(_hb, 0.0)
 	Audio.cancel_synced(_qd)
 	Audio.set_loop_volume(Audio.ambience_player(), _rain0, 0.2)
@@ -485,6 +550,21 @@ func _tick_fx(rd: float) -> void:
 			_cutflash = -1.0
 	if _topple >= 0.0:
 		_topple += rd
+	# 검기 · X 자: 멈춘 세계 동안엔 번쩍인 그대로
+	if not TimeManager.held:
+		if not _qi.is_empty():
+			_qi.t += rd
+			if _qi.t >= C.FIN_QI_TIME:
+				_qi = {}
+		if not _xcut.is_empty():
+			_xcut.t += rd
+			if _xcut.t >= C.FIN_QI_TIME:
+				_xcut = {}
+	if _stop_ring >= 0.0:
+		_stop_ring += rd
+		if _stop_ring >= C.FIN_STOP_RING_TIME:
+			_stop_ring = -1.0
+	_tint = minf(1.0, _tint + rd / 0.1) if step == 8 else maxf(0.0, _tint - rd / 0.15)
 
 
 ## 모자 챙 끝 (철견이 보는 쪽으로 가장 튀어나온 점 · 그중 아래) — 빗방울이 맺히는 곳
@@ -533,6 +613,10 @@ func _draw() -> void:
 				draw_rect(shp[1], Color.BLACK)
 		draw_set_transform_matrix(Transform2D.IDENTITY)
 		return
+	# 멈춘 세계: 화면이 푸르스름하게
+	if _tint > 0.0:
+		var tc: Color = C.FIN_STOP_TINT
+		draw_rect(main.view_rect().grow(32.0), Color(tc, tc.a * _tint))
 	# 빗방울
 	if not _drop.is_empty():
 		var dp: Vector2 = _drop.pos
@@ -557,10 +641,15 @@ func _draw() -> void:
 		if _auto_flash >= 0.0:
 			var a := 1.0 - clampf(_auto_flash / C.FIN_AUTO_FLASH, 0.0, 1.0)
 			draw_circle(p.center().round(), Config.approach.APPROACH_TARGET_RADIUS + 4.0, Color(1, 1, 1, 0.85 * a))
-	# 멈춘 총알 · 갈라진 두 조각
+	# 총알 (날아오는 동안 꼬리 · 앞에 떠 있으면 떨림) · 갈라진 두 조각
 	if not _bullet.is_empty():
-		var bp: Vector2 = Vector2(_bullet.pos).round()
-		draw_rect(Rect2(bp - Vector2(2, 2), Vector2(4, 4)), Color(Config.colors.attack, 0.3))
+		var bp: Vector2 = (Vector2(_bullet.pos) + Vector2(_bullet.get("jit", Vector2.ZERO))).round()
+		var sp: float = float(_bullet.get("speed", 0.0))
+		if sp > 8.0 and step == 6:
+			var tail := minf(40.0, sp * 0.06)
+			draw_line(bp - Vector2(_bullet.dir) * tail, bp, Color(Config.colors.attack, 0.45), 1.0)
+		var pulse := 0.3 + 0.15 * sin(now() * 18.0) if arrive_real >= 0.0 else 0.3
+		draw_rect(Rect2(bp - Vector2(2, 2), Vector2(4, 4)), Color(Config.colors.attack, pulse))
 		draw_rect(Rect2(bp - Vector2(1, 1), Vector2(2, 2)), Config.colors.attack)
 	for h in _halves:
 		var a := clampf(1.0 - float(h.t) / 0.6, 0.0, 1.0)
@@ -573,6 +662,30 @@ func _draw() -> void:
 			var y: float = _line.y
 			draw_line(Vector2(v.position.x - 8, y), Vector2(v.end.x + 8, y), Color(1, 1, 1, 0.35), w + 2.0)
 			draw_line(Vector2(v.position.x - 8, y), Vector2(v.end.x + 8, y), Color.WHITE, w)
+	# 검기: 하늘 · 분홍 · 흰 3겹 초승달 띠 (베어 넘긴 길을 따라)
+	if not _qi.is_empty():
+		var k: float = clampf(float(_qi.t) / C.FIN_QI_TIME, 0.0, 1.0)
+		var CC: Dictionary = Config.colors
+		var layers := [[CC.trail_outer, 1.0, 0.45], [CC.trail_mid, 0.6, 0.75], [Color.WHITE, 0.28, 1.0]]
+		for L in layers:
+			_draw_qi(float(_qi.a), float(_qi.b), float(_qi.y), C.FIN_QI_THICK * float(L[1]) * (1.0 - k * 0.6),
+				Color(L[0], float(L[2]) * (1.0 - k)), k)
+	# 철견 몸을 가르는 X 자
+	if not _xcut.is_empty():
+		var k: float = clampf(float(_xcut.t) / C.FIN_QI_TIME, 0.0, 1.0)
+		var c: Vector2 = _xcut.c
+		for dv in [Vector2(14, -20), Vector2(-14, -20)]:
+			var a0: Vector2 = c - dv * (1.0 + k * 0.3)
+			var a1: Vector2 = c + dv * (1.0 + k * 0.3)
+			draw_line(a0, a1, Color(Config.colors.trail_outer, 0.4 * (1.0 - k)), 5.0)
+			draw_line(a0, a1, Color(1, 1, 1, 1.0 - k), 2.0 * (1.0 - k) + 0.5)
+	# 시간 정지 순간 퍼지는 고리
+	if _stop_ring >= 0.0:
+		var u: float = _stop_ring / C.FIN_STOP_RING_TIME
+		var e := 1.0 - pow(1.0 - u, 3.0)
+		var rc: Vector2 = _xcut.get("c", b.center())
+		draw_arc(rc, 8.0 + C.FIN_STOP_RING_R * e, 0.0, TAU, 64, Color(0.8, 0.9, 1.0, 0.6 * (1.0 - u)), 2.0)
+		draw_arc(rc, 4.0 + C.FIN_STOP_RING_R * 0.6 * e, 0.0, TAU, 48, Color(1, 1, 1, 0.35 * (1.0 - u)), 1.0)
 	# 철견 몸의 대각선 흰 선
 	if _cutflash >= 0.0:
 		var k := 1.0 - _cutflash / C.FIN_CUT_FLASH
@@ -582,3 +695,23 @@ func _draw() -> void:
 		var a1 := c + Vector2(9.0 * f, 20.0)
 		draw_line(a0, a1, Color(1, 1, 1, 0.3 * k), 5.0 * k + 1.0)
 		draw_line(a0, a1, Color(1, 1, 1, k), 2.0 * k + 0.5)
+
+
+## 검기 한 겹: x0 → x1 수평 초승달 (가운데가 두껍고 위로 휨, 양 끝은 뾰족). k = 사라지는 정도
+func _draw_qi(x0: float, x1: float, y: float, thick: float, col: Color, k: float) -> void:
+	if thick <= 0.2 or col.a <= 0.01:
+		return
+	const N := 24
+	var top := PackedVector2Array()
+	var bot := PackedVector2Array()
+	for i in N + 1:
+		var s := float(i) / N
+		var x := lerpf(x0, x1, s)
+		var bulge := sin(s * PI)
+		var cy := y - C.FIN_QI_BULGE * bulge * (1.0 + k)
+		var h := thick * pow(bulge, 0.7) * 0.5
+		top.append(Vector2(x, cy - h))
+		if i > 0 and i < N:                    # 양 끝은 위쪽 줄만 (같은 점이 두 번 들어가지 않게)
+			bot.append(Vector2(x, cy + h * 0.6))
+	bot.reverse()
+	draw_colored_polygon(top + bot, col)
