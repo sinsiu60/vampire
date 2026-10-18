@@ -258,16 +258,21 @@ const FIN_BREATH := 1.4                ## 총알 · 2겹 원이 숨쉬듯 밝아
 const FINALE_HINT_TIME := 3.0          ## 멈춘 뒤 이 시간 입력이 없으면 원이 한 번 크게 번쩍 (힌트)
 const FINALE_AUTO_TIME := 5.0          ## 멈춘 뒤 이 시간이면 자동 일섬
 const FIN_HINT_FLASH := 0.35
-## 9) 일섬 — 멈춘 시간 속에서 공백만 움직임
-const FIN_CUT_TIME := 0.25             ## 공백이 철견 뒤편까지 베어나가는 시간
+## 9) 일섬 — 멈춘 시간 속에서 공백만: 이동하는 모습 없이 순간이동하듯 철견 뒤편으로 (잔상만 남음)
+const FIN_CUT_TIME := 0.25             ## 순간이동 뒤 베어낸 끝 자세로 멈춰 있는 시간 (→ 납도)
+const FIN_CUT_ZOOM := 1.7              ## 클릭(반격) 순간 카메라가 공백을 확대
+const FIN_CUT_ZOOM_IN := 0.1           ## 확대되는 시간
+const FIN_CUT_ZOOM_OUT := 0.4          ## 시간 재개 뒤 대치 화면으로 돌아가는 시간
+const FIN_CUT_ZOOM_Y := -10.0          ## 확대 중심: 공백 몸 중심에서 위로
 const FIN_CUT_BEHIND := 40.0           ## 철견 뒤편 이 거리까지
 const FIN_GHOSTS := 6                  ## 이동 경로 잔상
 const FIN_INVERT_FRAMES := 2           ## 철견을 지나는 순간 흑백 반전 (흰 배경 + 검은 실루엣)
 const FIN_LINE_W := 3.0                ## 화면을 가로지르는 흰 선 (정지 동안 그대로)
 const FIN_HALF_GAP := 2.0              ## 갈라진 총알 두 조각이 위아래로 벌어진 거리 (정지 동안)
-const FIN_QI_THICK := 11.0             ## 베어나간 길의 검기 (흑백 세계에선 회색 · 색이 돌아오면 3색으로 사라짐)
-const FIN_QI_BULGE := 6.0
-const FIN_QI_TIME := 0.5               ## 시간 재개 뒤 검기가 사라지는 시간
+const FIN_QI_THICK := 13.0             ## 검기 (하늘 · 분홍 · 흰 3겹 초승달 띠, 흑백에서도 색 유지) — 정지 동안 번쩍인 그대로
+const FIN_QI_BULGE := 7.0
+const FIN_QI_OVER := 18.0              ## 검기가 출발점 · 도착점 너머로 뻗는 길이
+const FIN_QI_TIME := 0.6               ## 시간 재개 뒤 검기가 사라지는 시간
 const FIN_SPARKS := 30                 ## 철견을 지나는 순간 불꽃 (정지 동안 공중에 멈춤)
 ## 10) 납도 (여전히 정지)
 const FIN_SHEATHE_HOLD := 1.0          ## 베어낸 끝 자세 → 납도 끝까지

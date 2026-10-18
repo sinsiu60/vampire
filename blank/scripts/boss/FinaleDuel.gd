@@ -9,7 +9,7 @@ class_name FinaleDuel
 ##  → 9 일섬 → 10 납도 → [11 시간 재개 + 색 복귀] → 12 쓰러짐 → 13 여운 → 끝 (출구 문은 Main 의 보스 처치 뒤 타이머)
 ## 입력: 총알이 완전히 멈추기 전 클릭 = 버퍼 → 멈추는 순간 일섬 · 멈춘 뒤 클릭 = 즉시 ·
 ##       멈춘 뒤 FINALE_HINT_TIME 원이 크게 번쩍 (힌트) · FINALE_AUTO_TIME 자동 일섬. 4 움찔 중 클릭은 무시 (버퍼에도 안 남김)
-## 그리기: 이 노드 (월드, 흑백 후처리 아래) + 색 유지 층 (_color — 흑백 층 위 CanvasLayer, 빗방울 · 총알 · 2겹 원 · 일섬 흰 선)
+## 그리기: 이 노드 (월드, 흑백 후처리 아래) + 색 유지 층 (_color — 흑백 층 위 CanvasLayer, 빗방울 · 총알 · 2겹 원 · 일섬 흰 선 · 검기)
 
 const C := preload("res://scripts/boss/CheolgyeonConfig.gd")
 const GRAY_SHADER := preload("res://shaders/finale_gray.gdshader")
@@ -69,6 +69,8 @@ var _qi := {}                    # 검기 { a, b, y, t } — 정지 동안 t 멈
 var _cutflash := -1.0            # 철견 몸 대각선 흰 선
 var _topple := -1.0
 var _cam_ret := {}               # 13 카메라 되돌림 { c, z, t }
+var _cam_anim := {}              # 반격 확대 · 되돌림 { fc, fz, tc, tz, t, dur }
+var _cam_pre := {}               # 반격 직전 카메라 (재개 뒤 여기로)
 var _gray_layer: CanvasLayer
 var _gray_rect: ColorRect
 var _color_layer: CanvasLayer
@@ -368,7 +370,9 @@ func _tick_stopped(click: bool) -> void:
 		_cut("auto")
 
 
-# ---- 9) 일섬: 시간은 여전히 정지 — 공백만 실제 시간으로 베어나감. 총알을 위아래로 가르고 철견을 관통해 뒤편 40px 까지
+# ---- 9) 일섬: 시간은 여전히 정지 — 이동하는 모습 없이 순간이동하듯 철견 뒤편 40px 로 (경로에 잔상 6).
+##       같은 순간 총알이 위아래 두 조각으로 갈라져 공중에 멈추고 (bullet_split), 철견을 지난 것으로 execute + 흑백 반전 2프레임 ·
+##       불꽃 · 화면을 가로지르는 흰 선 · 검기. 카메라는 공백을 확대
 func _cut(by: String) -> void:
 	if step != 8:
 		return
@@ -379,48 +383,41 @@ func _cut(by: String) -> void:
 	_ring = false
 	_hint_t = -1.0
 	_orig = p.global_position
+	var oc := p.center()
 	var w: float = main.room.size_px().x
 	_dest_x = clampf(b.global_position.x + _side * C.FIN_CUT_BEHIND, 12.0, w - 12.0)
 	p.finale_pose = "cut_end"
 	p.facing = int(_side)
-	# 공백 몸 중심이 총알을 지나는 순간 = 가르는 순간 (bullet_split 타격)
-	var span := absf(_dest_x - _orig.x)
-	var fb := clampf(absf(float(_bullet.pos.x) - _orig.x) / maxf(span, 1.0), 0.0, 1.0)
-	split_real = cut_real + C.FIN_CUT_TIME * fb
-	Audio.play_synced_real("bullet_split", split_real)
-	_line = { "y": p.center().y, "full": false }
-	_qi = { "a": _orig.x - _side * 10.0, "b": _orig.x, "y": p.center().y, "t": 0.0 }
-	_ghosts = 0
-	_enter(9)
-
-
-func _tick_cut() -> void:
-	var u := clampf(st / C.FIN_CUT_TIME, 0.0, 1.0)
-	var x := lerpf(_orig.x, _dest_x, u)
-	# 잔상 6개: 지나간 자리마다
-	while _ghosts < C.FIN_GHOSTS and u >= (float(_ghosts) + 0.5) / C.FIN_GHOSTS:
-		var gk := (float(_ghosts) + 0.5) / C.FIN_GHOSTS
+	for i in C.FIN_GHOSTS:
+		var gk := (float(i) + 0.5) / C.FIN_GHOSTS
 		p.add_ghost(Vector2(lerpf(_orig.x, _dest_x, gk), _orig.y))
-		_ghosts += 1
-	p.global_position = Vector2(x, _orig.y)
+	p.global_position = Vector2(_dest_x, _orig.y)
 	p.velocity = Vector2.ZERO
-	_qi.b = x + _side * 10.0
-	# 총알을 가름: 두 조각이 위아래로 갈라진 채 공중에 멈춤
-	if not _bullet.is_empty() and now() >= split_real - 1e-6:
+	# 총알을 가름 (두 조각은 갈라진 채 정지)
+	split_real = cut_real
+	Audio.play_synced_real("bullet_split", split_real)
+	if not _bullet.is_empty():
 		var bp: Vector2 = _bullet.pos
 		_halves = [{ "pos": bp + Vector2(0, -C.FIN_HALF_GAP), "vel": Vector2.ZERO, "t": 0.0, "up": true },
 			{ "pos": bp + Vector2(0, C.FIN_HALF_GAP), "vel": Vector2.ZERO, "t": 0.0, "up": false }]
 		_bullet = {}
-		timeline.append([-9, now()])          # 갈라짐
-	# 철견을 지남: execute + 흑백 반전 2프레임 + 불꽃 (정지라 공중에 멈춤)
-	if pass_real < 0.0 and (x - b.global_position.x) * _side >= 0.0:
-		pass_real = now()
-		Audio.sfx("execute")
-		_flash_ticks = C.FIN_INVERT_FRAMES
-		_sparks(b.center())
-		timeline.append([-91, now()])         # 관통
-	if u >= 1.0:
-		_line.full = true
+	# 철견을 지남
+	pass_real = cut_real
+	Audio.sfx("execute")
+	_flash_ticks = C.FIN_INVERT_FRAMES
+	_sparks(b.center())
+	_line = { "y": oc.y, "full": true }
+	_qi = { "a": oc.x - _side * C.FIN_QI_OVER, "b": p.center().x + _side * C.FIN_QI_OVER, "y": oc.y, "t": 0.0 }
+	# 카메라: 공백을 확대
+	_cam_pre = _cam.duplicate()
+	_cam_anim = { "fc": Vector2(_cam.center), "fz": float(_cam.zoom), "tc": p.center() + Vector2(0, C.FIN_CUT_ZOOM_Y),
+		"tz": C.FIN_CUT_ZOOM, "t": 0.0, "dur": C.FIN_CUT_ZOOM_IN }
+	timeline.append([-9, now()])
+	_enter(9)
+
+
+func _tick_cut() -> void:
+	if st >= C.FIN_CUT_TIME - 1e-6:
 		_enter(10)
 
 
@@ -473,6 +470,9 @@ func _resume() -> void:
 		arena.rain_mul = 1.0
 	Audio.set_loop_volume(Audio.ambience_player(), C.FIN_RAIN_VOL, 0.1)
 	main.finale_boss_down(b, C.FIN_FALL, C.FIN_FALL + C.FIN_AFTER)
+	if not _cam_pre.is_empty():
+		_cam_anim = { "fc": Vector2(_cam.center), "fz": float(_cam.zoom), "tc": Vector2(_cam_pre.center), "tz": float(_cam_pre.zoom),
+			"t": 0.0, "dur": C.FIN_CUT_ZOOM_OUT }
 	timeline.append([11, now()])
 	_enter(12)
 
@@ -579,6 +579,12 @@ func abort() -> void:
 
 # ---------------------------------------------------------------- 효과 (실제 시간)
 func _tick_fx(rd: float) -> void:
+	if not _cam_anim.is_empty():
+		_cam_anim.t += rd
+		var k := _smooth(float(_cam_anim.t) / float(_cam_anim.dur))
+		_cam = { "center": Vector2(_cam_anim.fc).lerp(Vector2(_cam_anim.tc), k), "zoom": lerpf(float(_cam_anim.fz), float(_cam_anim.tz), k) }
+		if k >= 1.0:
+			_cam_anim = {}
 	if not _ripple.is_empty():
 		_ripple.t += rd
 		if _ripple.t >= C.FIN_RIPPLE:
@@ -663,14 +669,6 @@ func _draw() -> void:
 		if u > 0.3:
 			draw_arc(Vector2.ZERO, 1.0 + C.FIN_RIPPLE_R * (u - 0.3), 0.0, TAU, 24, Color(C.FIN_DROP_COLOR, (1.0 - u) * 0.6), 1.0)
 		draw_set_transform_matrix(Transform2D.IDENTITY)
-	# 검기: 베어나간 길의 3겹 초승달 (흑백 동안 회색, 색이 돌아오면 하늘 · 분홍 · 흰으로 사라짐)
-	if not _qi.is_empty():
-		var k: float = clampf(float(_qi.t) / C.FIN_QI_TIME, 0.0, 1.0)
-		var CC: Dictionary = Config.colors
-		var layers := [[CC.trail_outer, 1.0, 0.4], [CC.trail_mid, 0.6, 0.7], [Color.WHITE, 0.28, 0.95]]
-		for L in layers:
-			_draw_qi(float(_qi.a), float(_qi.b), float(_qi.y), C.FIN_QI_THICK * float(L[1]) * (1.0 - k * 0.6),
-				Color(L[0], float(L[2]) * (1.0 - k)), k)
 	# 철견 몸의 대각선 흰 선
 	if _cutflash >= 0.0:
 		var k := 1.0 - _cutflash / C.FIN_CUT_FLASH
@@ -683,7 +681,7 @@ func _draw() -> void:
 
 
 ## 검기 한 겹: x0 → x1 수평 초승달 (가운데가 두껍고 위로 휨, 양 끝은 뾰족). k = 사라지는 정도
-func _draw_qi(x0: float, x1: float, y: float, thick: float, col: Color, k: float) -> void:
+func _draw_qi(ci: CanvasItem, x0: float, x1: float, y: float, thick: float, col: Color, k: float) -> void:
 	if thick <= 0.2 or col.a <= 0.01 or absf(x1 - x0) < 2.0:
 		return
 	const N := 24
@@ -699,7 +697,7 @@ func _draw_qi(x0: float, x1: float, y: float, thick: float, col: Color, k: float
 		if i > 0 and i < N:                    # 양 끝은 위쪽 줄만 (같은 점이 두 번 들어가지 않게)
 			bot.append(Vector2(x, cy + h * 0.6))
 	bot.reverse()
-	draw_colored_polygon(top + bot, col)
+	ci.draw_colored_polygon(top + bot, col)
 
 
 # ---------------------------------------------------------------- 그리기 — 색 유지 층 (흑백 위): 빗방울 · 총알 · 2겹 원 · 일섬 흰 선
@@ -740,6 +738,14 @@ func _draw_color() -> void:
 	for h in _halves:
 		var a := clampf(1.0 - float(h.t) / 0.5, 0.0, 1.0)
 		ci.draw_rect(Rect2(Vector2(h.pos).round() - Vector2(1, 0), Vector2(2, 1)), Color(red, a))
+	# 검기: 하늘 · 분홍 · 흰 3겹 초승달 띠 (흑백에서도 색 유지, 정지 동안 번쩍인 그대로 → 재개 뒤 사라짐)
+	if not _qi.is_empty():
+		var k: float = clampf(float(_qi.t) / C.FIN_QI_TIME, 0.0, 1.0)
+		var CC: Dictionary = Config.colors
+		var layers := [[CC.trail_outer, 1.0, 0.45], [CC.trail_mid, 0.6, 0.75], [Color.WHITE, 0.28, 1.0]]
+		for L in layers:
+			_draw_qi(ci, float(_qi.a), float(_qi.b), float(_qi.y), C.FIN_QI_THICK * float(L[1]) * (1.0 - k * 0.6),
+				Color(L[0], float(L[2]) * (1.0 - k)), k)
 	# 일섬 흰 선 (3px, 정지 동안 그대로): 베어나가는 동안은 지나온 곳까지, 끝나면 화면 전체
 	if not _line.is_empty():
 		var v: Rect2 = main.view_rect()
