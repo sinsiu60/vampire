@@ -260,6 +260,15 @@ func debug_next_room() -> void:
 	restart()
 
 
+## F6 (보스방): 무대 페이즈 상태만 1 → 2 → 3 순환 (철견 패턴 · 체력은 그대로)
+func debug_arena_phase() -> void:
+	var a := room.get_node_or_null("Arena")
+	if a == null:
+		return
+	a.set_arena_phase(a.arena_phase % 3 + 1)
+	_toast = { "text": "무대 페이즈 %d (상태만)" % a.arena_phase, "t": 0.0 }
+
+
 ## F7: 지금 방 즉시 클리어 (연출 없이 적 제거 → 출구 열림)
 func debug_clear_room() -> void:
 	pending_shots.clear()

@@ -15,6 +15,11 @@ var layers: Array = []           # [{ tex, factor }]
 var rain_back: Rain
 var rain_front: Rain
 var painted := false             ## 지형을 팔레트로 다시 칠했는가 (Room.paint_terrain)
+var dark := false                ## 어두운 무대 (철견 페이즈 3): 하늘 · 건물 · 바닥 훨씬 어둡게, 창문 3 ~ 4%
+var dark_sky := [Color("#030308"), Color("#0A0810")]
+var dark_window_p := 0.035
+var dark_tint := 0.45
+var _seed := 1
 
 var _room_w := 480.0
 var _rng := RandomNumberGenerator.new()
@@ -34,17 +39,40 @@ func _ready() -> void:
 func build(room_w: float, seed: int, floor_y := 240.0, room: Node = null) -> void:
 	_room_w = room_w
 	base_y = floor_y
-	_rng.seed = 7919 * seed + 104729
-	layers = [{ "tex": _sky(), "factor": 0.0 }]
-	var far := _city(Palette.PARALLAX_FAR, Palette.FAR_BUILDING, Palette.FAR_WINDOW, Vector2(90, 170), Vector2(26, 58), 0.18, true)
-	layers.append(far)
-	layers.append(_city(Palette.PARALLAX_NEAR, Palette.NEAR_BUILDING, Palette.NEAR_WINDOW, Vector2(50, 110), Vector2(30, 64), 0.12, false))
+	_seed = seed
+	_build_layers()
 	if room != null:
 		rain_back.room = room
 		rain_front.room = room
 		if room.get("paint_terrain"):
 			_paint_terrain(room)
 	_parallax.queue_redraw()
+
+
+func _build_layers() -> void:
+	_rng.seed = 7919 * _seed + 104729          # 같은 시드 = 같은 스카이라인 (어두워져도 건물 모양은 그대로)
+	layers = [{ "tex": _sky(), "factor": 0.0 }]
+	var t := dark_tint if dark else 1.0
+	var far := _city(Palette.PARALLAX_FAR, _dim(Palette.FAR_BUILDING, t), _dim(Palette.FAR_WINDOW, t), Vector2(90, 170), Vector2(26, 58),
+		dark_window_p if dark else 0.18, true)
+	layers.append(far)
+	layers.append(_city(Palette.PARALLAX_NEAR, _dim(Palette.NEAR_BUILDING, t), _dim(Palette.NEAR_WINDOW, t), Vector2(50, 110), Vector2(30, 64),
+		dark_window_p if dark else 0.12, false))
+	if _parallax != null:
+		_parallax.queue_redraw()
+
+
+static func _dim(c: Color, t: float) -> Color:
+	return Color(c.r * t, c.g * t, c.b * t, c.a)
+
+
+## 어두운 무대 켜고 끔 (철견 페이즈 3) — 하늘 · 건물을 다시 그리고 바닥도 어둡게
+func set_dark(on: bool) -> void:
+	if dark == on:
+		return
+	dark = on
+	_build_layers()
+	($Floor as Node2D).modulate = Color(dark_tint, dark_tint, dark_tint * 1.1) if dark else Color.WHITE
 
 
 ## 비 강도 (normal | heavy | dark) · 낙하 속도 배율
@@ -62,7 +90,9 @@ func _sky() -> ImageTexture:
 	var img := Image.create(W, H, false, Image.FORMAT_RGBA8)
 	for y in H:
 		var u := clampf(float(y) / maxf(1.0, base_y), 0.0, 1.0)        # 바닥 높이에서 가장 밝은 아래 색
-		img.fill_rect(Rect2i(0, y, W, 1), Palette.SKY_TOP.lerp(Palette.SKY_BOTTOM, u))
+		var top: Color = dark_sky[0] if dark else Palette.SKY_TOP
+		var bot: Color = dark_sky[1] if dark else Palette.SKY_BOTTOM
+		img.fill_rect(Rect2i(0, y, W, 1), top.lerp(bot, u))
 	return ImageTexture.create_from_image(img)
 
 
@@ -99,6 +129,8 @@ func _city(factor: float, body: Color, win: Color, hr: Vector2, wr: Vector2, win
 	# 4) 먼 네온 (10×3) + 글로우 (네온만 번짐)
 	for p in neons:
 		var c: Color = Palette.DISTANT_NEON[_rng.randi() % Palette.DISTANT_NEON.size()]
+		if dark:
+			c = _dim(c, dark_tint)
 		_blend(img, Rect2i(p.x - 3, p.y - 3, 16, 9), Color(c, 0.10))
 		_blend(img, Rect2i(p.x - 1, p.y - 1, 12, 5), Color(c, 0.22))
 		_fill(img, p.x, p.y, 10, 3, c)

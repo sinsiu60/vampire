@@ -773,7 +773,7 @@ func _cine_tick(main: Node) -> void:
 					Audio.sfx("flashbang", "", 1.0, true)
 					if Settings.on("screen_flash"):
 						main.screen_fx.flash(Color.WHITE, 1.0, C.TR3_WHITE)
-					arena.set_blackout(true)
+					arena.set_arena_phase(3, false)     # 무대 상태 → 페이즈 3 (어둠 · 조명 깨짐 · 어두운 하늘)
 					Audio.set_muffled(true)
 					_cine.unmuffle = tt + C.TR3_MUFFLE
 		if _cine.has("unmuffle") and tt >= float(_cine.unmuffle):

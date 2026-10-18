@@ -316,15 +316,15 @@ const RAIN_COUNT := 70                 ## 화면 안 빗줄기 수 (폭우 = 2�
 const RAIN_SPEED := 420.0
 const RAIN_LEN := 7.0
 const RAIN_COLOR := Color(0.55, 0.65, 0.85, 0.22)
-const DARKNESS := 0.9                  ## 정전 어둠 (0 ~ 1)
-const MUZZLE_LIGHT_R := 80.0           ## 총구 섬광 빛 반지름 (정전 중 주변이 보임)
-const MUZZLE_LIGHT_TIME := 0.14
+const DARKNESS := 0.5                  ## 정전 어둠 (0 ~ 1) — 무대가 희미하게 보일 만큼 (번개 때 전체가 보임)
+const MUZZLE_LIGHT_R := 90.0           ## 총구 섬광 빛 반지름 (정전 중 주변만 따뜻하게 밝혀짐)
+const MUZZLE_LIGHT_TIME := 0.15
 const LIGHTNING_P12 := Vector2(8.0, 15.0)   ## 번개 간격 (초) — 페이즈 1·2 (분위기용)
 const LIGHTNING_P3 := Vector2(4.0, 6.0)     ## 페이즈 3
 const LIGHTNING_SECOND := 0.1          ## 1프레임 하얗게 → 이 뒤 약하게 한 번 더
 const LIGHTNING_THUNDER := 0.5         ## → 이 뒤 thunder.wav
 const LIGHTNING_REVEAL := 0.35         ## 번개 뒤 어둠이 돌아오는 시간
-const SIGN_SIZE := Vector2(10, 30)     ## 떨어진 네온 간판 (바닥 장애물 + 도탄 반사판)
+const SIGN_SIZE := Vector2(96, 30)     ## 네온 간판 (떨어지면 바닥 장애물 — 올라설 수 있음 + 도탄 반사판)
 
 # ---------------------------------------------------------------- 무대 그림 (배경 리디자인 2단계, 색은 Palette)
 ## 사양 좌표는 바닥 222 기준 → 이 방 바닥 240 이라 y 를 STAGE_Y 만큼 내림 (충돌은 그대로).
@@ -354,6 +354,35 @@ const RAIL_H := 14.0
 const RAIL_GAP := 5.0
 const PUDDLES := [Rect2(60, 240, 70, 6), Rect2(170, 250, 90, 7), Rect2(300, 236, 80, 5), Rect2(400, 252, 60, 6)]   ## 사양 좌표 (바닥 222)
 const PUDDLE_COLOR := Color("#10111A")
+
+# ---------------------------------------------------------------- 페이즈별 무대 상태 (배경 리디자인 3단계 — BossArena.set_arena_phase)
+## 페이즈 2 (물탱크 폭발 순간): 비 heavy · 물탱크 총알구멍 3개 + 오른쪽 아래로만 휘는 물줄기 (철견을 가리지 않게) ·
+##   간판 체인이 끊어져 SIGN_FALL 초 낙하 → 왼쪽 위 x SIGN_DOWN_X, 오른쪽이 SIGN_TILT° 낮게 기울어 낮은 모서리가 SIGN_SINK 만큼 바닥에 박힘
+##   (올라설 수 있는 바닥 장애물 + 도탄 반사면) · 간판 아래 분홍 반사광 · 오른쪽 끝 노란 불꽃 · 끊어진 체인은 원래 자리에
+## 페이즈 3 (마지막 조명이 깨지는 순간): 조명 3개 깨짐 (원뿔 빛 없음 · 바닥에 유리 조각) · 하늘 · 건물 · 바닥 훨씬 어둡게 ·
+##   간판은 어두운 자주로 희미하게 · 물줄기 1가닥 · 비 dark · 비네트 · 총구 섬광 주변만 따뜻한 빛 · 번개 때 전체가 보임
+const SIGN_FALL := 0.4
+const SIGN_DOWN_X := 190.0
+const SIGN_TILT := 9.0
+const SIGN_SINK := 6.0
+const SIGN_GLOW := Rect2(186, 2, 114, 28)              ## 떨어진 간판 아래 분홍 반사광 (x 186 ~ 300, 바닥 +2 ~ +30 — 사양 띠 기준)
+const SIGN_GLOW_ALPHA := 0.15
+const SIGN_SPARK_EVERY := Vector2(0.6, 1.6)            ## 간판 오른쪽 끝 노란 불꽃 간격 (초)
+const SIGN_SPARKS := Vector2i(2, 4)
+const SIGN_CHAIN_LEFT := 9.0                           ## 끊어진 체인이 원래 자리에 남는 길이
+const TANK_HOLES := [Vector2(26, 18), Vector2(32, 32), Vector2(22, 42)]   ## 물탱크 왼쪽 위 기준 총알구멍
+const JET_STRANDS := Vector2i(2, 3)                    ## 구멍마다 물줄기 가닥
+const JET_SPEED := Vector2(26.0, 60.0)                 ## 물줄기 가로 초속 (오른쪽으로만)
+const JET_GRAVITY := 240.0
+const JET_ALPHA := 0.55
+const JET_ALPHA_DARK := 0.3                            ## 페이즈 3: 1가닥만 약하게
+const GLASS_PIXELS := Vector2i(5, 8)                   ## 깨진 조명 아래 바닥 유리 조각
+const DARK_SKY_TOP := Color("#030308")
+const DARK_SKY_BOTTOM := Color("#0A0810")
+const DARK_WINDOW_P := 0.035                           ## 건물 창문 3 ~ 4%
+const DARK_TINT := 0.45                                ## 건물 · 바닥 · 구조물 밝기 배율
+const VIGNETTE := 0.6                                  ## 화면 가장자리 비네트 (정전)
+const MUZZLE_WARM := Color(1.0, 0.72, 0.42, 0.22)      ## 총구 섬광 빛 색 (따뜻하게, a = 덧칠 세기)
 
 # ---------------------------------------------------------------- 키포즈 (예고 정지 → 1프레임 전환 → 여운 정지)
 const SNAP_GHOST_TIME := 0.16          ## 전환 순간 남는 이전 포즈 잔상 수명

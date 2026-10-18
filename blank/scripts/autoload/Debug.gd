@@ -76,7 +76,11 @@ func _input(event: InputEvent) -> void:
 			if not debug_mode() or main == null or menu_open:
 				return
 			if event.physical_keycode == KEY_F6:
-				main.debug_next_room()
+				# 보스방: 무대 페이즈 상태 1 → 2 → 3 순환 (연출 없이 상태만) · 다른 방: 다음 방으로
+				if main.room.get_node_or_null("Arena") != null:
+					main.debug_arena_phase()
+				else:
+					main.debug_next_room()
 			else:
 				main.debug_clear_room()
 		KEY_F12:

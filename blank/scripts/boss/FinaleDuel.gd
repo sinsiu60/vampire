@@ -444,7 +444,7 @@ func _fits(x: float, y: float) -> bool:
 	box.size = Vector2(float(P.w), float(P.h) - 2.0)         # 바닥에 닿은 발은 빼고 (1px 띄움)
 	q.shape = box
 	q.transform = Transform2D(0.0, Vector2(x, y - float(P.h) / 2.0 - 1.0))
-	q.collision_mask = Config.layers.terrain
+	q.collision_mask = Config.layers.terrain | Config.layers.platform   # 떨어진 간판 (발판 층) 속에도 안 들어가게
 	return main.get_world_2d().direct_space_state.intersect_shape(q, 1).is_empty()
 
 

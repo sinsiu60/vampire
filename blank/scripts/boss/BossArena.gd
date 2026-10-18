@@ -1,15 +1,15 @@
 extends Node2D
 class_name BossArena
 ## 철견 보스방 무대 (room_06 의 "Arena"): 물탱크 · 네온 간판 · 조명 3개, 비 (폭우 = 2배), 정전 어둠 + 빛, 번개.
-## 페이즈 전환 연출에서 Main 이 부름: burst_tank · drop_sign · break_lamp · set_storm · set_blackout.
-## 체크포인트 재시작은 apply_phase(페이즈) 로 그 페이즈 시작 상태를 바로 만듦.
+## 페이즈 전환 연출에서 철견이 부름: burst_tank (→ set_arena_phase(2)) · drop_sign · break_lamp (마지막 → set_arena_phase(3)) · set_storm.
+## 체크포인트 재시작 · F6 (보스방) 은 set_arena_phase(페이즈) 로 그 페이즈의 무대 상태를 바로 만듦 (연출 없이).
 ## 그리기 층 (z, 절대값): 무대 소품 -1 · 비 (1장 공통 Rain — Background.tscn 의 RainBack -1 · RainFront 9) · 어둠 20
 ##   (조준선 · 원 · 보라 예고는 30 — 어둠 위). 비 강도: 평소 normal · 폭우 heavy · 정전 dark
 
 const C := preload("res://scripts/boss/CheolgyeonConfig.gd")
 const DARK_SHADER := preload("res://shaders/darkness.gdshader")
 
-@export var sign_floor_x := 190.0                  ## 떨어져 박히는 x
+@export var sign_floor_x := 190.0                  ## 바닥 높이를 재는 x (떨어진 간판 자리)
 ## 무대 소품 위치는 CheolgyeonConfig 의 무대 그림 블록 (WIRE_* · LAMP_* · SIGN_RECT · TANK_RECT · RAIL_* · PUDDLES) — 색은 Palette
 var sign_hang: Vector2 = C.SIGN_RECT.get_center()  ## 매달린 네온 간판 중앙
 var lamp_xs: Array = C.LAMP_XS
@@ -24,6 +24,12 @@ var phase_hint := 1              ## 번개 간격 (페이즈 3 이면 자주)
 var lightning_on := true         ## 피날레 결투 중엔 저절로 치지 않음
 var spots: Array = []            ## 정전 속에서도 둘레가 보이는 노드 (피날레 결투: 철견 · 플레이어)
 var rain_mul := 1.0              ## 빗줄기 낙하 속도 배율 (피날레 빗방울 구간 0.1). 시간 정지면 저절로 멈춤
+var arena_phase := 1             ## 무대 상태 1 ~ 3 (set_arena_phase)
+var sign_sparks := 0             ## 간판 불꽃 터진 수 (테스트)
+
+var _jets: Array = []            # 물줄기 { o (전역 구멍), vx, vy, ph }
+var _glass: Array = []           # 바닥 유리 조각 [Vector2]
+var _spark_t := 1.0
 
 var _sign_t := 0.0
 var _sign_body: StaticBody2D
@@ -46,7 +52,7 @@ func _ready() -> void:
 	_sign_body.collision_mask = 0
 	var cs := CollisionShape2D.new()
 	var rs := RectangleShape2D.new()
-	rs.size = C.SIGN_SIZE
+	rs.size = C.SIGN_SIZE         # 기울어진 96×30 판 그대로 (_place_sign 이 몸 전체를 기울임)
 	cs.shape = rs
 	_sign_body.add_child(cs)
 	add_child(_sign_body)
@@ -81,15 +87,46 @@ func _main() -> Node:
 # ---------------------------------------------------------------- 페이즈 상태
 ## 체크포인트: 그 페이즈 시작 상태로 바로 (연출 없이)
 func apply_phase(p: int) -> void:
-	phase_hint = p
-	tank_burst = p >= 2
-	storm = p >= 2
-	if p >= 2:
-		sign_state = "down"
+	set_arena_phase(p)
+
+
+## 무대 상태 (보이는 것 + 떨어진 간판 충돌). instant = 연출 없이 바로 (체크포인트 · F6).
+##  연출 중: 페이즈 2 는 물탱크 폭발 순간 (간판은 그 뒤 drop_sign 으로 떨어짐), 페이즈 3 은 마지막 조명이 깨지는 순간
+func set_arena_phase(n: int, instant := true) -> void:
+	arena_phase = clampi(n, 1, 3)
+	phase_hint = arena_phase
+	tank_burst = arena_phase >= 2
+	storm = arena_phase >= 2
+	if tank_burst and _jets.is_empty():
+		_make_jets()
+	if not tank_burst:
+		_jets = []
+	if arena_phase == 1:
+		sign_state = "hang"
+		_sign_body.process_mode = Node.PROCESS_MODE_DISABLED
+		(_sign_body.get_child(0) as CollisionShape2D).disabled = true
+		lamps = [true, true, true]
+		_glass = []
+	elif instant and sign_state != "down":
 		_place_sign()
-	lamps = [p < 3, p < 3, p < 3]
-	set_blackout(p >= 3)
+	if arena_phase == 3:
+		for i in lamps.size():
+			if lamps[i] or _glass.is_empty():
+				_drop_glass(i)
+		lamps = [false, false, false]
+	elif instant:
+		lamps = [true, true, true]
+		_glass = []
+	set_blackout(arena_phase >= 3)
+	self_modulate = Color(C.DARK_TINT, C.DARK_TINT, C.DARK_TINT * 1.1) if arena_phase >= 3 else Color.WHITE
+	var main := _main()
+	if main != null and main.background != null:
+		main.background.dark_sky = [C.DARK_SKY_TOP, C.DARK_SKY_BOTTOM]
+		main.background.dark_window_p = C.DARK_WINDOW_P
+		main.background.dark_tint = C.DARK_TINT
+		main.background.set_dark(arena_phase >= 3)
 	_schedule_bolt()
+	queue_redraw()
 
 
 func set_storm(on: bool) -> void:
@@ -107,7 +144,7 @@ func is_dark() -> bool:
 
 ## 물탱크 폭발: 파편 + 물보라 (소리 · 흔들림은 Main)
 func burst_tank() -> void:
-	tank_burst = true
+	set_arena_phase(2, false)       # 무대 상태 → 페이즈 2 (간판은 drop_sign 이 따로 떨어뜨림)
 	var c := tank_center()
 	for i in 14:
 		_shards.append({ "pos": c + Vector2(randf_range(-10, 10), randf_range(-8, 8)), "vel": Vector2(randf_range(-160, 160), randf_range(-260, -60)),
@@ -138,9 +175,28 @@ func sign_down() -> bool:
 
 func _place_sign() -> void:
 	sign_state = "down"
-	_sign_body.position = Vector2(sign_floor_x, floor_y - C.SIGN_SIZE.y / 2.0)
+	var xf := sign_down_xf()
+	_sign_body.position = xf * (C.SIGN_SIZE / 2.0)
+	_sign_body.rotation = xf.get_rotation()
 	_sign_body.process_mode = Node.PROCESS_MODE_INHERIT
 	(_sign_body.get_child(0) as CollisionShape2D).disabled = false
+
+
+## 떨어진 간판: 왼쪽 위 모서리 기준 변환 (오른쪽이 SIGN_TILT° 낮게, 오른쪽 아래 모서리가 바닥 SIGN_SINK 아래)
+func sign_down_xf() -> Transform2D:
+	var th := deg_to_rad(C.SIGN_TILT)
+	var w: float = C.SIGN_SIZE.x
+	var h: float = C.SIGN_SIZE.y
+	var top := floor_y + C.SIGN_SINK - w * sin(th) - h * cos(th)
+	return Transform2D(th, Vector2(C.SIGN_DOWN_X, roundf(top)))
+
+
+## 떨어진 간판 네 모서리 (전역): [왼쪽 위, 오른쪽 위, 오른쪽 아래, 왼쪽 아래]
+func sign_corners() -> Array:
+	var xf := sign_down_xf()
+	var w: float = C.SIGN_SIZE.x
+	var h: float = C.SIGN_SIZE.y
+	return [xf * Vector2(0, 0), xf * Vector2(w, 0), xf * Vector2(w, h), xf * Vector2(0, h)]
 
 
 ## 전선 높이 (x 에서)
@@ -159,11 +215,28 @@ func lamp_pos(i: int) -> Vector2:
 	return _shade_top(i) + Vector2(0, C.LAMP_SHADE.y)
 
 
+## 깨진 조명 아래 바닥 유리 조각
+func _drop_glass(i: int) -> void:
+	var x: float = lamp_xs[i]
+	for k in randi_range(C.GLASS_PIXELS.x, C.GLASS_PIXELS.y):
+		_glass.append(Vector2(roundf(x + randf_range(-14.0, 14.0)), floor_y - 1.0 - float(randi() % 2)))
+
+
+## 물탱크 총알구멍마다 오른쪽 아래로만 휘는 물줄기 2 ~ 3가닥
+func _make_jets() -> void:
+	_jets = []
+	for hp in C.TANK_HOLES:
+		var o: Vector2 = C.TANK_RECT.position + hp
+		for k in randi_range(C.JET_STRANDS.x, C.JET_STRANDS.y):
+			_jets.append({ "o": o, "vx": randf_range(C.JET_SPEED.x, C.JET_SPEED.y), "vy": randf_range(-14.0, 6.0), "ph": randf() })
+
+
 ## 조명 하나가 깨짐: 유리 파편 + 불꽃 (소리는 Main)
 func break_lamp(i: int) -> void:
 	if i < 0 or i >= lamps.size() or not lamps[i]:
 		return
 	lamps[i] = false
+	_drop_glass(i)
 	var c := lamp_pos(i) + Vector2(0, 4)
 	for k in 8:
 		_shards.append({ "pos": c, "vel": Vector2(randf_range(-90, 90), randf_range(-120, 20)), "rot": randf() * TAU,
@@ -174,20 +247,22 @@ func break_lamp(i: int) -> void:
 
 
 ## 도탄 반사면 (세로): [{ x, y0, y1, side }] — side = 면이 바라보는 쪽 (-1 왼쪽 · 1 오른쪽)
+## 떨어진 간판의 왼쪽 · 오른쪽 끝면 (9° 기운 거의 세로인 면 — 가운데 x 로 근사, 바닥 아래는 뺌)
 func reflectors() -> Array:
 	var out := []
 	if sign_state == "down":
-		var hx: float = C.SIGN_SIZE.x / 2.0
-		var y0: float = floor_y - C.SIGN_SIZE.y
-		out.append({ "x": sign_floor_x - hx, "y0": y0, "y1": floor_y, "side": -1, "name": "간판", "ray": false })
-		out.append({ "x": sign_floor_x + hx, "y0": y0, "y1": floor_y, "side": 1, "name": "간판", "ray": false })
+		var k := sign_corners()
+		var lx: float = (k[0].x + k[3].x) / 2.0
+		var rx: float = (k[1].x + k[2].x) / 2.0
+		out.append({ "x": lx, "y0": minf(k[0].y, k[3].y), "y1": minf(maxf(k[0].y, k[3].y), floor_y), "side": -1, "name": "간판", "ray": false })
+		out.append({ "x": rx, "y0": minf(k[1].y, k[2].y), "y1": minf(maxf(k[1].y, k[2].y), floor_y), "side": 1, "name": "간판", "ray": false })
 	return out
 
 
 # ---------------------------------------------------------------- 빛 · 번개
 ## 정전 중 순간 빛 (총구 섬광 등)
 func flash_light(pos: Vector2, r := C.MUZZLE_LIGHT_R, life := C.MUZZLE_LIGHT_TIME) -> void:
-	_lights.append({ "pos": pos, "r": r, "t": 0.0, "life": life })
+	_lights.append({ "pos": pos, "r": r, "t": 0.0, "life": life, "warm": true })
 	if _lights.size() > 8:
 		_lights.pop_front()
 
@@ -233,14 +308,28 @@ func _physics_process(delta: float) -> void:
 	# 간판 떨어지기 (실제 시간)
 	if sign_state == "falling":
 		_sign_t += rd
-		if _sign_t >= 0.35:
+		if _sign_t >= C.SIGN_FALL:
 			_place_sign()
 			var main := _main()
 			if main != null:
+				var k := sign_corners()
 				main.add_shake(4.0, 0.2, PI / 2.0)
-				main.effects.burst(Vector2(sign_floor_x, floor_y), 14, Color("#545a72"), 140.0, -PI / 2.0, 1.4, 0.4, {})
-				main.effects.burst(Vector2(sign_floor_x, floor_y - 20), 10, Config.colors.parry, 180.0, -PI / 2.0, PI, 0.25, { "glow": true, "streak": true })
+				main.effects.burst(Vector2(k[2].x, floor_y), 14, Palette.STRUCT_LIGHT, 140.0, -PI / 2.0, 1.4, 0.4, {})
+				main.effects.burst(Vector2((k[0].x + k[1].x) / 2.0, floor_y - 6.0), 10, Config.colors.parry, 180.0, -PI / 2.0, PI, 0.25, { "glow": true, "streak": true })
 			Audio.boss_armor(0.6)
+	# 떨어진 간판 오른쪽 끝: 가끔 노란 불꽃 (끊긴 전선)
+	if sign_state == "down" and arena_phase == 2:
+		_spark_t -= rd
+		if _spark_t <= 0.0:
+			_spark_t = randf_range(C.SIGN_SPARK_EVERY.x, C.SIGN_SPARK_EVERY.y)
+			var main := _main()
+			if main != null:
+				var k := sign_corners()
+				var at: Vector2 = k[1].lerp(k[2], 0.3)
+				for n in randi_range(C.SIGN_SPARKS.x, C.SIGN_SPARKS.y):
+					main.effects.spawn(at, Vector2(randf_range(10.0, 70.0), -randf_range(30.0, 110.0)), randf_range(0.15, 0.3),
+						Config.colors.parry if n % 2 == 0 else Config.colors.parry_hot, { "glow": true, "grav": 400.0 })
+				sign_sparks += 1
 	# 총구 빛 · 파편 (월드 시간)
 	for l in _lights:
 		l.t += rd
@@ -301,20 +390,30 @@ func _draw() -> void:
 			draw_rect(bulb, P.LAMP_LIGHT)
 		else:
 			draw_rect(bulb, P.STRUCT_EDGE)
-	# 네온 간판
+	# 네온 간판: 걸려 있음 → (체인 끊어짐) 낙하 → 바닥에 기울어져 박힘. 끊어진 체인은 원래 자리에
+	var r: Rect2 = C.SIGN_RECT
 	match sign_state:
 		"hang":
-			var r: Rect2 = C.SIGN_RECT
 			for cx in C.SIGN_CHAINS:
 				_draw_chain(Vector2(cx, roundf(wire_y(cx))), Vector2(cx, r.position.y))
 			_draw_neon(r.get_center(), 0.0, true)
-		"falling":
-			var u := clampf(_sign_t / 0.35, 0.0, 1.0)
-			var to := Vector2(sign_floor_x, floor_y - C.SIGN_SIZE.y / 2.0)
-			_draw_neon(sign_hang.lerp(to, u * u), u * u * PI / 2.0, true)
-		"down":
-			_draw_neon(Vector2(sign_floor_x, floor_y - C.SIGN_SIZE.y / 2.0), PI / 2.0, false)
+		"falling", "down":
+			for cx in C.SIGN_CHAINS:
+				var wy := roundf(wire_y(cx))
+				_draw_chain(Vector2(cx, wy), Vector2(cx, wy + C.SIGN_CHAIN_LEFT))
+			var down_c := sign_down_xf() * (C.SIGN_SIZE / 2.0)
+			var th := deg_to_rad(C.SIGN_TILT)
+			if sign_state == "falling":
+				var u := clampf(_sign_t / C.SIGN_FALL, 0.0, 1.0)
+				_draw_neon(sign_hang.lerp(down_c, u * u), th * u * u, true)
+			else:
+				if arena_phase == 2:
+					_draw_sign_glow()
+				_draw_neon(down_c, th, arena_phase < 3, arena_phase >= 3)
 	_draw_tank()
+	_draw_jets()
+	for g in _glass:         # 깨진 조명 아래 유리 조각
+		draw_rect(Rect2(g, Vector2.ONE), Color(Palette.SPLASH, 0.7))
 	_draw_rails()
 	_draw_puddles()
 	# 파편
@@ -335,7 +434,7 @@ func _draw_chain(a: Vector2, b: Vector2) -> void:
 
 
 ## 네온 간판 (96×30, 짙은 판 + 분홍 네온 획 8개 + 주변 분홍 글로우). lit = 켜짐
-func _draw_neon(c: Vector2, rot: float, lit: bool) -> void:
+func _draw_neon(c: Vector2, rot: float, lit: bool, dim := false) -> void:
 	var r: Rect2 = C.SIGN_RECT
 	var w := r.size.x
 	var h := r.size.y
@@ -348,7 +447,9 @@ func _draw_neon(c: Vector2, rot: float, lit: bool) -> void:
 	draw_rect(Rect2(-w / 2.0, -h / 2.0, w, h), C.SIGN_PLATE)
 	draw_rect(Rect2(-w / 2.0, -h / 2.0, w, h), P.STRUCT_EDGE, false, 1.0)
 	draw_rect(Rect2(-w / 2.0 + 1, -h / 2.0 + 1, w - 2, 1), Color(P.RIM, 0.35))
-	var col: Color = P.NEON_PINK if on else P.NEON_PINK_DARK
+	if dim:   # 페이즈 3: 어두운 자주로 희미하게
+		draw_rect(Rect2(-w / 2.0 - 3, -h / 2.0 - 3, w + 6, h + 6), Color(P.NEON_PINK_DARK, 0.08))
+	var col: Color = P.NEON_PINK if on else (Color(P.NEON_PINK_DARK, 0.75) if dim else P.NEON_PINK_DARK)
 	var o := Vector2(-w / 2.0, -h / 2.0)
 	for st in C.SIGN_STROKES:
 		var a: Vector2 = o + st[0]
@@ -360,6 +461,51 @@ func _draw_neon(c: Vector2, rot: float, lit: bool) -> void:
 		else:                             # 사선 획
 			draw_line(a + Vector2.ONE, b + Vector2.ONE, col, 2.0)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+## 떨어진 간판 아래 바닥 분홍 반사광 (사양 x 186 ~ 300 · 바닥 +2 ~ +30 → 바닥 아래 띠로 눌러 담음, 투명도 15%, 번짐)
+func _draw_sign_glow() -> void:
+	var g: Rect2 = C.SIGN_GLOW
+	var y0 := _floor_band(floor_y - C.STAGE_Y + g.position.y)
+	var y1 := _floor_band(floor_y - C.STAGE_Y + g.end.y)
+	for k in 4:      # 번짐: 가운데가 진하고 바깥으로 옅게
+		var gr := Rect2(g.position.x - k * 3.0, y0 - k, g.size.x + k * 6.0, y1 - y0 + k * 2.0)
+		draw_rect(gr, Color(Palette.NEON_PINK, C.SIGN_GLOW_ALPHA * (0.45 if k == 0 else 0.2)))
+
+
+## 물줄기: 총알구멍에서 오른쪽 아래로 휘는 1px 포물선 + 흘러내리는 물방울 + 바닥 물 튀김. 페이즈 3 은 1가닥만 약하게
+func _draw_jets() -> void:
+	if _jets.is_empty():
+		return
+	var n := 1 if arena_phase >= 3 else _jets.size()
+	var al: float = C.JET_ALPHA_DARK if arena_phase >= 3 else C.JET_ALPHA
+	var now := Time.get_ticks_msec() / 1000.0
+	for i in n:
+		var j: Dictionary = _jets[i]
+		var o: Vector2 = j.o
+		var vx: float = j.vx * (0.6 if arena_phase >= 3 else 1.0)
+		var vy: float = j.vy
+		var g: float = C.JET_GRAVITY
+		# 바닥까지 걸리는 시간
+		var dy := floor_y - o.y
+		var T := (-vy + sqrt(vy * vy + 2.0 * g * dy)) / g
+		var prev := o
+		var steps := 14
+		for k in range(1, steps + 1):
+			var t := T * float(k) / steps
+			var q := (o + Vector2(vx * t, vy * t + 0.5 * g * t * t)).round()
+			draw_line(prev, q, Color(Palette.SPLASH, al * (1.0 - 0.4 * float(k) / steps)), -1.0)
+			prev = q
+		# 흘러내리는 물방울 2개
+		for d in 2:
+			var u := fmod(now * 1.6 + float(j.ph) + d * 0.5, 1.0)
+			var t := T * u
+			draw_rect(Rect2((o + Vector2(vx * t, vy * t + 0.5 * g * t * t)).round(), Vector2.ONE), Color(Palette.SPLASH, al + 0.25))
+		# 바닥 물 튀김
+		var land := Vector2(o.x + vx * T, floor_y)
+		var sp := fmod(now * 5.0 + float(j.ph) * 3.0, 1.0)
+		draw_rect(Rect2((land + Vector2(-1.0 - sp * 2.0, -1.0 - sp * 2.0)).round(), Vector2.ONE), Color(Palette.SPLASH, al * (1.0 - sp)))
+		draw_rect(Rect2((land + Vector2(1.0 + sp * 2.0, -1.0 - sp * 1.5)).round(), Vector2.ONE), Color(Palette.SPLASH, al * (1.0 - sp)))
 
 
 ## 물탱크: 40×52 원통 (가로 줄무늬 10px · 왼쪽 림라이트 · 오른쪽 어두운 면) + 위 뚜껑 타원 + 다리 2개 (바닥까지)
@@ -385,8 +531,9 @@ func _draw_tank() -> void:
 	draw_circle(Vector2.ZERO, r.size.x / 2.0, P.STRUCT_LIGHT)
 	draw_arc(Vector2.ZERO, r.size.x / 2.0 - 1.0, PI, TAU, 24, Color(P.RIM, 0.6), 1.0)
 	draw_set_transform_matrix(Transform2D.IDENTITY)
-	if tank_burst:   # (3단계에서 총알구멍 · 물줄기로 바꿈) 임시: 구멍 3개
-		for hp in [Vector2(26, 18), Vector2(32, 32), Vector2(22, 42)]:
+	if tank_burst:   # 총알구멍 3개 (찢긴 테두리 1px)
+		for hp in C.TANK_HOLES:
+			draw_rect(Rect2(r.position + hp - Vector2(1, 1), Vector2(3, 3)), Color(P.RIM, 0.3))
 			draw_rect(Rect2(r.position + hp - Vector2(1, 1), Vector2(2, 2)), P.STRUCT_EDGE)
 
 
@@ -421,7 +568,8 @@ func _draw_puddles() -> void:
 		draw_circle(Vector2.ZERO, pr.size.x / 2.0, C.PUDDLE_COLOR)
 		draw_set_transform_matrix(Transform2D.IDENTITY)
 		var lw := roundf(pr.size.x * 0.45)
-		draw_rect(Rect2(roundf(c.x - lw / 2.0), roundf(c.y), lw, 1), Color(P.NEON_PINK, 0.55 if lamps.has(true) else 0.25))
+		if arena_phase < 3:
+			draw_rect(Rect2(roundf(c.x - lw / 2.0), roundf(c.y), lw, 1), Color(P.NEON_PINK, 0.55))
 
 
 func _draw_dark() -> void:
@@ -437,9 +585,11 @@ func _draw_dark() -> void:
 		if arr.size() >= 8:
 			break
 		var k: float = 1.0 - float(l.t) / float(l.life)
-		arr.append(Vector4(l.pos.x, l.pos.y, l.r, k))
+		arr.append(Vector4(l.pos.x, l.pos.y, l.r, k + (1.0 if l.get("warm", false) else 0.0)))   # 1 넘으면 따뜻한 빛
 	while arr.size() < 8:
 		arr.append(Vector4(0, 0, 1, 0))
 	mat.set_shader_parameter("lights", arr)
 	mat.set_shader_parameter("darkness", C.DARKNESS * (1.0 - _reveal))
+	mat.set_shader_parameter("vignette", C.VIGNETTE * (1.0 - _reveal))
+	mat.set_shader_parameter("warm", C.MUZZLE_WARM)
 	_dark.draw_rect(_view().grow(16.0), Color.WHITE)
