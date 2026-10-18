@@ -70,6 +70,7 @@ var _ghosts := 0
 var _qi := {}                    # 검기 { a, b, y, t } — 실제 시간: 뻗기 → 부풀기 · 일렁임 → 꼬리부터 걷힘
 var _qi_bits: Array = []         # 검기가 걷히며 떨어져 나가는 색 조각 { pos, vel, t, life, col, size }
 var _drift_from := 0.0           # 여세 시작 x (일섬 도착점)
+var _drift_dist := 0.0           # 여세로 실제 미끄러질 거리 (벽 · 닫힌 문 앞에서 멈춤)
 var _cutflash := -1.0            # 철견 몸 대각선 흰 선
 var _topple := -1.0
 var _cam_ret := {}               # 13 카메라 되돌림 { c, z, t }
@@ -395,6 +396,7 @@ func _cut(by: String) -> void:
 	var oc := p.center()
 	var w: float = main.room.size_px().x
 	_dest_x = clampf(b.global_position.x + _side * C.FIN_CUT_BEHIND, 12.0, w - 12.0)
+	_dest_x = _free_x(_dest_x, -_side, _orig.y)   # 벽 · 닫힌 문 속이면 철견 쪽으로 물러난 빈자리
 	p.finale_pose = "cut_end"
 	p.facing = int(_side)
 	for i in C.FIN_GHOSTS:
@@ -434,6 +436,38 @@ func _tick_cut() -> void:
 		_enter(10)
 
 
+## 발 위치 (x, y) 에 공백 몸이 들어갈 자리가 비었는가 — 지형 · 잠긴 문 (Door 의 충돌도 지형 층) 과 겹치면 false
+func _fits(x: float, y: float) -> bool:
+	var P: Dictionary = Config.player
+	var q := PhysicsShapeQueryParameters2D.new()
+	var box := RectangleShape2D.new()
+	box.size = Vector2(float(P.w), float(P.h) - 2.0)         # 바닥에 닿은 발은 빼고 (1px 띄움)
+	q.shape = box
+	q.transform = Transform2D(0.0, Vector2(x, y - float(P.h) / 2.0 - 1.0))
+	q.collision_mask = Config.layers.terrain
+	return main.get_world_2d().direct_space_state.intersect_shape(q, 1).is_empty()
+
+
+## x 에서 dir 쪽으로 1px 씩 물러나며 처음 비어 있는 x (못 찾으면 x 그대로)
+func _free_x(x: float, dir: float, y: float) -> float:
+	for i in 400:
+		var cx := x + dir * float(i)
+		if _fits(cx, y):
+			return cx
+	return x
+
+
+## from 에서 dir 쪽으로 최대 dist 만큼, 막히기 직전까지 갈 수 있는 거리
+func _free_run(from: float, dir: float, dist: float, y: float) -> float:
+	var d := 0.0
+	while d < dist:
+		var nd := minf(dist, d + 1.0)
+		if not _fits(from + dir * nd, y):
+			break
+		d = nd
+	return d
+
+
 ## 불꽃: 이미 퍼진 자리에서 시작 → 멈춘 세계에서 폭발이 공중에 활짝 핀 채로 멈춤 (흑백)
 func _sparks(c: Vector2) -> void:
 	var CC: Dictionary = Config.colors
@@ -453,6 +487,7 @@ func _enter_sheathe() -> void:
 	resume_real = now() + C.FIN_DRIFT
 	Audio.play_synced_real("sheathe", resume_real)
 	_drift_from = p.global_position.x
+	_drift_dist = _free_run(_drift_from, _side, C.FIN_DRIFT_DIST, p.global_position.y)
 	TimeManager.hold(false)
 	TimeManager.set_slow(C.FIN_DRIFT_SCALE0)
 	var d: Vector2 = Vector2(-_side, 0.0)
@@ -473,7 +508,7 @@ func _tick_sheathe() -> void:
 	# 미끄러짐: 점점 느려지며 멈춤
 	var su := clampf(st / C.FIN_DRIFT_SLIDE, 0.0, 1.0)
 	var w: float = main.room.size_px().x
-	var x := clampf(_drift_from + _side * C.FIN_DRIFT_DIST * (1.0 - pow(1.0 - su, 2.0)), 12.0, w - 12.0)
+	var x := clampf(_drift_from + _side * _drift_dist * (1.0 - pow(1.0 - su, 2.0)), 12.0, w - 12.0)
 	var moved := absf(x - p.global_position.x)
 	p.global_position.x = x
 	p.velocity = Vector2.ZERO
