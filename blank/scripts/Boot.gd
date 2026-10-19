@@ -11,6 +11,7 @@ const MAIN := preload("res://scenes/Main.tscn")
 const TITLE := preload("res://scenes/Title.tscn")
 const INTRO := preload("res://scenes/ChapterIntro.tscn")
 const CLEAR := preload("res://scenes/ChapterClear.tscn")
+const FEEDBACK := preload("res://scenes/Feedback.tscn")
 
 static var logo_done := false    ## 로고는 실행 후 처음 한 번만
 static var skip_title := false   ## 테스트 · 디버그: 로고 뒤 타이틀 없이 바로 게임 (환경 변수 BLANK_SKIP_TITLE 도 같음)
@@ -18,6 +19,7 @@ static var skip_title := false   ## 테스트 · 디버그: 로고 뒤 타이틀
 var title: Node = null           ## 지금 타이틀 화면 (없으면 null)
 var intro: Node = null           ## 지금 장 시작 카드
 var clear_screen: Node = null    ## 지금 장 클리어 화면
+var feedback: Node = null        ## 지금 플레이테스트 설문 화면
 var screen_name := ""            ## logo | title | intro | game | chapter_clear (테스트)
 
 @onready var screen: SubViewportContainer = $Screen
@@ -69,7 +71,7 @@ func _after_logo() -> void:
 
 ## 게임 화면 안의 지금 화면 (게임 · 타이틀 · 카드) 을 치움
 func _clear() -> void:
-	for n in [main, title, intro, clear_screen]:
+	for n in [main, title, intro, clear_screen, feedback]:
 		if n != null and is_instance_valid(n):
 			game.remove_child(n)
 			n.queue_free()
@@ -77,6 +79,8 @@ func _clear() -> void:
 	title = null
 	intro = null
 	clear_screen = null
+	feedback = null
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE      # 타이틀 · 카드 · 설문은 OS 커서 (게임에 들어가면 조준점이 다시 숨김)
 
 
 func _fade(to: float, time: float) -> void:
@@ -187,7 +191,10 @@ func _on_clear_to_title() -> void:
 		return
 	_busy = true
 	await _fade(1.0, float(Config.ui_style.FADE))
-	show_title()
+	if PlaytestLogger.should_ask_feedback("chapter_clear"):
+		_show_feedback("chapter_clear")      # 플레이테스트: 설문 → 타이틀
+	else:
+		show_title()
 	await get_tree().process_frame
 	await _fade(0.0, float(Config.ui_style.FADE))
 	_busy = false
@@ -261,3 +268,38 @@ func next_room() -> void:
 
 func transition_alpha() -> float:
 	return _veil.color.a
+
+
+## 게임 → 타이틀 (일시정지 "타이틀로"). 플레이테스트 빌드면 이번 세션 첫 번째일 때 설문 먼저
+func leave_to_title() -> void:
+	if PlaytestLogger.should_ask_feedback("to_title"):
+		_show_feedback("to_title")
+	else:
+		show_title()
+
+
+## 플레이테스트 설문 화면 (끝나면 페이드 → 타이틀)
+func _show_feedback(where: String) -> void:
+	get_tree().paused = false
+	Audio.stop_all()
+	Audio.set_ambience("")
+	TimeManager.reset()
+	_clear()
+	screen_name = "feedback"
+	feedback = FEEDBACK.instantiate()
+	feedback.where = where
+	feedback.finished.connect(_on_feedback_done)
+	game.add_child(feedback)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE      # 의견 칸 클릭 (게임 조준점은 OS 커서를 숨김)
+
+
+func _on_feedback_done(_submitted: bool) -> void:
+	while _busy:                         # 설문이 막 뜨는 페이드 중에 바로 건너뛰어도 기다렸다가 넘어감
+		await get_tree().process_frame
+	_busy = true
+	await _fade(1.0, float(Config.ui_style.FADE))
+	show_title()
+	await get_tree().process_frame
+	await _fade(0.0, float(Config.ui_style.FADE))
+	_busy = false
+

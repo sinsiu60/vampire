@@ -138,6 +138,6 @@ func _on_confirm(yes: bool) -> void:
 	PlaytestLogger.log_event("to_title")
 	var boot := get_tree().get_first_node_in_group("boot")
 	if boot != null:
-		boot.show_title()
+		boot.leave_to_title()                  # 플레이테스트 빌드면 설문 먼저
 	else:
 		get_tree().change_scene_to_file("res://scenes/Boot.tscn")

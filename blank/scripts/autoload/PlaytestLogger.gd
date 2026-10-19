@@ -29,6 +29,7 @@ var summary_path := ""
 var session_play := 0.0          ## 이번 세션 플레이 시간 (게임 화면 · 일시정지 제외, Main 이 tick)
 var _room_time := {}             # 방 키 → 이번 세션 그 방에 있던 플레이 시간
 var _events: Array = []          # 이번 세션 이벤트 { event, detail, room, play } (요약 계산)
+var feedbacks: Array = []        ## 이번 세션 설문 응답 (FeedbackScreen) — summary 끝 [피드백]
 var _last_room := "-"            # 마지막으로 들어간 방 (종료 기록 — 종료 순간엔 게임이 이미 치워져 있을 수 있음)
 
 
@@ -88,6 +89,22 @@ func tick(delta: float) -> void:
 	session_play += delta
 	var k := room_label()
 	_room_time[k] = float(_room_time.get(k, 0.0)) + delta
+
+
+## 설문을 띄울지: 1장 클리어 뒤엔 늘, 일시정지 → 타이틀로 는 이번 세션에 아직 설문을 안 했을 때만
+func should_ask_feedback(where: String) -> bool:
+	return active and (where == "chapter_clear" or feedbacks.is_empty())
+
+
+## 설문 응답 { where, fun, annoy, parry, comment } 또는 { where, skipped } → csv 한 줄 + summary 다시 씀 (끝에 [피드백])
+func add_feedback(r: Dictionary) -> void:
+	if not active:
+		return
+	var d := r.duplicate()
+	d.at = Time.get_datetime_string_from_system(false, true)
+	feedbacks.append(d)
+	log_event("feedback", r)
+	write_summary()
 
 
 ## OS 파일 탐색기로 기록 폴더 열기 (타이틀 "기록 폴더 열기")
@@ -417,7 +434,27 @@ func summary_text() -> String:
 	if not q.is_empty():
 		var why: String = { "title_menu": "타이틀 \"종료\"", "window_closed": "창 닫기", "exit": "프로그램 종료" }.get(String(q.back().detail.get("reason", "")), "-")
 		L.append("  종료: %s · 마지막 방 %s" % [why, String(q.back().detail.get("last_room", "-"))])
+	# ---- 설문 (있으면 맨 끝)
+	if not feedbacks.is_empty():
+		L.append("")
+		L.append("[피드백]")
+		for i in feedbacks.size():
+			var fb: Dictionary = feedbacks[i]
+			var wh: String = { "chapter_clear": "1장 클리어 뒤", "to_title": "타이틀로 나갈 때" }.get(String(fb.get("where", "")), String(fb.get("where", "")))
+			L.append("  #%d (%s · %s)" % [i + 1, wh, String(fb.get("at", ""))])
+			if fb.get("skipped", false):
+				L.append("    건너뜀")
+				continue
+			L.append("    1) 가장 재밌었던 순간: %s" % _or_dash(fb.get("fun", "")))
+			L.append("    2) 가장 짜증났던 곳: %s" % _or_dash(fb.get("annoy", "")))
+			L.append("    3) 패링 타이밍: %s" % _or_dash(fb.get("parry", "")))
+			L.append("    4) 한 줄 의견: %s" % _or_dash(fb.get("comment", "")))
 	return "\n".join(L) + "\n"
+
+
+static func _or_dash(v: Variant) -> String:
+	var t := String(v).strip_edges()
+	return t if t != "" else "-"
 
 
 ## 패링 실패 목록 (늦게 누른 클릭으로 바로 앞 실패의 오차가 정해졌으면 그 값으로)
