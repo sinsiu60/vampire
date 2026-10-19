@@ -1,9 +1,14 @@
 extends Node
+
 ## 공백(BLANK) — 모든 조정 가능한 수치.
 ## 웹 프로토타입(parry/game.js)의 CONFIG 를 그대로 옮김. 이름 규칙:
 ##   - 프로토타입에서 대문자였던 이름(AIM_TIME 등)은 그대로
 ##   - camelCase 였던 이름은 GDScript 관례대로 snake_case (runSpeed → run_speed)
 ## 단위: 거리 px (내부 해상도 480×270 기준), 시간 초, 속도 px/s, 각도는 표기된 대로
+
+## 플레이테스트 빌드: 플레이 기록 (PlaytestLogger) 등을 켬. 정식 빌드에서는 false.
+## 실행할 때 환경 변수 BLANK_PLAYTEST=0 / 1 로 덮어씀 (PlaytestLogger.active).
+const PLAYTEST_MODE := true
 
 # ---------------------------------------------------------------- 화면 / 방
 var view := { "w": 480, "h": 270 }

@@ -80,6 +80,7 @@ func set_open(v: bool) -> void:
 	if v == open:
 		return
 	open = v
+	PlaytestLogger.pause(v)
 	Debug.menu_open = v
 	get_tree().paused = v or Debug.step
 	Audio.pause_all(v)
@@ -134,6 +135,7 @@ func _on_confirm(yes: bool) -> void:
 	if not yes:
 		return
 	set_open(false)
+	PlaytestLogger.log_event("to_title")
 	var boot := get_tree().get_first_node_in_group("boot")
 	if boot != null:
 		boot.show_title()

@@ -245,9 +245,17 @@ func _load_old() -> void:
 	difficulty = String(cf.get_value("options", "difficulty", "normal"))
 
 
+## 지금 설정 전부 (저장 · 플레이테스트 기록의 바뀐 값 비교)
+func snapshot() -> Dictionary:
+	var b := {}
+	for a in bindings:
+		b[a] = (bindings[a] as Dictionary).duplicate()
+	return { "shake": shake, "approach": approach, "difficulty": difficulty,
+		"vol_master": vol_master, "vol_music": vol_music, "vol_sfx": vol_sfx, "fullscreen": fullscreen, "bindings": b }
+
+
 func save_settings() -> void:
-	var d := { "shake": shake, "approach": approach, "difficulty": difficulty,
-		"vol_master": vol_master, "vol_music": vol_music, "vol_sfx": vol_sfx, "fullscreen": fullscreen, "bindings": bindings }
+	var d := snapshot()
 	var f := FileAccess.open(PATH, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify(d, "\t"))

@@ -113,6 +113,16 @@ func row_label(i: int) -> String:
 
 ## 값 바꾸기 (← → · ◂ ▸)
 func adjust(i: int, d: int) -> void:
+	var snap := Settings.snapshot()
+	_adjust(i, d)
+	_log_changes(snap)
+
+
+func _log_changes(before: Dictionary) -> void:
+	PlaytestLogger.options_changed(before, Settings.snapshot(), "pause" if main != null else "title")
+
+
+func _adjust(i: int, d: int) -> void:
 	var R: Array = ROWS[i]
 	var before := Settings.shake
 	match R[0]:
@@ -143,6 +153,12 @@ func _toggle(what: String) -> void:
 
 ## 엔터 · 줄 클릭
 func activate(i: int) -> void:
+	var snap := Settings.snapshot()
+	_activate(i)
+	_log_changes(snap)
+
+
+func _activate(i: int) -> void:
 	var R: Array = ROWS[i]
 	match R[0]:
 		"toggle":
@@ -176,7 +192,9 @@ func _capture(event: InputEvent) -> bool:
 		b = { "type": "mouse", "code": int(event.button_index) }
 	else:
 		return false
+	var snap := Settings.snapshot()
 	var owner := Settings.set_binding(waiting, b)
+	_log_changes(snap)
 	if owner != "":
 		warn = { "text": "이미 '%s'에 쓰는 입력입니다" % String(Settings.BIND_LABELS.get(owner, owner)), "t": 0.0 }
 		UIKit.sfx("back")

@@ -103,6 +103,7 @@ func _on_choose(id: String) -> void:
 			options_menu.open()
 			options.emit()
 		"quit":
+			PlaytestLogger.quit("title_menu")
 			get_tree().quit()
 
 

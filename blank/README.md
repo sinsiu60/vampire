@@ -943,3 +943,30 @@ room_06 (철견) 은 그대로. 모든 수치는 `Config.gd` 의 `burst` · `cha
 - 철견 대사 표시 2.2 → 4초 (`LINE_TIME`). 오프닝 대사 3.8초 · 속사 시작 카드 뒤 3 → 4.7초, 구른 뒤 대사 → 페이즈 1 1.4 → 2.6초.
   피날레 대치 2.5 → 4초 (걸어가기 · 카메라는 그대로 2.5초, 남은 시간은 마주 선 채 대사), 쓰러질 때 대사 3초 → 끝난 뒤 무전 (여운 1.6초), 출구 문 여운 2 → 3.6초
 
+
+## 플레이테스트 빌드 — 1단계: 플레이 기록 (PlaytestLogger)
+게임 내용은 그대로, 기록만 추가. `Config.PLAYTEST_MODE` (지금 true) 일 때만 동작 — 정식 빌드는 false 로.
+실행할 때 환경 변수 `BLANK_PLAYTEST=0` / `1` 로 덮어쓸 수 있음.
+- 게임을 켜면 세션 ID (날짜시간, 예 `2026-10-19_14-03-22`) → `user://playtest/<세션ID>.csv`
+  (Windows: `%APPDATA%\Godot\app_userdata\공백 (BLANK)\playtest`). 이벤트마다 바로 flush — 강제 종료돼도 그때까지 남음
+- 열: `time` (켠 뒤 실제 초) · `play_time` (장 통계 플레이 시간, 일시정지 · 타이틀 제외) · `room` ("1-3", 화면 밖이면 "-") · `event` · `detail` ("키=값; …")
+- 이벤트
+  | event | detail |
+  |---|---|
+  | session_start | version · difficulty · os · date |
+  | new_game / continue | difficulty (이어하기는 저장 요약도) |
+  | room_enter | try (이 방 몇 번째 시도 — 사망 뒤 재시작 포함) |
+  | room_clear | room_time (처음 들어온 뒤 클리어까지 플레이 시간, 재시작 포함) · tries · deaths |
+  | death | enemy (적 종류, 보스면 "철견") · pattern · phase (보스만) · attack · type (NORMAL / OPPORTUNITY / EVADE) · err_ms · err |
+  | parry_success | err_ms (베기 시작 − 공격 순간, 음수 = 일찍) · type · source (사격 · 근접 · 철견 근접) · enemy |
+  | parry_fail | 패링할 수 있는 공격 (NORMAL · OPPORTUNITY) 에 죽음 = 실패. type · enemy · attack · err_ms · err (+ 보스면 pattern · phase) |
+  | parry_fail_update | 맞은 뒤 0.5초 안에 늦게 누름 → 바로 앞 실패의 err_ms (+늦음) |
+  | roll | 구르기 한 번이 끝날 때: dodged (구르는 동안 맞았을 공격이 무적으로 통과했는가) · dodged_attack |
+  | counter_success | target (철견 · 연습 더미) |
+  | boss_phase | phase (opening · 1 · 2 · 3 · finale · defeated) — 도달 시각 = time 열 |
+  | pause / resume | resume 에 paused_for (초) |
+  | to_title | 일시정지 "타이틀로" |
+  | option_change | key (difficulty · shake · approach · vol_* · fullscreen · bind_<동작>) · from · to · where (pause · title) |
+  | chapter_clear | play_time · deaths · parries · counters · difficulty |
+  | quit | reason (title_menu = 타이틀 "종료", window_closed = 창 닫기, exit = 그 밖의 종료) |
+- 기록 지점: Main (방 · 사망 · 패링 · 구르기 · 반격), Boot (새로 시작 · 이어하기 · 장 클리어), PauseMenu, OptionsMenu (`Settings.snapshot()` 비교), Title (종료)

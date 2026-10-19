@@ -108,6 +108,7 @@ func _on_new_game() -> void:
 	_busy = true
 	await _fade(1.0, float(Config.ui_style.FADE))
 	GameState.new_game()
+	PlaytestLogger.log_event("new_game", { "difficulty": Settings.difficulty })
 	_clear()
 	screen_name = "intro"
 	intro = INTRO.instantiate()
@@ -139,6 +140,7 @@ func _on_continue() -> void:
 	await _fade(1.0, float(Config.ui_style.FADE))
 	var to_clear := SaveManager.is_chapter_clear_save()
 	SaveManager.apply_save()
+	PlaytestLogger.log_event("continue", { "save": SaveManager.summary(), "difficulty": Settings.difficulty })
 	_clear()
 	if to_clear:
 		_open_clear_screen(true)
@@ -156,6 +158,9 @@ func show_chapter_clear() -> void:
 	_busy = true
 	GameState.chapter_cleared = GameState.chapter
 	SaveManager.save_game("chapter_clear")
+	var st: Dictionary = GameState.stats
+	PlaytestLogger.log_event("chapter_clear", { "chapter": GameState.chapter, "play_time": float(st.time), "deaths": int(st.deaths),
+		"parries": int(st.parries), "counters": int(st.counters), "difficulty": Settings.difficulty })
 	await _fade(1.0, float(Config.ui_style.FADE))
 	Audio.stop_all()
 	Audio.set_ambience("")

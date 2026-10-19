@@ -25,6 +25,7 @@ GameState="*res://scripts/autoload/GameState.gd"
 TimeManager="*res://scripts/autoload/TimeManager.gd"
 Audio="*res://scripts/autoload/Audio.gd"
 SaveManager="*res://scripts/autoload/SaveManager.gd"
+PlaytestLogger="*res://scripts/autoload/PlaytestLogger.gd"
 
 [display]
 

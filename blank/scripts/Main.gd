@@ -106,6 +106,7 @@ func _ready() -> void:
 	debug_draw.main = self
 	background.build(size.x, GameState.chapter * 100 + GameState.room, room.spawn_position().y, room)
 	_queue_intros()
+	PlaytestLogger.room_enter()
 	# 재시작 직후 짧게 밝아지는 페이드 (실제 시간, 입력은 바로 받음). 방 이동은 Boot 가 따로 검게 전환
 	if not entering:
 		fade.color = Color(0, 0, 0, 1)
@@ -163,6 +164,7 @@ func _physics_process(_delta: float) -> void:
 	if _shake_frame != Engine.get_physics_frames():
 		_update_shake(1.0 / Config.fps)
 	_update_zoom()
+	_track_roll()
 	# 장 통계: 플레이 시간 (실제 시간, 일시정지 제외)
 	if game_state != "chapter_clear" and GameState.room_override == "":
 		GameState.stats.time = float(GameState.stats.get("time", 0.0)) + TimeManager.real_delta()
@@ -201,6 +203,7 @@ func _physics_process(_delta: float) -> void:
 func _on_room_cleared() -> void:
 	game_state = "clear"
 	GameState.mark_cleared()
+	PlaytestLogger.room_clear()
 	if _boss_outro >= 0.0:
 		return                            # 철견 처치: 무전 1초 뒤, 출구는 2초 뒤 (_boss_outro_tick)
 	if room.exit_door() != null:
@@ -292,6 +295,7 @@ func _note_click() -> void:
 		report_timing(TimeManager.real_time - _late_watch.fire_real, "late")
 		if _late_watch.get("death", false):
 			GameState.update_last_death_err(timing_msg.text)
+			PlaytestLogger.parry_fail_update(int(timing_msg.ms))
 		_late_watch = {}
 
 
@@ -300,7 +304,7 @@ func report_timing(err: float, kind: String) -> void:
 	var ms := roundi(err * 1000.0)
 	var label: String = { "ok": "성공", "early": "이름", "late": "늦음", "locked": "헛스윙 잠금", "none": "입력 없음", "dir": "방향 틀림" }[kind]
 	var txt := label if kind == "none" else "%s%dms %s" % ["+" if ms > 0 else "", ms, label]
-	timing_msg = { "text": txt, "ok": kind == "ok", "t": 0.0 }
+	timing_msg = { "text": txt, "ok": kind == "ok", "t": 0.0, "ms": ms, "kind": kind }
 
 
 ## 패링 실패: 가장 가까운 클릭으로 원인 표시. 아직 안 눌렀으면 잠시 기다렸다가 '늦음'
@@ -567,6 +571,10 @@ func hitscan(from: Vector2, angle: float, dist: float, hit_player: bool, hit_ene
 	var end := raycast_wall(from, angle, dist)
 	var res := { "pos": end, "wall": end.distance_to(from) < dist - 0.5, "player": false, "enemy": null }
 	var best := 2.0
+	if hit_player and not player.dead and player.is_invincible():
+		var tr := seg_rect_t(from, end, player.body_rect())
+		if tr >= 0.0 and tr <= 1.0:
+			_roll_dodged("사격")                # 구르기로 피한 탄 (기록)
 	if hit_player and not player.dead and not player.is_invincible():   # 구르기 무적이면 탄이 통과
 		var pad: float = Config.shot.PLAYER_HIT_PAD
 		# 판정 창 안에서 막 벤 칼은 칼날이 닿는 범위까지 탄을 받아냄 (베기 돌진으로 조준선에서 살짝 비껴도 패링)
@@ -658,6 +666,7 @@ func _resolve_shots() -> void:
 				continue
 			p.mark_used()
 			report_timing(ts - s.fire_t, "ok")
+			PlaytestLogger.parry_success(int(timing_msg.ms), String(s.get("attack_type", Config.ATK_NORMAL)), "사격", _shooter_name(s))
 			if s.get("boss", false):
 				_parry_boss_shot(s)
 			elif is_instance_valid(s.shooter) and s.shooter is EnemyDummy:
@@ -705,8 +714,33 @@ func _shot_cause(s: Dictionary) -> Dictionary:
 		s.label = "연사 %d탄" % (int(s.burst_i) + 1)
 	if timing_msg.get("text", "") == "입력 없음" and not _late_watch.is_empty():
 		_late_watch.death = true           # 0.5초 안에 늦게 누르면 기록도 '+xxms 늦음' 으로
-	return { "pattern": pat, "attack": s.get("label", "사격"), "type": ty,
+	var c := { "pattern": pat, "attack": s.get("label", "사격"), "type": ty,
 		"err": "패링 불가" if ty == Config.ATK_EVADE else String(timing_msg.get("text", "")) }
+	if ty != Config.ATK_EVADE and timing_msg.has("ms") and String(timing_msg.get("kind", "")) != "none":
+		c.err_ms = int(timing_msg.ms)
+	return c
+
+
+## 플레이테스트 기록용: 탄을 쏜 적 이름
+func _shooter_name(s: Dictionary) -> String:
+	if not is_instance_valid(s.get("shooter")):
+		return "?"
+	if s.get("boss", false):
+		return "철견"
+	if s.shooter is EnemyDummy:
+		return "연습 더미"
+	return s.shooter.label() if s.shooter.has_method("label") else "총잡이"
+
+
+## 플레이테스트 기록용: 근접 공격이 닿는 (닿은) 월드 시각
+func _melee_impact_t(e: Node) -> float:
+	var now := TimeManager.world_time
+	if e is EnemyMelee:
+		var cfg: Dictionary = e.cfg
+		if e.is_charger():
+			return now + (float(cfg.SLAM_HOLD) - e.t) if e.state == "slam_hold" else now - e.t
+		return now + (float(cfg.telegraph) - e.t) if e.state == "windup" else now - e.t
+	return now
 
 
 ## 사망 원인 (근접): 패링 오차 = 마지막 베기 시작 - 타격 순간 (0.5초 넘게 떨어져 있으면 '입력 없음')
@@ -727,6 +761,7 @@ func _melee_cause(e: Enemy) -> Dictionary:
 		else:
 			var ms := roundi(d * 1000.0)
 			c.err = "%s%dms %s" % ["+" if ms > 0 else "", ms, "늦음" if ms > 0 else "이름"]
+			c.err_ms = ms
 	c.erase("impact_t")
 	return c
 
@@ -918,6 +953,7 @@ func _dummy_slash(d: EnemyDummy) -> void:
 	var angle := (d.center() - p.center()).angle()
 	if d.can_counter():
 		GameState.add_stat("counters")
+		PlaytestLogger.counter_success("연습 더미")
 		Audio.sfx("execute")
 		TimeManager.hitstop(CG.COUNTER_HITSTOP)
 		if Settings.on("screen_flash"):
@@ -935,6 +971,8 @@ func _dummy_slash(d: EnemyDummy) -> void:
 ## ② 건카타 근접 패링: NORMAL 타격 = 일반 패링, OPPORTUNITY (3타) = 철견이 크게 튕겨나며 휘청
 func _parry_whip(b: BossCheolgyeon, i: int) -> void:
 	var p := player
+	var impact := TimeManager.world_time - (float(b.t) - float(b._whip.times[i]))
+	PlaytestLogger.parry_success(roundi((p.last_slash_t - impact) * 1000.0), b.whip_type(i), "철견 근접", "철견")
 	p.mark_used()
 	boss_parry_fx(p.tip(), p.slash_angle, b.whip_type(i) == Config.ATK_OPPORTUNITY)
 	if i == 2:
@@ -947,6 +985,7 @@ func _parry_whip(b: BossCheolgyeon, i: int) -> void:
 ##  execute.wav + 히트스톱 8 + 흰 섬광 1프레임 + 흔들림 6px + 코트 조각 파편 + 철견 30px 넉백 → 체력 -1. 컷인 · 긴 슬로우 없음
 func _counter_hit(b: BossCheolgyeon) -> void:
 	GameState.add_stat("counters")
+	PlaytestLogger.counter_success("철견")
 	var CC: Dictionary = Config.colors
 	var p := player
 	p.mark_used()
@@ -1244,6 +1283,8 @@ static func _rect_dist(p: Vector2, r: Rect2) -> float:
 
 
 func _parry_melee(e: Enemy) -> void:
+	PlaytestLogger.parry_success(roundi((player.last_slash_t - _melee_impact_t(e)) * 1000.0),
+		String(e.get("attack_type") if e.get("attack_type") != null else Config.ATK_NORMAL), "근접", e.label())
 	player.mark_used()
 	parry_fx(player.tip(), player.slash_angle)
 	_kill_enemy(e, player.slash_angle, "parry")
@@ -1307,10 +1348,14 @@ func view_rect() -> Rect2:
 
 func _kill_player(angle: float, cause := {}) -> void:
 	# 구르기 무적: 히트스캔 · 근접 · 충격파 · 보라색 공격 모두 통과
-	if player.dead or player.is_invincible():
+	if player.dead:
+		return
+	if player.is_invincible():
+		_roll_dodged(String(cause.get("attack", "공격")))
 		return
 	if not cause.is_empty():
 		GameState.log_death(cause)
+		PlaytestLogger.death(cause, boss.phase if boss != null and is_instance_valid(boss) and not boss.dead else -1)
 	pending_shots.clear()
 	seq.cancel()
 	player.input_locked = false
@@ -1319,6 +1364,30 @@ func _kill_player(angle: float, cause := {}) -> void:
 	gore.split(player.body_parts(), player.global_position, player.center(), angle, Config.colors.attack, 1.1)
 	effects.burst(player.center(), 16, Config.colors.player, 180.0, angle, 1.0, 0.6, { "grav": 400.0 })
 	player.die(angle)
+
+
+# ================================================================ 플레이테스트 기록: 구르기
+var _roll_seen := 0
+var _roll_on := false
+var _roll_dodge := ""             # 이번 구르기로 피한 공격 (없으면 "")
+
+
+## 구르기 한 번이 끝날 때 기록 (구르는 동안 무적으로 통과한 공격이 있었는지)
+func _track_roll() -> void:
+	if player.rolls != _roll_seen:
+		if _roll_on:
+			PlaytestLogger.roll(_roll_dodge != "", _roll_dodge)
+		_roll_seen = player.rolls
+		_roll_on = true
+		_roll_dodge = ""
+	elif _roll_on and not player.is_invincible() and not player.is_rolling():
+		_roll_on = false
+		PlaytestLogger.roll(_roll_dodge != "", _roll_dodge)
+
+
+func _roll_dodged(what: String) -> void:
+	if _roll_on and _roll_dodge == "":
+		_roll_dodge = what
 
 
 func _on_player_died() -> void:
