@@ -994,3 +994,21 @@ room_06 (철견) 은 그대로. 모든 수치는 `Config.gd` 의 `burst` · `cha
 - 응답 → csv 에 `feedback` 한 줄 (where · fun · annoy · parry · comment, 건너뛰면 skipped) + summary.txt 를 다시 써서 맨 끝에 `[피드백]`
   (세션에 여러 번이면 #1, #2 …, 건너뛰면 "건너뜀")
 - 타이틀 · 카드 · 설문 화면은 OS 마우스 커서를 보이게 (게임에 들어가면 조준점이 다시 숨김)
+
+## 플레이테스트 빌드 — 4단계: 테스트 편의 기능 + 디버그 숨기기 + Windows 내보내기
+- **F9 스크린샷** — 지금 화면 (창 해상도 그대로, 스캔라인 포함) → `user://playtest/screenshots/<세션ID>_001.png` …
+  오른쪽 위에 "스크린샷 저장: 파일 이름" 2초, csv 에 `screenshot` 한 줄
+- **"PLAYTEST v0.1"** — 화면 오른쪽 아래 아주 작게 (8px, 35%). 게임 중엔 맨 아래 조작 안내 줄과 겹치지 않게 한 줄 위.
+  타이틀의 "v0.1" 은 플레이테스트 빌드에서 숨김 (`scripts/ui/PlaytestOverlay.gd`, Boot 가 게임 화면 맨 위 층 100 에)
+- **첫 실행 조작법** (`scenes/Controls.tscn`) — 로고 뒤 · 타이틀 전에 한 번: 이동 · 점프 · 베기 (패링) · 구르기 키 (옵션에서 바꾼 키 그대로) +
+  패링 · 구르기 한 줄 설명 + ESC · R · F9 + "아무 키나 누르세요" (0.6초 뒤부터 받음 — 로고 건너뛴 키가 이어지지 않게).
+  봤다는 기록은 settings.json 의 `controls_seen`
+- **디버그 숨기기** — 플레이테스트 빌드에서는 `Debug.locked()`: F1 ~ F12 디버그 키 전부 무시 (F9 는 스크린샷), `Debug.debug_mode()` = false →
+  방 번호 · 사망 원인 · 저장 요약 · 보스 타이밍 같은 디버그 표시도 전부 꺼짐. (요청은 F5 ~ F12 였지만 F1 ~ F4 — 반사 보정 표시 · 타격감 패널 ·
+  슬로우 · 프레임 진행 — 도 정식 빌드에서까지 켜지는 디버그 기능이라 같이 막음)
+  - 개발할 때는 `BLANK_PLAYTEST=0` 으로 실행하면 디버그 키가 그대로 (또는 `Config.PLAYTEST_MODE = false`)
+- **Windows 내보내기** — `export_presets.cfg` 프리셋 "공백_playtest_v0.1" (Windows Desktop, x86_64, 아이콘 기본값, pck 를 exe 에 포함,
+  `data/*.json` · 글꼴 파일 포함, `tools/` 제외) → `build/공백_playtest_v0.1.exe` (build/ 는 git 에서 제외)
+  - 만드는 법: Godot 4.5 에디터 → 프로젝트 → 내보내기 → "공백_playtest_v0.1" → 프로젝트 내보내기 (처음이면 "내보내기 템플릿 관리"에서 4.5.1 템플릿 내려받기)
+  - 또는 명령줄: `godot --headless --path . --export-release "공백_playtest_v0.1" build/공백_playtest_v0.1.exe`
+  - 친구에게 줄 것: exe 하나. 기록은 친구 PC 의 `%APPDATA%\Godot\app_userdata\공백 (BLANK)\playtest` (타이틀 "기록 폴더 열기")

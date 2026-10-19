@@ -107,6 +107,30 @@ func add_feedback(r: Dictionary) -> void:
 	write_summary()
 
 
+var screenshot_count := 0
+var last_screenshot := ""        ## 마지막 스크린샷 경로 (테스트 · 안내)
+signal notice(text: String)      ## 화면 구석 안내 (PlaytestOverlay 가 띄움)
+
+
+## F9: 지금 화면 (창 해상도 그대로, 스캔라인 포함) → user://playtest/screenshots/<세션ID>_<번호>.png
+func screenshot() -> String:
+	if not active:
+		return ""
+	var dir := DIR + "/screenshots"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
+	var img := get_viewport().get_texture().get_image()
+	screenshot_count += 1
+	var p := "%s/%s_%03d.png" % [dir, session_id, screenshot_count]
+	var err := img.save_png(p)
+	if err != OK:
+		notice.emit("스크린샷 저장 실패")
+		return ""
+	last_screenshot = p
+	log_event("screenshot", { "file": p.get_file() })
+	notice.emit("스크린샷 저장: %s" % p.get_file())
+	return p
+
+
 ## OS 파일 탐색기로 기록 폴더 열기 (타이틀 "기록 폴더 열기")
 func open_folder() -> Error:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(DIR))

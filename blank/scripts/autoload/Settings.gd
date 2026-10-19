@@ -43,6 +43,7 @@ var vol_master := 1.0
 var vol_music := 1.0
 var vol_sfx := 1.0
 var fullscreen := false
+var controls_seen := false       ## 첫 실행 조작법 화면을 봤음 (플레이테스트 빌드)
 var bindings := {}               ## 동작 → { type: key | mouse, code }
 var juice := {}
 var roll_key: int:               ## 옛 이름 (구르기 키 물리 코드) — 마우스면 0
@@ -225,6 +226,7 @@ func load_settings() -> void:
 	vol_music = clampf(float(d.get("vol_music", 1.0)), 0.0, 1.0)
 	vol_sfx = clampf(float(d.get("vol_sfx", 1.0)), 0.0, 1.0)
 	fullscreen = bool(d.get("fullscreen", false))
+	controls_seen = bool(d.get("controls_seen", false))
 	var bd = d.get("bindings", {})
 	if bd is Dictionary:
 		for a in BIND_ACTIONS:
@@ -251,7 +253,8 @@ func snapshot() -> Dictionary:
 	for a in bindings:
 		b[a] = (bindings[a] as Dictionary).duplicate()
 	return { "shake": shake, "approach": approach, "difficulty": difficulty,
-		"vol_master": vol_master, "vol_music": vol_music, "vol_sfx": vol_sfx, "fullscreen": fullscreen, "bindings": b }
+		"vol_master": vol_master, "vol_music": vol_music, "vol_sfx": vol_sfx, "fullscreen": fullscreen, "bindings": b,
+		"controls_seen": controls_seen }
 
 
 func save_settings() -> void:

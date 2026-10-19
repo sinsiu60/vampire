@@ -178,7 +178,8 @@ func _draw_ui() -> void:
 	else:
 		UIKit.text(_ui, title, c, size, Color.WHITE, "center", true)
 	UIKit.text(_ui, "BLANK", c + Vector2(0, 26), S.SIZE, Color(S.TEXT, 0.8), "center")
-	UIKit.text(_ui, String(S.VERSION), Vector2(W - 8, Config.view.h - 10), S.SIZE, Color(S.TEXT, 0.5), "right")
+	if not PlaytestLogger.active:          # 플레이테스트 빌드는 PlaytestOverlay 가 "PLAYTEST v0.1"
+		UIKit.text(_ui, String(S.VERSION), Vector2(W - 8, Config.view.h - 10), S.SIZE, Color(S.TEXT, 0.5), "right")
 	if not _toast.is_empty():
 		UIKit.text(_ui, String(_toast.text), Vector2(W / 2.0, Config.view.h - 24), S.SIZE, Color(S.ACCENT, clampf(1.5 - float(_toast.t), 0.0, 1.0)), "center")
 	if Debug.debug_mode():

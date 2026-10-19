@@ -1,4 +1,5 @@
 # Godot 4 캐시/임포트 데이터 (에디터가 자동으로 다시 만듦)
 .godot/
 *.translation
-export_presets.cfg
+# 내보낸 실행 파일 (export_presets.cfg 는 저장소에 둠 — 비밀값 없음)
+build/

@@ -11,6 +11,7 @@ extends Node
 ##  F10 철견 패턴 강제 (① ~ ⑤ 차례로) · F11 철견 페이즈 순환 (1 → 2 → 3, Shift+F11 = 다음 페이즈 전환 연출 그대로)
 ##     — 디버그 빌드에서만
 ##  F12 철견 피날레 "빗방울 결투" 만 바로 재생 · Shift+F12 공격 종류 연습 방 (1겹 · 2겹 · 보라 더미) ↔ 원래 방 — 디버그 빌드에서만
+## 플레이테스트 빌드 (PlaytestLogger.active): 디버그 키 F1 ~ F12 와 디버그 표시를 전부 끔. F9 = 스크린샷만.
 
 signal changed
 
@@ -38,7 +39,12 @@ func _ready() -> void:
 
 ## 디버그 모드 = 디버그 빌드 (에디터에서 실행하거나 디버그로 내보낸 실행 파일). 방 번호 표시 · F6 / F7
 func debug_mode() -> bool:
-	return OS.is_debug_build()
+	return OS.is_debug_build() and not locked()
+
+
+## 플레이테스트 빌드: 디버그 기능 잠금 (F9 스크린샷만)
+func locked() -> bool:
+	return PlaytestLogger.active
 
 
 ## TimeManager 가 time_scale 에 곱하는 값
@@ -54,6 +60,11 @@ func _set_slow(on: bool) -> void:
 
 func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed or event.echo:
+		return
+	if locked():
+		if event.physical_keycode == KEY_F9:
+			PlaytestLogger.screenshot()
+			get_viewport().set_input_as_handled()
 		return
 	match event.physical_keycode:
 		KEY_F1: aim_debug = not aim_debug

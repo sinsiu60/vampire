@@ -12,14 +12,17 @@ const TITLE := preload("res://scenes/Title.tscn")
 const INTRO := preload("res://scenes/ChapterIntro.tscn")
 const CLEAR := preload("res://scenes/ChapterClear.tscn")
 const FEEDBACK := preload("res://scenes/Feedback.tscn")
+const CONTROLS := preload("res://scenes/Controls.tscn")
 
 static var logo_done := false    ## 로고는 실행 후 처음 한 번만
 static var skip_title := false   ## 테스트 · 디버그: 로고 뒤 타이틀 없이 바로 게임 (환경 변수 BLANK_SKIP_TITLE 도 같음)
+static var skip_controls := false   ## 테스트: 첫 실행 조작법 화면 건너뜀
 
 var title: Node = null           ## 지금 타이틀 화면 (없으면 null)
 var intro: Node = null           ## 지금 장 시작 카드
 var clear_screen: Node = null    ## 지금 장 클리어 화면
 var feedback: Node = null        ## 지금 플레이테스트 설문 화면
+var controls: Node = null        ## 첫 실행 조작법 화면
 var screen_name := ""            ## logo | title | intro | game | chapter_clear (테스트)
 
 @onready var screen: SubViewportContainer = $Screen
@@ -50,6 +53,13 @@ func _ready() -> void:
 	_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_veil)
 	_layout()
+	# 플레이테스트 빌드: 게임 화면 맨 위에 "PLAYTEST v0.1" · 스크린샷 안내 (화면이 바뀌어도 그대로)
+	if PlaytestLogger.active:
+		var pl := CanvasLayer.new()
+		pl.layer = 100
+		pl.name = "PlaytestLayer"
+		game.add_child(pl)
+		pl.add_child(PlaytestOverlay.new())
 	if logo_done:
 		_start_game()
 	else:
@@ -65,13 +75,35 @@ func _after_logo() -> void:
 	logo_done = true
 	if skip_title or OS.get_environment("BLANK_SKIP_TITLE") != "":
 		_start_game()
+	elif PlaytestLogger.active and not Settings.controls_seen and not skip_controls:
+		_show_controls()
 	else:
 		show_title()
 
 
+## 첫 실행 조작법 (플레이테스트 빌드, 한 번만) → 아무 키 → 타이틀
+func _show_controls() -> void:
+	_clear()
+	screen_name = "controls"
+	controls = CONTROLS.instantiate()
+	controls.finished.connect(func():
+		Settings.controls_seen = true
+		Settings.save_settings()
+		PlaytestLogger.log_event("controls_seen")
+		if _busy:
+			return
+		_busy = true
+		await _fade(1.0, float(Config.ui_style.FADE))
+		show_title()
+		await get_tree().process_frame
+		await _fade(0.0, float(Config.ui_style.FADE))
+		_busy = false)
+	game.add_child(controls)
+
+
 ## 게임 화면 안의 지금 화면 (게임 · 타이틀 · 카드) 을 치움
 func _clear() -> void:
-	for n in [main, title, intro, clear_screen, feedback]:
+	for n in [main, title, intro, clear_screen, feedback, controls]:
 		if n != null and is_instance_valid(n):
 			game.remove_child(n)
 			n.queue_free()
@@ -80,6 +112,7 @@ func _clear() -> void:
 	intro = null
 	clear_screen = null
 	feedback = null
+	controls = null
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE      # 타이틀 · 카드 · 설문은 OS 커서 (게임에 들어가면 조준점이 다시 숨김)
 
 
