@@ -74,12 +74,16 @@ func _ready() -> void:
 
 ## 메뉴 다시 (저장 유무에 따라 이어하기 활성)
 func refresh() -> void:
-	_menu.set_items([
+	var items := [
 		{ "id": "new", "label": "새로 시작", "enabled": true },
 		{ "id": "continue", "label": "이어하기", "enabled": SaveManager.has_save() },
 		{ "id": "options", "label": "옵션", "enabled": true },
-		{ "id": "quit", "label": "종료", "enabled": true },
-	])
+	]
+	if PlaytestLogger.active:            # 플레이테스트 빌드만: 기록 (csv · summary) 폴더를 OS 파일 탐색기로
+		items.append({ "id": "logs", "label": "기록 폴더 열기", "enabled": true })
+	items.append({ "id": "quit", "label": "종료", "enabled": true })
+	_menu.set_items(items)
+	_menu.size = Vector2(140, 16.0 * items.size())
 	if SaveManager.has_save():
 		_menu.index = 1
 
@@ -102,6 +106,9 @@ func _on_choose(id: String) -> void:
 			_menu.active = false
 			options_menu.open()
 			options.emit()
+		"logs":
+			var err := PlaytestLogger.open_folder()
+			show_toast("기록 폴더를 열었습니다" if err == OK else "폴더를 열 수 없음: %s" % ProjectSettings.globalize_path(PlaytestLogger.DIR))
 		"quit":
 			PlaytestLogger.quit("title_menu")
 			get_tree().quit()

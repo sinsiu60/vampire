@@ -970,3 +970,15 @@ room_06 (철견) 은 그대로. 모든 수치는 `Config.gd` 의 `burst` · `cha
   | chapter_clear | play_time · deaths · parries · counters · difficulty |
   | quit | reason (title_menu = 타이틀 "종료", window_closed = 창 닫기, exit = 그 밖의 종료) |
 - 기록 지점: Main (방 · 사망 · 패링 · 구르기 · 반격), Boot (새로 시작 · 이어하기 · 장 클리어), PauseMenu, OptionsMenu (`Settings.snapshot()` 비교), Title (종료)
+
+## 플레이테스트 빌드 — 2단계: 요약 리포트 + 기록 폴더 열기
+- 1장 클리어 · 게임 종료 (타이틀 "종료" · 창 닫기 · 그 밖의 종료) 때 `user://playtest/<세션ID>_summary.txt` 를 씀 (다시 쓰면 최신으로 덮어씀).
+  이번 세션 이벤트를 메모리에 모아 계산 (`PlaytestLogger.summary_text()`). 강제 종료면 요약은 없고 csv 만 남음
+  - 개요: 총 플레이 시간 (게임 화면 · 일시정지 제외 — `PlaytestLogger.tick`) · 켜 둔 시간, 1장 클리어 여부, 마지막 도달 방, 난이도 (바꿨으면 NORMAL → HARD 처럼), 사망 수
+  - 방별: 머문 시간 · 클리어까지 걸린 시간 (처음 들어온 뒤, 재시작 포함) · 사망
+  - 철견: 페이즈 도달 시각, 페이즈별 사망, 패턴별 사망 Top 3
+  - 패링: 성공률 (실패 = 패링할 수 있는 공격에 죽음), 평균 입력 오차 (±15ms 넘으면 일찍 / 늦게 누르는 경향) · 평균 절대 오차 ·
+    일찍 / 늦게 횟수, 누르지 않고 맞은 횟수, 공격 종류별 성공률 (NORMAL · OPPORTUNITY, EVADE 는 사망 수)
+  - 구르기 횟수 · 그중 공격을 피한 구르기, 반격 성공, 일시정지 · 옵션 변경 수, 종료 방식 · 마지막 방
+- 타이틀 메뉴 "기록 폴더 열기" (플레이테스트 빌드만, 옵션과 종료 사이) — `OS.shell_open` 으로 user://playtest 를 파일 탐색기로.
+  못 열면 아래에 폴더 경로를 띄움

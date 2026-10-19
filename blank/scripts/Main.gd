@@ -168,6 +168,7 @@ func _physics_process(_delta: float) -> void:
 	# 장 통계: 플레이 시간 (실제 시간, 일시정지 제외)
 	if game_state != "chapter_clear" and GameState.room_override == "":
 		GameState.stats.time = float(GameState.stats.get("time", 0.0)) + TimeManager.real_delta()
+		PlaytestLogger.tick(TimeManager.real_delta())
 	# 실제 시간으로 흐르는 표시들 (히트스톱·킬 스톱 중에도)
 	if kill_frame >= 0:
 		kill_frame += 1
