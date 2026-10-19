@@ -63,6 +63,7 @@ var blast_kills := 0              ## 폭발에 휘말려 처치된 적 수
 
 
 func _ready() -> void:
+	PlaytestLogger.room_enter()           # 방 씬 (철견 체크포인트 기록) 보다 먼저
 	_load_room()
 	for b in get_tree().get_nodes_in_group("boss"):
 		if not b.dead:
@@ -106,7 +107,6 @@ func _ready() -> void:
 	debug_draw.main = self
 	background.build(size.x, GameState.chapter * 100 + GameState.room, room.spawn_position().y, room)
 	_queue_intros()
-	PlaytestLogger.room_enter()
 	# 재시작 직후 짧게 밝아지는 페이드 (실제 시간, 입력은 바로 받음). 방 이동은 Boot 가 따로 검게 전환
 	if not entering:
 		fade.color = Color(0, 0, 0, 1)
