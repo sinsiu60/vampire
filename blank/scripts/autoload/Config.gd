@@ -431,19 +431,19 @@ var ui_style := {
 	"RADIO_RECT": Rect2(8, 206, 200, 36),    # 판 (가로 200, 2줄)
 	"RADIO_NAME": "잡음",
 	"RADIO_CHAR": 0.03,                      # 글자당
-	"RADIO_LINE_GAP": 0.45,                  # 여러 줄이면 다음 줄까지
-	"RADIO_HOLD": 2.5,                       # 문장이 끝나고 사라질 때까지
+	"RADIO_LINE_GAP": 1.6,                   # 여러 줄이면 다음 줄까지 (줄을 다 친 뒤)
+	"RADIO_HOLD": 4.5,                       # 문장이 끝나고 사라질 때까지
 	"RADIO_NOISE_EVERY": Vector2(0.25, 0.7), # 한 글자가 깨지는 간격
 	"RADIO_NOISE_TIME": 0.05,
 	"RADIO_BLIP_EVERY": 3,                   # 글자 몇 개마다 radio_blip
 	"RADIO_ON_VOL": 0.6, "RADIO_OFF_VOL": 0.5, "RADIO_BLIP_VOL": 0.25,
 	# 장 시작 카드
 	"TYPE_CHAR": 0.04,                       # 글자당
-	"TYPE_LINE_GAP": 0.8,                    # 줄 사이
-	"CARD_TIME": 2.0,                        # 장 제목
+	"TYPE_LINE_GAP": 1.8,                    # 줄 사이 (줄을 다 친 뒤)
+	"CARD_TIME": 3.5,                        # 장 제목
 	"FADE": 0.5,
 	"CLEAR_STAT_GAP": 0.3,                   # 장 클리어 통계 한 줄씩 (줄마다 ui_select)
-	"CLEAR_HOLD": 0.6,                       # 타이핑 끝 → "1장 클리어" 까지
+	"CLEAR_HOLD": 1.5,                       # 타이핑 끝 → "1장 클리어" 까지
 }
 
 # ---------------------------------------------------------------- 연출 · UI

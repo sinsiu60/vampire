@@ -862,7 +862,7 @@ func _physics_process(delta: float) -> void:
 			velocity.x = 0.0
 			if _card_t >= C.OPEN_LINE_AT and _say.is_empty() and not _duel.has("said"):
 				_duel["said"] = true
-				say_key(C.OPEN_LINE, 2.4)
+				say_key(C.OPEN_LINE, C.OPEN_LINE_TIME)
 			if _card_t >= C.OPEN_DUEL_AT:
 				_start_stage_duel()
 		"op_gunfly":

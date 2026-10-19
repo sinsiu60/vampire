@@ -246,7 +246,7 @@ func _enter_face() -> void:
 	_bx = clampf(cx + _side * hd, 24.0, w - 24.0)
 	var px := clampf(cx - _side * hd, 24.0, w - 24.0)
 	var walk := absf(px - p.global_position.x)
-	p.auto_walk = { "x": px, "speed": clampf(walk / (C.FIN_FACE * 0.6), 40.0, Config.player.run_speed), "face": int(_side) }
+	p.auto_walk = { "x": px, "speed": clampf(walk / (C.FIN_FACE_MOVE * 0.6), 40.0, Config.player.run_speed), "face": int(_side) }
 	_base = Vector2(cx, float(_cam_from.center.y))
 
 
@@ -256,7 +256,7 @@ func _tick_face() -> void:
 	contrast = lerpf(1.0, C.FIN_CONTRAST, g)
 	# 화면 중심 = 지금 두 사람 사이 (걸음이 간판 같은 장애물에 막혀도 가운데로)
 	_base.x = clampf((p.global_position.x + b.global_position.x) / 2.0, _cx_range.x, _cx_range.y)
-	var k := _smooth(st / C.FIN_FACE)
+	var k := _smooth(minf(1.0, st / C.FIN_FACE_MOVE))
 	_cam = { "center": Vector2(_cam_from.center).lerp(_base, k), "zoom": lerpf(float(_cam_from.zoom), C.FIN_ZOOM, k) }
 	var u := _smooth(st / maxf(C.FIN_STEP_BACK, absf(_bx - _bx_from) / C.FIN_STEP_SPEED))
 	b.global_position.x = lerpf(_bx_from, _bx, u)
@@ -550,7 +550,7 @@ func _resume() -> void:
 	if arena != null:
 		arena.rain_mul = 1.0
 	Audio.set_loop_volume(Audio.ambience_player(), C.FIN_RAIN_VOL, 0.1)
-	main.finale_boss_down(b, C.FIN_FALL, C.FIN_FALL + C.FIN_AFTER)
+	main.finale_boss_down(b, C.FIN_FALL + C.FIN_RADIO_AT, C.FIN_FALL + C.FIN_AFTER)
 	if not _cam_pre.is_empty():
 		_cam_anim = { "fc": Vector2(_cam.center), "fz": float(_cam.zoom), "tc": Vector2(_cam_pre.center), "tz": float(_cam_pre.zoom),
 			"t": 0.0, "dur": C.FIN_CUT_ZOOM_OUT }
@@ -574,7 +574,7 @@ func _enter_fall() -> void:
 func _tick_fall() -> void:
 	if st >= C.FIN_DOWN_LINE_AT and not _flags.has("line"):
 		_flags.line = true
-		b.say_key(C.FIN_DOWN_LINE, C.FIN_FALL - C.FIN_DOWN_LINE_AT + 0.6)
+		b.say_key(C.FIN_DOWN_LINE, C.FIN_DOWN_LINE_TIME)
 	if st >= C.FIN_KNEEL_AT and not _flags.has("kneel"):
 		_flags.kneel = true
 		b.body.pose("land", 0.25)

@@ -175,7 +175,7 @@ const TR3_MUFFLE := 0.8                ## flashbang "삐-" 여운 동안 다른 
 const TR3_RETURN_AT := 2.4
 const TR3_END := 3.0
 const TR3_LINE := "phase3"            ## 대사 키
-const LINE_TIME := 2.2                 ## 대사 표시 시간 (실제 시간)
+const LINE_TIME := 4.0                 ## 대사 표시 시간 (실제 시간)
 const LINE_CPS := 18.0
 
 # ---------------------------------------------------------------- 오프닝 (짧게, 실제 시간 — 처음 들어올 때만 이름 카드 · 대사)
@@ -187,7 +187,8 @@ const CARD_FADE := 0.3
 const CARD_SHAKE := 5.0
 const OPEN_LINE := "opening"          ## 대사 키 (이름 카드 뒤)
 const OPEN_LINE_AT := 0.9              ## 카드 뒤 대사 시작
-const OPEN_DUEL_AT := 3.0              ## 카드 뒤 속사 한 판 시작 (대사가 끝날 즈음)
+const OPEN_LINE_TIME := 3.8            ## 오프닝 대사 표시 시간
+const OPEN_DUEL_AT := 4.7              ## 카드 뒤 속사 한 판 시작 (대사가 끝날 즈음 = OPEN_LINE_AT + OPEN_LINE_TIME)
 const OPEN_DUEL_HOLD := 0.6            ## 오프닝 속사 정적 (가짜 움찔 없음)
 const GUN_FLY_TIME := 0.5              ## 패링하면 권총이 손에서 튕겨나가 뒤로 날아감
 const GUN_FLY_DIST := 72.0
@@ -195,7 +196,7 @@ const GUN_FLY_HEIGHT := 46.0
 const OPEN_PICKUP := 0.28              ## 뒤로 대시해 집는 웅크림
 const OPEN_DODGE_AT := 0.3             ## 오프닝 속사를 구르기로 피함 → 발사 이 뒤 대사 (패링 판정이 끝난 뒤)
 const OPEN_DODGE_LINE := "opening_rolled"   ## 대사 키 (오프닝 속사를 구르기로 피함)
-const OPEN_DODGE_WAIT := 1.4           ## 대사 → 레터박스 해제 · 페이즈 1
+const OPEN_DODGE_WAIT := 2.6           ## 대사 → 레터박스 해제 · 페이즈 1
 
 # ---------------------------------------------------------------- 피날레 (체력 0)
 const FINALE_LINE := "finale"        ## 대사 키 (피날레 대치)
@@ -222,7 +223,8 @@ const FIN_SFX_FADE := 0.5              ## 다른 효과음 페이드아웃
 const FIN_RAIN_VOL := 0.5              ## rain_loop 만 이 볼륨으로
 const FIN_HEARTBEAT_VOL := 0.6         ## heartbeat.wav 반복 (정적 ~ 움찔)
 ## 2) 대치
-const FIN_FACE := 2.5
+const FIN_FACE := 4.0                  ## 대치 단계 길이 (대사를 읽을 시간)
+const FIN_FACE_MOVE := 2.5             ## 대치 단계 중 걸어가기 · 카메라 이동 시간
 const FIN_FACE_DIST := 260.0           ## 공백 ↔ 철견 거리 (화면 양 끝 — 가운데는 카메라가 벽에 막히지 않는 곳)
 const FIN_STEP_BACK := 0.9             ## 철견이 자리로 물러나는 시간 (멀면 FIN_STEP_SPEED 로) · 공백도 반대쪽 자리로 걸어 물러섬
 const FIN_STEP_SPEED := 180.0
@@ -303,13 +305,15 @@ const FIN_KILL_SHAKE := 8.0
 const FIN_FALL := 2.0
 const FIN_DOWN_LINE := "death"       ## 대사 키 (쓰러질 때)
 const FIN_DOWN_LINE_AT := 0.35
+const FIN_DOWN_LINE_TIME := 3.0       ## 쓰러질 때 대사 표시 시간 (여운 단계로 넘어가도 이어서)
+const FIN_RADIO_AT := 1.6             ## 여운 시작 → 무전 boss_clear (쓰러질 때 대사가 끝난 뒤)
 const FIN_KNEEL_AT := 0.9              ## 무릎 꿇음 (land 포즈)
 const FIN_TOPPLE_AT := 1.3             ## 앞으로 쓰러짐 (발을 축으로 회전)
 const FIN_TOPPLE_TIME := 0.5
 const FIN_HAT_VEL := Vector2(-240.0, -230.0)   ## 페도라: 바람(빗줄기 방향)에 날려 화면 밖으로
 const FIN_GUN_VEL := Vector2(60.0, -150.0)     ## 쌍권총: 손에서 떨어져 바닥에 튕김
 ## 13) 여운
-const FIN_AFTER := 2.0                 ## 번개 + 무전 → 이 뒤 출구 문 열림 (door_boss.wav)
+const FIN_AFTER := 3.6                 ## 여운 시작 → 이 뒤 출구 문 열림 (door_boss.wav) · 피날레 끝
 const FIN_CAM_RETURN := 1.2            ## 카메라가 플레이어를 다시 따라가기까지
 # ---------------------------------------------------------------- 무대 (BossArena)
 const RAIN_COUNT := 70                 ## 화면 안 빗줄기 수 (폭우 = 2배)
