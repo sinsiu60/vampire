@@ -14,6 +14,10 @@ class_name Gate
 signal started
 signal cleared
 
+## 무전 키 (비우면 Config.gate 의 gate_start · gate_clear)
+@export var radio_start := ""
+@export var radio_clear := ""
+
 var state := "idle"              ## idle | closing | wave | between | done
 var wave_i := -1                 ## 지금 웨이브 (0부터)
 var spawned: Array = []          ## 이번 웨이브에 소환한 적
@@ -133,7 +137,7 @@ func begin() -> void:
 	var main := _main()
 	if main != null:
 		main.add_shake(float(G.CLOSE_SHAKE), float(G.CLOSE_SHAKE_TIME), PI / 2.0)
-		main.radio(String(G.RADIO_START))
+		main.radio(radio_start if radio_start != "" else String(G.RADIO_START))
 		main.lock_camera_x(arena_center())          # 앞뒤 셔터가 한 화면에 보이게
 	PlaytestLogger.log_event("gate_start", { "gate": name, "waves": waves().size() })
 	started.emit()
@@ -231,7 +235,7 @@ func _finish() -> void:
 			d.open()
 	var main := _main()
 	if main != null:
-		main.radio(String(Config.gate.RADIO_CLEAR))
+		main.radio(radio_clear if radio_clear != "" else String(Config.gate.RADIO_CLEAR))
 		main.lock_camera_x(NAN)
 	PlaytestLogger.log_event("gate_clear", { "gate": name })
 	cleared.emit()

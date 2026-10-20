@@ -54,6 +54,7 @@ var intros_shown: Array = []      ## 이 방에서 소개한 적 종류 (테스�
 var _intro_queue: Array = []      # 소개할 적 [Enemy]
 var _intro := {}                  # 지금 소개 { e, t, from_c, from_z, to_c, to_z, locked }
 var _intro_wait := -1.0           # 다음 소개까지 (실제 초)
+var _cam_off := Vector2(0, -8)    # 카메라 기준점 (플레이어 발 기준) — 화면보다 높은 맵이면 더 위
 var _intro_keys := {}             # 이번에 소개 대기열에 넣은 종류
 var _toast := {}                  # 디버그 알림 한 줄 { text, t }
 var burst_misses := 0             ## 연사병 첫 탄 패링 (반사탄이 벽에 빗나감) 수 — 테스트
@@ -111,7 +112,17 @@ func _ready() -> void:
 	$HUD.add_child(radio_dialog)
 	$HUD.move_child(radio_dialog, $HUD/Text.get_index() + 1)
 	debug_draw.main = self
-	background.build(size.x, GameState.chapter * 100 + GameState.room, room.spawn_position().y, room)
+	# 먼 배경 (화면에 고정된 층) 의 바닥 높이 = 화면 y — 이어진 맵은 높이가 구간마다 달라 1장 방 바닥 (240) 으로
+	background.build(size.x, GameState.chapter * 100 + GameState.room, 240.0 if room is Level else room.spawn_position().y, room)
+	# 화면보다 높은 맵 (옥상 · 비상계단): 발이 화면 아래쪽에 오게 + 위아래 끌림 여유 (점프마다 카메라가 출렁이지 않게)
+	if size.y > Config.view.h + 1:
+		var C: Dictionary = Config.camera
+		camera.position.y = -float(C.TALL_FOOT_OFFSET)
+		_cam_off = camera.position
+		camera.drag_vertical_enabled = true
+		camera.drag_top_margin = float(C.DRAG_TOP)
+		camera.drag_bottom_margin = float(C.DRAG_BOTTOM)
+		camera.reset_smoothing()
 	_queue_intros()
 	# 재시작 직후 짧게 밝아지는 페이드 (실제 시간, 입력은 바로 받음). 방 이동은 Boot 가 따로 검게 전환
 	if not entering:
@@ -556,7 +567,7 @@ func _start_intro(e: Enemy) -> void:
 func _cam_follow_center() -> Vector2:
 	var half := Vector2(Config.view.w, Config.view.h) / 2.0
 	var size := room.size_px()
-	var c := player.center() + Vector2(0, -8)
+	var c := player.global_position + _cam_off
 	return Vector2(clampf(c.x, half.x, maxf(half.x, size.x - half.x)), clampf(c.y, half.y, maxf(half.y, size.y - half.y)))
 
 

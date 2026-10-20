@@ -20,18 +20,40 @@ var _h := 0
 var _floor := 240
 var _room: Node = null
 var _wires: Array = []                    # [[y0, y1, sag]]
+var _ox := 0                              # 지금 그리는 구간의 왼쪽 x · 높이 옮김 (이어진 맵 — 구간마다 따로 그림)
+var _oy := 0
 
 
 ## room = Room (cell_kind · size_px), lamp_xs = 조명 x (방마다), seed = 방 번호
+## 이어진 맵 (room.dress_spans()) 이면 alley 구간마다 그 x 범위 · 바닥 높이로 따로 그림 (옥상 구간 등 다른 스타일은 건너뜀)
 func build(room: Node, lamp_xs: PackedFloat32Array, seed: int, floor_y: float, floor_image: Image) -> Image:
 	_room = room
 	var size: Vector2 = room.size_px()
-	_w = int(size.x)
-	_h = int(size.y)
-	_floor = int(floor_y)
-	_rng.seed = 104723 * seed + 7
-	img = Image.create(_w, _h, false, Image.FORMAT_RGBA8)
+	img = Image.create(int(size.x), int(size.y), false, Image.FORMAT_RGBA8)
 	floor_img = floor_image
+	if not room.has_method("dress_spans"):
+		_ox = 0
+		_oy = 0
+		_w = int(size.x)
+		_h = int(size.y)
+		_floor = int(floor_y)
+		_rng.seed = 104723 * seed + 7
+		_draw_span(lamp_xs)
+		return img
+	for sp in room.dress_spans():
+		if String(sp.style) != "alley":
+			continue
+		_ox = int(sp.x0)
+		_w = int(sp.x1) - _ox
+		_floor = 240                                       # 구간 안에서는 1장 방과 같은 높이로 그리고 _oy 만큼 내림
+		_oy = int(float(sp.oy) + float(sp.floor)) - _floor
+		_h = 272
+		_rng.seed = 104723 * (seed * 100 + int(sp.seed)) + 7
+		_draw_span(sp.lamps)
+	return img
+
+
+func _draw_span(lamp_xs: PackedFloat32Array) -> void:
 	_facade()
 	_make_wires()
 	_draw_wires()
@@ -39,13 +61,12 @@ func build(room: Node, lamp_xs: PackedFloat32Array, seed: int, floor_y: float, f
 	for i in lamp_xs.size():
 		_lamp(lamp_xs[i], i)
 	_puddles()
-	return img
 
 
 # ---------------------------------------------------------------- 그리기 도우미
 func _fill(x: int, y: int, w: int, h: int, c: Color, on: Image = null) -> void:
 	var im := img if on == null else on
-	var r := Rect2i(x, y, w, h).intersection(Rect2i(0, 0, im.get_width(), im.get_height()))
+	var r := Rect2i(x + _ox, y + _oy, w, h).intersection(Rect2i(_ox, 0, mini(_w, im.get_width() - _ox), im.get_height()))
 	if r.size.x > 0 and r.size.y > 0:
 		if c.a >= 0.999:
 			im.fill_rect(r, c)
@@ -261,7 +282,7 @@ func _lamp(x: float, i: int) -> void:
 			_fill(int(roundf(x - hw)), yy, int(roundf(hw * 2.0)), 1, Color(P.LAMP_LIGHT, float(layer[1])))
 	# 바닥 빛 웅덩이
 	_ellipse(x, _floor + 2.0, bw * 0.4, 2.5, Color(P.LAMP_LIGHT, P.LAMP_CONE_ALPHA * 0.8), floor_img)
-	lamps.append({ "bulb": Vector2(x, by), "kind": kind })
+	lamps.append({ "bulb": Vector2(x + _ox, by + _oy), "kind": kind })
 
 
 # ---------------------------------------------------------------- 바닥: 물웅덩이 (가운데 분홍 반사선)
@@ -283,8 +304,9 @@ func _puddles() -> void:
 ## 그 x 의 맨 아래 바닥 윗면 y (지형 칸, 위가 비어 있는 곳) — 없으면 -1
 func _surface(x: int) -> int:
 	var t: int = int(Config.room.tile)
-	var cx := x / t
+	var cx := (x + _ox) / t
+	var oyc := _oy / t
 	for cy in range(_h / t - 1, 0, -1):
-		if _room.cell_kind(Vector2i(cx, cy)) == 1 and _room.cell_kind(Vector2i(cx, cy - 1)) == 0:
+		if _room.cell_kind(Vector2i(cx, cy + oyc)) == 1 and _room.cell_kind(Vector2i(cx, cy + oyc - 1)) == 0:
 			return cy * t
 	return -1

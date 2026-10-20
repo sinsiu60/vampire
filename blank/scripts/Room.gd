@@ -13,6 +13,10 @@ class_name Room
 @export var paint_terrain := false    ## 지형을 1장 팔레트로 다시 칠함 (Background 의 Floor 층 — 타일은 안 보이게, 충돌은 그대로)
 @export_enum("none", "alley") var art_style := "none"   ## alley = 비 내리는 시장 뒷골목 무대 (AlleyDressing — 가까운 건물 대신 골목 벽면)
 @export var lamp_xs: PackedFloat32Array = PackedFloat32Array()   ## 골목 조명 x (방마다 다르게)
+## 이어진 맵 (Level) 의 구간으로 쓸 때: 왼쪽 · 오른쪽 끝 바닥 높이 (px). 앞 구간의 오른쪽 끝과 이 구간의 왼쪽 끝 높이를 맞춰 붙임
+## (예: 비상계단 구간 = 왼쪽 400 거리 · 오른쪽 240 옥상). 기본 240 = 1장 방 바닥
+@export var join_left := 240.0
+@export var join_right := 240.0
 
 @onready var terrain: TileMapLayer = $Terrain
 

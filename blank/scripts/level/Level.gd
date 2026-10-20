@@ -6,13 +6,16 @@ class_name Level
 ##  - 지형: 첫 구간은 왼쪽 벽, 마지막 구간은 오른쪽 벽만 남기고 구간 사이 벽 기둥은 빼고 붙임 (바닥 높이가 다르면 턱 · 낭떠러지)
 ##  - 문: 첫 구간의 Entrance, 마지막 구간의 Exit (보스방 문) 만 남기고 구간 사이 문은 뺌. 관문 셔터 (Gate 아래 Door) 는 그대로
 ##  - 체크포인트: 첫 구간 PlayerSpawn = 시작, 나머지 구간의 PlayerSpawn · Checkpoint 노드 = 체크포인트 (x 순)
-##  - 적 · 그 밖의 노드는 위치만 옮겨 그대로. 골목 조명 (lamp_xs) 도 합침. 배경음 · 아트 스타일은 첫 구간 것
+##  - 높이: 구간의 join_left 를 앞 구간의 join_right 에 맞춰 위아래로 옮김 (옥상 · 비상계단). 가장 높은 구간이 y 0
+##  - 적 · 그 밖의 노드는 위치만 옮겨 그대로. 골목 조명 (lamp_xs) 도 합침. 배경음은 첫 구간 것, 무대 꾸밈은 구간마다 (dress_spans)
 ## 구간 = 체크포인트 하나에서 다음 체크포인트 전까지 (GameState.checkpoint). 죽으면 마지막 체크포인트에서, 그 앞 구간의 적은 없앰.
 
 @export var segments: Array[PackedScene] = []
 
 var checkpoints: Array = []      ## 체크포인트 발 위치 (Vector2, x 순) — [0] = 시작 위치
 var segment_x: Array = []        ## 구간 씬마다 시작 x (px)
+var segment_y: Array = []        ## 구간 씬마다 내린 높이 (px) — 옥상 같은 높은 구간이 0
+var spans: Array = []            # dress_spans()
 
 
 func _ready() -> void:
@@ -21,15 +24,32 @@ func _ready() -> void:
 
 func _build() -> void:
 	var tile: float = Config.room.tile
-	var off := 0                                       # 다음 구간이 붙을 칸 x
-	var lamps := PackedFloat32Array()
 	var en := get_node_or_null("Enemies")
 	if en == null:
 		en = Node2D.new()
 		en.name = "Enemies"
 		add_child(en)
-	var cps: Array = []
 	var n := segments.size()
+	# 1) 높이 맞춤: 앞 구간의 오른쪽 끝 바닥 = 이 구간의 왼쪽 끝 바닥 (join_left · join_right). 가장 높은 구간이 y 0 이 되게
+	var shifts: Array = []
+	var prev_right := 0.0
+	for i in n:
+		var probe: Node = segments[i].instantiate()
+		var jl := float(probe.get("join_left")) if probe.get("join_left") != null else 240.0
+		var jr := float(probe.get("join_right")) if probe.get("join_right") != null else 240.0
+		probe.free()
+		var sh := 0.0 if i == 0 else prev_right - jl
+		shifts.append(sh)
+		prev_right = jr + sh
+	var lo: float = shifts.min() if not shifts.is_empty() else 0.0
+	for i in n:
+		shifts[i] = roundf((float(shifts[i]) - lo) / tile) * tile
+	segment_y = shifts
+	# 2) 이어 붙이기
+	var off := 0                                       # 다음 구간이 붙을 칸 x
+	var lamps := PackedFloat32Array()
+	var cps: Array = []
+	spans.clear()
 	for i in n:
 		var seg: Node2D = segments[i].instantiate()
 		var tm: TileMapLayer = seg.get_node("Terrain")
@@ -43,14 +63,21 @@ func _build() -> void:
 		var start := 0 if i == 0 else 1
 		var end := r.end.x - 1 if i == n - 1 else r.end.x - 2
 		var shift := off - start
+		var dy := int(float(shifts[i]) / tile)
 		for c in tm.get_used_cells():
 			if c.x < start or c.x > end:
 				continue
-			terrain.set_cell(c + Vector2i(shift, 0), tm.get_cell_source_id(c), tm.get_cell_atlas_coords(c), tm.get_cell_alternative_tile(c))
-		var px := Vector2(shift * tile, 0)
+			terrain.set_cell(c + Vector2i(shift, dy), tm.get_cell_source_id(c), tm.get_cell_atlas_coords(c), tm.get_cell_alternative_tile(c))
+		var px := Vector2(shift * tile, float(shifts[i]))
 		segment_x.append(off * tile)
+		var seg_lamps := PackedFloat32Array()
 		for lx in seg.get("lamp_xs"):
 			lamps.append(float(lx) + px.x)
+			seg_lamps.append(float(lx) - start * tile)
+		# 무대 꾸밈 구간 (AlleyDressing 이 구간마다 그 바닥 높이로)
+		spans.append({ "x0": off * tile, "x1": (shift + end + 1) * tile, "oy": float(shifts[i]),
+			"floor": float(seg.get("join_left")) if seg.get("join_left") != null else 240.0,
+			"style": String(seg.get("art_style")), "lamps": seg_lamps, "seed": i + 1 })
 		for child in seg.get_children():
 			if child == tm:
 				continue
@@ -85,6 +112,11 @@ func _build() -> void:
 	GameState.zone_count = checkpoints.size()
 	# 문 · 관문 같은 노드가 바닥에 그려지도록 Enemies 를 맨 뒤로 (적이 위에)
 	move_child(en, get_child_count() - 1)
+
+
+## 무대 꾸밈 구간 [{ x0, x1 (px), oy (구간을 내린 높이), floor (구간 안 바닥 — join_left), style (alley | roof | none), lamps (구간 안 x), seed }]
+func dress_spans() -> Array:
+	return spans
 
 
 ## 구간 씬의 노드를 이 방으로 옮김 (위치 + px, 이름 바꿈)

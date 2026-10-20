@@ -1,17 +1,26 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=17 format=3]
 
 [ext_resource type="Script" path="res://scripts/level/Level.gd" id="1_lvl"]
-[ext_resource type="PackedScene" path="res://rooms/ch1/room_01.tscn" id="2_s1"]
-[ext_resource type="PackedScene" path="res://rooms/ch1/room_02.tscn" id="3_s2"]
-[ext_resource type="PackedScene" path="res://rooms/ch1/room_03.tscn" id="4_s3"]
-[ext_resource type="PackedScene" path="res://rooms/ch1/room_04.tscn" id="5_s4"]
-[ext_resource type="PackedScene" path="res://rooms/ch1/room_05.tscn" id="6_s5"]
-[ext_resource type="PackedScene" path="res://rooms/ch1/seg_gate_01.tscn" id="7_g1"]
+[ext_resource type="PackedScene" path="res://rooms/ch1/room_01.tscn" id="s1"]
+[ext_resource type="PackedScene" path="res://rooms/ch1/room_02.tscn" id="s2"]
+[ext_resource type="PackedScene" path="res://rooms/ch1/room_03.tscn" id="s3"]
+[ext_resource type="PackedScene" path="res://rooms/ch1/room_04.tscn" id="s4"]
+[ext_resource type="PackedScene" path="res://rooms/ch1/seg_alley_a.tscn" id="s5"]
+[ext_resource type="PackedScene" path="res://rooms/ch1/room_05.tscn" id="s6"]
+[ext_resource type="PackedScene" path="res://rooms/ch1/seg_gate_01.tscn" id="s7"]
+[ext_resource type="PackedScene" path="res://rooms/ch1/seg_rest_a.tscn" id="s8"]
+[ext_resource type="PackedScene" path="res://rooms/ch1/seg_climb.tscn" id="s9"]
+[ext_resource type="PackedScene" path="res://rooms/ch1/seg_roof_a.tscn" id="s10"]
+[ext_resource type="PackedScene" path="res://rooms/ch1/seg_roof_b.tscn" id="s11"]
+[ext_resource type="PackedScene" path="res://rooms/ch1/seg_descent.tscn" id="s12"]
+[ext_resource type="PackedScene" path="res://rooms/ch1/seg_alley_b.tscn" id="s13"]
+[ext_resource type="PackedScene" path="res://rooms/ch1/seg_rest_b.tscn" id="s14"]
+[ext_resource type="PackedScene" path="res://rooms/ch1/seg_gate_02.tscn" id="s15"]
 
 [node name="level_01" type="Node2D"]
 script = ExtResource("1_lvl")
-room_title = "1장 — 비 내리는 시장 (이어진 맵)"
-segments = Array[PackedScene]([ExtResource("2_s1"), ExtResource("3_s2"), ExtResource("4_s3"), ExtResource("5_s4"), ExtResource("6_s5"), ExtResource("7_g1")])
+room_title = "1장 — 비 내리는 시장 → 옥상 → 철견의 탑 (이어진 맵)"
+segments = Array[PackedScene]([ExtResource("s1"), ExtResource("s2"), ExtResource("s3"), ExtResource("s4"), ExtResource("s5"), ExtResource("s6"), ExtResource("s7"), ExtResource("s8"), ExtResource("s9"), ExtResource("s10"), ExtResource("s11"), ExtResource("s12"), ExtResource("s13"), ExtResource("s14"), ExtResource("s15")])
 
 [node name="Terrain" type="TileMapLayer" parent="."]
 

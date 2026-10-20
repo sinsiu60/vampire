@@ -14,7 +14,9 @@ const PLAYTEST_MODE := true
 var view := { "w": 480, "h": 270 }
 var fps := 60                                  # 물리 틱 (project.godot 의 physics_ticks_per_second 와 같게)
 var room := { "w": 960, "h": 270, "tile": 8 }  # 테스트 방 크기, 타일 한 칸 크기
-var camera := { "lerp": 0.12 }                 # 프로토타입: 프레임당 보간 비율 → Camera2D 스무딩 속도 = lerp × fps
+var camera := { "lerp": 0.12,                  # 프로토타입: 프레임당 보간 비율 → Camera2D 스무딩 속도 = lerp × fps
+	"TALL_FOOT_OFFSET": 92.0,                    # 화면보다 높은 맵: 카메라 중심 = 발 위 이만큼 (발이 화면 아래 ~ 227px 에)
+	"DRAG_TOP": 0.45, "DRAG_BOTTOM": 0.1 }       # 위아래 끌림 여유 (화면 반 높이 비율) — 점프로는 카메라가 거의 안 움직임
 
 # 물리 레이어 (비트 값). 일방향 발판은 따로 둬서 사격·시야 판정이 통과하게 (프로토타입과 같게)
 var layers := {
