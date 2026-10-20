@@ -83,11 +83,16 @@ func _physics_process(delta: float) -> void:
 				d.pos.x -= v.size.x + 16.0
 			elif p.x < v.position.x - 64.0:
 				d.pos.x += v.size.x + 64.0
+		var keep := 0                         # 끝난 물 튀김은 제자리에서 빼냄 (매 프레임 새 배열 안 만듦)
 		for s in _splashes:
 			s.t += delta
+			if s.t >= s.life:
+				continue
 			s.pos += Vector2(s.vel) * delta
 			s.vel.y += 420.0 * delta
-		_splashes = _splashes.filter(func(s): return s.t < s.life)
+			_splashes[keep] = s
+			keep += 1
+		_splashes.resize(keep)
 	queue_redraw()
 
 
@@ -102,14 +107,24 @@ func _splash(at: Vector2) -> void:
 			"life": randf_range(Palette.SPLASH_LIFE.x, Palette.SPLASH_LIFE.y) })
 
 
+var _pts := PackedVector2Array()
+var _cols := PackedColorArray()
+
+
 func _draw() -> void:
 	var P: Dictionary = Palette.RAIN_PRESETS[preset]
 	var amul: float = float(P.alpha) * (Palette.RAIN_FRONT_ALPHA if front else 1.0)
-	for i in count():
+	var n := count()
+	if _pts.size() != n * 2:
+		_pts.resize(n * 2)
+		_cols.resize(n)
+	for i in n:
 		var d: Dictionary = _drops[i]
-		var tip: Vector2 = Vector2(d.pos).round()
-		var tail := (Vector2(d.pos) - _dir * float(d.len)).round()
-		draw_line(tail, tip, Color(Palette.RAIN, float(d.a) * amul), -1.0, false)   # 1px 선 (두께 -1 = 하드웨어 1px)
+		_pts[i * 2] = (Vector2(d.pos) - _dir * float(d.len)).round()
+		_pts[i * 2 + 1] = Vector2(d.pos).round()
+		_cols[i] = Color(Palette.RAIN, float(d.a) * amul)
+	if n > 0:                 # 빗줄기를 한 번에 (선마다 따로 그리면 폭우 900줄 = 900번 그리기)
+		draw_multiline_colors(_pts, _cols, -1.0, false)   # 1px 선 (두께 -1 = 하드웨어 1px)
 	for s in _splashes:
 		var k: float = 1.0 - float(s.t) / float(s.life)
 		draw_rect(Rect2(Vector2(s.pos).round(), Vector2.ONE), Color(Palette.SPLASH, 0.8 * k * amul))

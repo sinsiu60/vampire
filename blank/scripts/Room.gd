@@ -45,11 +45,37 @@ const PLATFORM_TILE := Vector2i(2, 0)
 const PLATFORM_H := 6.0          # 일방향 발판 충돌 높이 (tiles/terrain.tres 의 폴리곤과 같음)
 
 
+var _kinds := PackedByteArray()  # cell_kind 캐시 (비 · 조각이 매 프레임 수백 번 물어봄 — 타일맵에 직접 묻는 것보다 빠름)
+var _kinds_rect := Rect2i()
+var _kinds_ok := false
+
+
 ## 칸 하나: 0 = 빈칸, 1 = 지형, 2 = 일방향 발판
 func cell_kind(c: Vector2i) -> int:
-	if terrain.get_cell_source_id(c) == -1:
+	if Engine.is_editor_hint():                # 에디터에선 타일이 계속 바뀜 — 바로 물어봄
+		if terrain.get_cell_source_id(c) == -1:
+			return 0
+		return 2 if terrain.get_cell_atlas_coords(c) == PLATFORM_TILE else 1
+	if not _kinds_ok:
+		_cache_cells()
+	if not _kinds_rect.has_point(c):
 		return 0
-	return 2 if terrain.get_cell_atlas_coords(c) == PLATFORM_TILE else 1
+	return _kinds[(c.y - _kinds_rect.position.y) * _kinds_rect.size.x + c.x - _kinds_rect.position.x]
+
+
+## 타일을 바꾼 뒤 부름 (Level 이 구간을 이어 붙인 뒤)
+func invalidate_cells() -> void:
+	_kinds_ok = false
+
+
+func _cache_cells() -> void:
+	_kinds_rect = terrain.get_used_rect()
+	_kinds.resize(_kinds_rect.size.x * _kinds_rect.size.y)
+	_kinds.fill(0)
+	for c in terrain.get_used_cells():
+		var k := 2 if terrain.get_cell_atlas_coords(c) == PLATFORM_TILE else 1
+		_kinds[(c.y - _kinds_rect.position.y) * _kinds_rect.size.x + c.x - _kinds_rect.position.x] = k
+	_kinds_ok = true
 
 
 func _cell_rect(c: Vector2i, kind: int) -> Rect2:

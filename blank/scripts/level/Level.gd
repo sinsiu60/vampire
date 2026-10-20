@@ -114,6 +114,7 @@ func _build() -> void:
 	GameState.zone_count = checkpoints.size()
 	# 문 · 관문 같은 노드가 바닥에 그려지도록 Enemies 를 맨 뒤로 (적이 위에)
 	move_child(en, get_child_count() - 1)
+	invalidate_cells()                    # 타일을 이어 붙였으니 cell_kind 캐시 새로
 
 
 ## x 가 속한 무대 꾸밈 구간 (없으면 {})

@@ -243,7 +243,7 @@ func _paint_terrain(room: Node) -> void:
 	spr.centered = false
 	spr.texture = ImageTexture.create_from_image(img)
 	fl.add_child(spr)
-	terrain.self_modulate = Color(1, 1, 1, 0)
+	terrain.visible = false                # 다시 칠한 타일은 아예 안 그림 (투명하게만 하면 타일 사각형을 다 그려서 옥상에서 느려짐) — 충돌은 그대로
 	painted = true
 
 
