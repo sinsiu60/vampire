@@ -1,7 +1,8 @@
 extends Node
-## 진행 상태 (오토로드): 지금 장 · 방 번호, 클리어한 방.
-## 방 하나 = 씬 하나 (res://rooms/ch<장>/room_<번호>.tscn). 죽어서 R 로 재시작하면 같은 방을 처음부터 다시 만들고,
-## 이전 방의 클리어 기록은 그대로 둔다.
+## 진행 상태 (오토로드): 지금 장 · 방 번호 · 체크포인트, 클리어한 방.
+## 1장 = 이어진 큰 맵 (rooms/ch1/level_01.tscn — 구간 씬을 이어 붙인 Level) + 보스방 (room_06).
+## 큰 맵 안은 체크포인트로 나뉜 구간: 죽어서 R 로 재시작하면 마지막 체크포인트부터 (그 앞 구간의 적은 없음).
+## 예전 방 씬 (room_01 ~ 05) 은 이제 큰 맵의 구간 — 따로 열려면 room_override.
 
 signal room_changed
 signal checkpoint_changed        ## 보스 체크포인트가 새로 정해짐 (SaveManager 가 저장)
@@ -10,20 +11,18 @@ const CHAPTERS := {
 	1: {
 		"name": "비 내리는 뒷골목 시장",
 		"rooms": [
-			"res://rooms/ch1/room_01.tscn",
-			"res://rooms/ch1/room_02.tscn",
-			"res://rooms/ch1/room_03.tscn",
-			"res://rooms/ch1/room_04.tscn",
-			"res://rooms/ch1/room_05.tscn",
-			"res://rooms/ch1/room_06.tscn",
+			"res://rooms/ch1/level_01.tscn",     # 이어진 맵: 시장 입구 → 골목 → 관문
+			"res://rooms/ch1/room_06.tscn",      # 철견 보스방
 		],
 	},
 }
 
 var chapter := 1
 var room := 1                    ## 1부터
+var checkpoint := 0              ## 큰 맵 안 체크포인트 (0 = 시작) — 다시 시작 · 이어하기 위치
+var zone_count := 1              ## 지금 방의 구간 수 (Level 이면 체크포인트 수, 아니면 1) — Level 이 정함
 var cleared := {}                ## "1-3" → true (클리어한 방)
-var boss_checkpoint := {}:       ## 보스 체크포인트 { key: "1-6", phase, dead? } — 죽으면 R 로 지금 페이즈 시작부터
+var boss_checkpoint := {}:       ## 보스 체크포인트 { key: "1-2" (room_key), phase, dead? } — 죽으면 R 로 지금 페이즈 시작부터
 	set(v):
 		boss_checkpoint = v
 		if not v.is_empty():
@@ -83,6 +82,13 @@ func room_key(c := -1, r := -1) -> String:
 	return "%d-%d" % [chapter if c < 0 else c, room if r < 0 else r]
 
 
+## 구간까지 붙인 키 — 큰 맵이면 "1-1.3" (3번째 구간), 아니면 room_key() (기록 · 디버그)
+func zone_key() -> String:
+	if zone_count > 1:
+		return "%s.%d" % [room_key(), checkpoint + 1]
+	return room_key()
+
+
 func mark_cleared() -> void:
 	cleared[room_key()] = true
 
@@ -96,6 +102,8 @@ func advance() -> bool:
 	if is_last_room():
 		return false
 	room += 1
+	checkpoint = 0
+	zone_count = 1
 	boss_checkpoint = {}
 	room_changed.emit()
 	return true
@@ -104,6 +112,8 @@ func advance() -> bool:
 ## 방 번호로 바로 (디버그 F6 · 장 처음부터)
 func go_to(r: int) -> void:
 	room = clampi(r, 1, room_count())
+	checkpoint = 0
+	zone_count = 1
 	boss_checkpoint = {}
 	room_changed.emit()
 
@@ -117,13 +127,15 @@ func reset_chapter() -> void:
 func label() -> String:
 	if room_override != "":
 		return "연습 방 (Shift+F12 = 돌아가기)"
+	if zone_count > 1:
+		return "%d장 - 방 %d/%d · 구간 %d/%d" % [chapter, room, room_count(), checkpoint + 1, zone_count]
 	return "%d장 - 방 %d/%d" % [chapter, room, room_count()]
 
 
 ## 사망 원인 기록: cause = { pattern (예 "④ 속사"), attack (예 "속사"), type (Config.ATK_*), err (패링 오차 글자) }
 func log_death(cause: Dictionary) -> void:
 	var c := cause.duplicate()
-	c.room = room_key()
+	c.room = zone_key()
 	death_log.append(c)
 	if death_log.size() > 50:
 		death_log.pop_front()
@@ -134,7 +146,7 @@ func log_death(cause: Dictionary) -> void:
 
 ## 이 방의 사망 기록 (최근이 끝)
 func room_deaths(key := "") -> Array:
-	var k := room_key() if key == "" else key
+	var k := zone_key() if key == "" else key
 	return death_log.filter(func(d): return d.get("room", "") == k)
 
 

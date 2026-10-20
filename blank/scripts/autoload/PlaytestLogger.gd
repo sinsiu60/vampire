@@ -159,7 +159,7 @@ func room_label() -> String:
 			return "-"
 	if GameState.room_override != "":
 		return "practice"
-	return GameState.room_key()
+	return GameState.zone_key()
 
 
 # ================================================================ 이벤트 (Main · Boot · 메뉴가 부름)
@@ -182,7 +182,7 @@ func room_clear() -> void:
 	var k := room_label()
 	var start := float(_room_start.get(k, GameState.stats.get("time", 0.0)))
 	log_event("room_clear", { "room_time": float(GameState.stats.get("time", 0.0)) - start, "tries": int(_room_tries.get(k, 1)),
-		"deaths": int(GameState.room_death_counts.get(GameState.room_key(), 0)) })
+		"deaths": int(GameState.room_death_counts.get(GameState.zone_key(), 0)) })
 	_room_start.erase(k)
 	_room_tries.erase(k)
 
@@ -276,6 +276,10 @@ func quit(reason := "") -> void:
 
 
 func _on_checkpoint() -> void:
+	_log_checkpoint.call_deferred()          # 방을 만드는 중 (보스가 _ready 에서 정함) 이면 room_enter 다음 줄로
+
+
+func _log_checkpoint() -> void:
 	var cp: Dictionary = GameState.boss_checkpoint
 	if cp.get("key", "") != GameState.room_key() or get_tree().get_first_node_in_group("game") == null:
 		return
@@ -335,10 +339,13 @@ static func _pct(a: int, n: int) -> String:
 	return "-" if n == 0 else "%d%% (%d/%d)" % [roundi(100.0 * a / n), a, n]
 
 
-## 방 키 정렬 ("1-2" < "1-10")
+## 방 키 정렬 ("1-1.2" < "1-1.10" < "1-2")
 static func _room_order(k: String) -> int:
 	var p := k.split("-")
-	return int(p[0]) * 100 + int(p[1]) if p.size() == 2 else 99999
+	if p.size() != 2:
+		return 999999
+	var q := p[1].split(".")
+	return int(p[0]) * 10000 + int(q[0]) * 100 + (int(q[1]) if q.size() > 1 else 0)
 
 
 func _of(event: String) -> Array:

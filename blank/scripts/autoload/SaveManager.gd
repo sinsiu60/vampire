@@ -1,11 +1,12 @@
 extends Node
 ## 저장 (오토로드 SaveManager) — user://save.json. 옵션 설정은 따로 user://settings.json (Settings).
-## 저장 시점: 방 클리어 뒤 다음 방으로 넘어갈 때 (Boot.next_room) · 보스 페이즈 체크포인트 (GameState.checkpoint_changed) · 장 클리어.
-## 내용: 지금 장 · 방, 보스 체크포인트, 본 적 소개 기록, 장 통계 (플레이 시간 · 사망 · 패링 성공 · 반격 성공), 클리어한 장.
-## 이어하기 = 저장된 방 (또는 보스 페이즈) 처음부터. 장 클리어 기록이면 클리어 화면으로.
+## 저장 시점: 큰 맵의 체크포인트를 지날 때 (Main) · 다음 방 (보스방) 으로 넘어갈 때 (Boot.next_room) ·
+##           보스 페이즈 체크포인트 (GameState.checkpoint_changed) · 장 클리어.
+## 내용: 지금 장 · 방 · 체크포인트, 보스 체크포인트, 본 적 소개 기록, 장 통계 (플레이 시간 · 사망 · 패링 성공 · 반격 성공), 클리어한 장.
+## 이어하기 = 저장된 체크포인트 (또는 보스 페이즈) 부터. 장 클리어 기록이면 클리어 화면으로.
 
 const PATH := "user://save.json"
-const VERSION := 1
+const VERSION := 2                ## 2 = 이어진 맵 (방 1 = 큰 맵 + 체크포인트, 방 2 = 보스방). 1 은 옛 방 6개 — 읽을 때 옮김
 
 var enabled := true              ## 테스트용 방 (room_override) · 단독 실행에선 저장 안 함
 var last_reason := ""            ## 마지막 저장 이유 (room | checkpoint | chapter_clear) — 테스트 · 디버그
@@ -43,6 +44,7 @@ func save_game(reason: String) -> void:
 		"version": VERSION,
 		"chapter": GameState.chapter,
 		"room": GameState.room,
+		"checkpoint": GameState.checkpoint,
 		"boss_checkpoint": cp if cp.get("key", "") == GameState.room_key() else {},
 		"seen_intros": GameState.seen_intros.keys(),
 		"stats": GameState.stats.duplicate(),
@@ -63,13 +65,14 @@ func save_game(reason: String) -> void:
 
 ## 저장 내용을 GameState 로 (이어하기). 저장이 없으면 false
 func apply_save() -> bool:
-	var d := load_data()
+	var d := _migrate(load_data())
 	if d.is_empty():
 		return false
 	GameState.room_override = ""
 	GameState.chapter = int(d.get("chapter", 1))
 	GameState.chapter_cleared = int(d.get("chapter_cleared", 0))
 	GameState.go_to(int(d.get("room", 1)))
+	GameState.checkpoint = int(d.get("checkpoint", 0))
 	# 지금 방보다 앞의 방은 클리어한 것으로
 	GameState.cleared.clear()
 	for r in range(1, GameState.room):
@@ -90,6 +93,25 @@ func apply_save() -> bool:
 			if (st as Dictionary).has(k):
 				GameState.stats[k] = float(st[k]) if k == "time" else int(st[k])
 	return true
+
+
+## 옛 저장 (버전 1 — 방 6개) → 이어진 맵: 방 1 ~ 5 = 큰 맵의 그 구간 (체크포인트 n-1), 방 6 = 보스방 (방 2)
+static func _migrate(d: Dictionary) -> Dictionary:
+	if d.is_empty() or int(d.get("version", 1)) >= 2:
+		return d
+	var r := int(d.get("room", 1))
+	if r <= 5:
+		d.room = 1
+		d.checkpoint = r - 1
+		d.boss_checkpoint = {}
+	else:
+		d.room = 2
+		d.checkpoint = 0
+		var cp: Variant = d.get("boss_checkpoint", {})
+		if cp is Dictionary and not (cp as Dictionary).is_empty():
+			cp.key = "%d-2" % int(d.get("chapter", 1))
+	d.version = 2
+	return d
 
 
 ## 저장된 게 장 클리어 기록인가 (이어하기 → 클리어 화면)
@@ -128,6 +150,8 @@ func _make_summary() -> String:
 		return "저장: 없음"
 	var cp: Dictionary = d.get("boss_checkpoint", {})
 	var where := "%d장 방 %d" % [int(d.get("chapter", 1)), int(d.get("room", 1))]
+	if int(d.get("checkpoint", 0)) > 0:
+		where += " · 구간 %d" % (int(d.checkpoint) + 1)
 	if cp.get("dead", false):
 		where += " · 보스 처치"
 	elif cp.has("phase"):

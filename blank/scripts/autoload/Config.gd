@@ -371,6 +371,59 @@ var rooms := {
 }
 
 
+# ---------------------------------------------------------------- 1장 이어진 맵 (Level) · 체크포인트
+var level := {
+	"INTRO_RANGE": 300.0,             # 처음 만나는 적 소개: 플레이어와 가로 거리가 이 안에 들어오면 (멀리 있는 적은 아직)
+	"ZONE_PAD": 0.0,                  # (예비) 구간 경계 여유
+}
+
+# ---------------------------------------------------------------- 관문 적 소환 연출 (SpawnDrop) — 시간은 월드 시간 (히트스톱 · 일시정지에 같이 멈춤)
+var spawn_drop := {
+	# 1) 표시
+	"MARK_W": 28.0, "MARK_H": 8.0,            # 바닥 붉은 타원
+	"MARK_COLOR": Color("#F02832"),
+	"MARK_INNER_SCALE": 0.55, "MARK_INNER_ALPHA": 0.3,   # 안쪽 작은 반투명 타원
+	"MARK_GROW": 0.15,                        # 크기 0 → 최대
+	"MARK_BLINK_HZ": 6.0,                     # 초당 깜빡임
+	"BEAM_AT": 0.25,                          # 화면 위 → 타원 세로 빛줄기 시작 (1px)
+	"BEAM_ALPHA": 0.25,                       # 빛줄기 최대 투명도 (0 → 이 값으로 진해짐)
+	# 2) 낙하
+	"FALL_AT": 0.45, "FALL_TIME": 0.15,       # 낙하 시작 · 걸리는 시간 (착지 = 0.60)
+	"FALL_ABOVE": 20.0,                       # 카메라 위쪽 끝에서 이만큼 더 위에서 떨어짐
+	"SMEAR_X": 0.6, "SMEAR_Y": 2.6,           # 낙하 중 크기 (발 기준)
+	"GHOSTS": 3, "GHOST_GAP": 18.0,           # 위쪽 경로 잔상
+	"GHOST_ALPHAS": [0.55, 0.35, 0.2],
+	"GHOST_COLOR": Color("#3C466E"),
+	"GHOST_FADE": 0.1,                        # 착지 뒤 잔상이 사라지는 시간
+	"RIM_COLOR": Color("#8FB4E8"),            # 낙하 중 몸 한쪽 세로 림라이트 1px
+	# 3) 착지
+	"LAND_SQUASH_X": 1.5, "LAND_SQUASH_Y": 0.55, "LAND_SQUASH_FRAMES": 2,
+	"LAND_SHAKE": 3.0, "LAND_SHAKE_TIME": 0.15,
+	"LAND_FLASH": 0.15,                       # 화면 전체 흰 섬광 1프레임 투명도
+	"RING_SCALE": 3.0, "RING_TIME": 0.3,      # 타원이 바깥으로 퍼지며 사라짐
+	"DUST": 5, "DUST_SPEED": 70.0,            # 양옆 먼지 (한쪽 개수)
+	"CRACK_TIME": 1.0,                        # 바닥 금 자국
+	"PUSH": 24.0,                             # 타원 위에 있던 플레이어를 옆으로 밀어냄 (피해 없음)
+	# 4) 회복
+	"CROUCH_IN": 0.08, "CROUCH_Y": 0.85, "CROUCH_X": 1.1,   # 납작 → 웅크림
+	"RECOVER": 0.33,                          # 웅크림 → 원래 크기
+	"AI_AT": 1.0,                             # 이 시각부터 적 AI 작동 (그 전엔 공격 안 함 · 무적 아님)
+}
+
+# ---------------------------------------------------------------- 관문 (셔터 잠금 전투, scripts/Gate.gd)
+var gate := {
+	"SHUTTER_CLOSE": 0.2,             # 앞뒤 셔터가 위에서 내려와 닫힘
+	"CLOSE_SHAKE": 4.0, "CLOSE_SHAKE_TIME": 0.2,
+	"FIRST_WAVE_DELAY": 0.6,          # 셔터가 닫힌 뒤 첫 웨이브
+	"SPAWN_GAP": 0.25,                # 웨이브 안에서 적끼리 소환 간격
+	"MAX_MARKS": 3,                   # 동시에 떠 있는 붉은 타원 최대
+	"MIN_PLAYER_DIST": 48.0,          # 착지 지점 ↔ 플레이어 최소 거리
+	"MIN_SPAWN_DIST": 32.0,           # 착지 지점끼리 최소 간격
+	"WAVE_GAP": 1.0,                  # 웨이브를 다 처치한 뒤 다음 웨이브까지
+	"RADIO_START": "gate_start", "RADIO_CLEAR": "gate_clear",
+	"DEBUG_SPAWN_AHEAD": 80.0,        # F7: 플레이어 앞 이 거리에 근접 적 1명
+}
+
 # ---------------------------------------------------------------- 출구 문 (하운드 보안 셔터)
 # 방의 하운드 경비원이 전부 쓰러지면 보안 잠금이 풀려 열림. 시간은 모두 실제 시간(초) — 효과음과 맞춤.
 # 출구 표시는 하늘색(colors.ui)만. 빨강·노랑·보라는 쓰지 않음.
@@ -463,6 +516,11 @@ var audio := {
 	"SFX_TIME_RETURN": 1.0, "SFX_KILL": 1.0,
 	"SFX_DOOR": 0.7,                  # door_open.wav (셔터 · 철망 · 맨홀)
 	"SFX_DOOR_BOSS": 0.9,             # door_boss.wav (보스방 문)
+	"SFX_SPAWN_WARN": 0.6,            # spawn_warn.wav (관문 소환 붉은 타원 표시) — 동시에 최대 SPAWN_WARN_MAX 개, 피치 랜덤
+	"SFX_SPAWN_WHOOSH": 0.8,          # spawn_whoosh.wav (낙하 시작)
+	"SFX_SPAWN_LAND": 0.9,            # spawn_land.wav (착지)
+	"SFX_SHUTTER_CLOSE": 0.9,         # shutter_close.wav (관문 셔터가 닫힐 때)
+	"SPAWN_WARN_MAX": 2, "SPAWN_WARN_PITCH": Vector2(0.95, 1.05),
 	"SFX_BOSS_INTRO": 1.0,            # boss_intro.wav (철견 이름 카드 · 포효)
 	"SFX_BOSS_ARMOR": 0.8,            # boss_armor.wav (반사탄이 장갑에 튕김)
 	# 철견 (보스 효과음 2차) — Audio.VOLUME_KEYS 가 소리 이름과 연결

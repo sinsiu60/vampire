@@ -34,7 +34,7 @@ func _draw() -> void:
 		draw_rect(Rect2(0, 0, W, bh), Color.BLACK)
 		draw_rect(Rect2(0, H - bh, W, bh), Color.BLACK)
 	# 남은 적 수 · 켜진 디버그
-	Fonts.text(self, "남은 적 %d" % main.enemies().size(), Vector2(8, 10), 10, Color(ui, 0.85), "left", true, true)
+	Fonts.text(self, "남은 적 %d" % main.zone_enemy_count(), Vector2(8, 10), 10, Color(ui, 0.85), "left", true, true)
 	var flags := []
 	if Debug.aim_debug: flags.append("AIM DEBUG")
 	if Debug.timing: flags.append("TIMING")
@@ -199,7 +199,7 @@ func _draw_death_log() -> void:
 ## 디버그 (보스방 밖): 왼쪽 위 — 이 방 사망 수 + 최근 3번 원인 (어떤 적의 어떤 공격 · 종류 · 패링 오차)
 func _draw_room_deaths() -> void:
 	var ui: Color = Config.colors.ui
-	var n: int = int(GameState.room_death_counts.get(GameState.room_key(), 0))
+	var n: int = int(GameState.room_death_counts.get(GameState.zone_key(), 0))
 	var x := 8.0
 	var y := 24.0
 	var recent: Array = GameState.room_deaths()

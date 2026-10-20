@@ -54,6 +54,7 @@ var intros_shown: Array = []      ## 이 방에서 소개한 적 종류 (테스�
 var _intro_queue: Array = []      # 소개할 적 [Enemy]
 var _intro := {}                  # 지금 소개 { e, t, from_c, from_z, to_c, to_z, locked }
 var _intro_wait := -1.0           # 다음 소개까지 (실제 초)
+var _intro_keys := {}             # 이번에 소개 대기열에 넣은 종류
 var _toast := {}                  # 디버그 알림 한 줄 { text, t }
 var burst_misses := 0             ## 연사병 첫 탄 패링 (반사탄이 벽에 빗나감) 수 — 테스트
 var blocks := 0                   ## 돌격병이 막아낸 베기 수 — 테스트
@@ -63,8 +64,13 @@ var blast_kills := 0              ## 폭발에 휘말려 처치된 적 수
 
 
 func _ready() -> void:
-	PlaytestLogger.room_enter()           # 방 씬 (철견 체크포인트 기록) 보다 먼저
 	_load_room()
+	# 이어진 맵: 마지막 체크포인트에서 다시 — 그 앞 구간의 적 · 지난 관문은 없앰 (Level 이 GameState.zone_count 를 정함)
+	if room is Level:
+		(room as Level).prune_before(GameState.checkpoint)
+	else:
+		GameState.zone_count = 1
+	PlaytestLogger.room_enter()
 	for b in get_tree().get_nodes_in_group("boss"):
 		if not b.dead:
 			boss = b
@@ -193,9 +199,92 @@ func _physics_process(_delta: float) -> void:
 	_opportunity_chimes()
 	_resolve_shots()
 	_resolve_combat()
-	if game_state == "play" and enemies().is_empty():
+	_queue_intros()
+	_check_checkpoint()
+	if game_state == "play" and _room_done():
 		_on_room_cleared()
 	_check_exit()
+
+
+## 방 클리어 조건: 관문이 모두 끝났고 — 이어진 맵이면 마지막 구간 (보스방 문 앞) 의 적이 없을 때, 아니면 방의 적이 없을 때
+func _room_done() -> bool:
+	for g in get_tree().get_nodes_in_group("gates"):
+		if g.busy():
+			return false
+	if room is Level:
+		var lo: float = (room as Level).checkpoints.back().x
+		for e in enemies():
+			if e.global_position.x >= lo:
+				return false
+		return true
+	return enemies().is_empty()
+
+
+## 이어진 맵: 다음 체크포인트를 지나면 구간 기록 · 저장
+func _check_checkpoint() -> void:
+	if not (room is Level) or player.dead:
+		return
+	var z := (room as Level).zone_of(player.global_position.x)
+	if z <= GameState.checkpoint:
+		return
+	PlaytestLogger.room_clear()           # 지난 구간 (처음 들어온 뒤 걸린 시간)
+	GameState.checkpoint = z
+	SaveManager.save_game("checkpoint")
+	PlaytestLogger.room_enter()
+
+
+## 관문: 카메라를 x 가운데 cx 화면 한 장에 가둠 (앞뒤 셔터가 다 보이게, 부드럽게 옮겨감). cx = NAN 이면 풀기
+func lock_camera_x(cx: float) -> void:
+	var size := room.size_px()
+	camera.limit_smoothed = true
+	if is_nan(cx):
+		camera.limit_left = 0
+		camera.limit_right = int(size.x)
+		return
+	var half: float = Config.view.w / 2.0
+	var c := clampf(cx, half, size.x - half)
+	camera.limit_left = int(roundf(c - half))
+	camera.limit_right = int(roundf(c + half))
+
+
+## HUD "남은 적": 이어진 맵이면 지금 구간의 적만
+func zone_enemy_count() -> int:
+	if not (room is Level):
+		return enemies().size()
+	var r := (room as Level).zone_range(GameState.checkpoint)
+	return enemies().filter(func(e): return e.global_position.x >= r.x and e.global_position.x < r.y).size()
+
+
+## 지형 · 발판 윗면 (p 아래 첫 바닥) y — 없으면 p.y
+func ground_below(p: Vector2) -> float:
+	var tile: float = Config.room.tile
+	var cx := floori(p.x / tile)
+	for y in range(floori((p.y - 1.0) / tile), floori((p.y - 1.0) / tile) + 60):
+		var c := Vector2i(cx, y)
+		if room.cell_kind(c) != 0 and room.cell_kind(c - Vector2i(0, 1)) == 0:
+			return y * tile
+	return p.y
+
+
+## F7: 플레이어 앞 DEBUG_SPAWN_AHEAD 에 근접 적 1명 소환 (SpawnDrop 연출 테스트)
+func debug_spawn_test() -> SpawnDrop:
+	var e: Node2D = (load("res://scenes/EnemyMelee.tscn") as PackedScene).instantiate()
+	e.set_meta("gate_spawned", true)
+	var x := player.global_position.x + player.facing * float(Config.gate.DEBUG_SPAWN_AHEAD)
+	x = clampf(x, 24.0, room.size_px().x - 24.0)
+	return SpawnDrop.play(e, Vector2(x, ground_below(Vector2(x, player.global_position.y - 40.0))))
+
+
+## F8 (보스방 밖): 가장 가까운 관문 웨이브 즉시
+func debug_gate_wave() -> void:
+	var best: Node = null
+	for g in get_tree().get_nodes_in_group("gates"):
+		if g.state == "done":
+			continue
+		if best == null or absf(g.trigger_x() - player.global_position.x) < absf(best.trigger_x() - player.global_position.x):
+			best = g
+	if best != null:
+		best.debug_start_wave()
 
 
 # ================================================================ 방 진행
@@ -266,6 +355,11 @@ func _check_exit() -> void:
 
 ## F6: 다음 방으로 바로 (마지막 방이면 1번 방)
 func debug_next_room() -> void:
+	# 이어진 맵: 다음 체크포인트 (구간) 로
+	if room is Level and GameState.checkpoint < GameState.zone_count - 1:
+		GameState.checkpoint += 1
+		restart()
+		return
 	var next := GameState.room % GameState.room_count() + 1
 	GameState.go_to(next)
 	restart()
@@ -374,16 +468,24 @@ func _update_shake(dt: float) -> void:
 # ================================================================ 처음 만나는 적 소개 (Config.intro)
 ## 방에 처음 보는 종류의 적 (연사병 · 돌격병 · 척탄병) 이 있으면: 입력 LOCK 초 잠금 · 그 적 쪽으로 카메라 살짝 줌인 ·
 ## 머리 위 이름 NAME_TIME 초 · 잡음 무전 (적의 intro_radio_key → data/radio_lines.json). 본 종류는 GameState.seen_intros (F11 초기화)
+## 처음 만나는 적 소개: 그 종류의 적이 플레이어와 가로 INTRO_RANGE 안에 들어오면 대기열에 (이어진 맵 — 멀리 있는 적은 아직).
+## 관문에서 소환된 적은 소개 안 함 (전투 도중 카메라가 움직이지 않게)
 func _queue_intros() -> void:
-	var keys := {}
+	if player == null or player.dead:
+		return
+	var R: float = Config.level.INTRO_RANGE
 	for e in enemies():
-		var k: String = e.intro_key()
-		if k == "" or GameState.seen_intros.has(k) or keys.has(k):
+		if e.has_meta("gate_spawned"):
 			continue
-		keys[k] = true
+		var k: String = e.intro_key()
+		if k == "" or GameState.seen_intros.has(k) or _intro_keys.has(k):
+			continue
+		if absf(e.global_position.x - player.global_position.x) > R:
+			continue
+		_intro_keys[k] = true
 		_intro_queue.append(e)
-	if not _intro_queue.is_empty():
-		_intro_wait = Config.intro.DELAY
+		if _intro.is_empty() and _intro_wait < 0.0:
+			_intro_wait = Config.intro.DELAY
 
 
 func intro_active() -> bool:

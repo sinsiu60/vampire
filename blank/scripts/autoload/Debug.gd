@@ -6,8 +6,9 @@ extends Node
 ##     모든 프레임 단위 연출(히트스톱·킬 스톱·빛줄기·패링 시퀀스)이 같은 비율로 느려짐. 소리는 실제 속도
 ##  F4 프레임 진행: 게임을 멈추고 F4 를 누를 때마다 정확히 한 틱. Enter 로 해제
 ##  F5 패링 타이밍 디버그 (조준선 옆 판정 창 바 + 입력 오차 ms)
-##  F6 다음 방으로 바로 · F7 지금 방 즉시 클리어 — 디버그 빌드(에디터 실행 · 디버그 내보내기)에서만
-##  F8 철견 즉시 휘청 (반격 베기 감각 테스트) · F9 철견 포즈 뷰어 (숫자 키로 포즈, Shift+숫자 = 11번째부터)
+##  F6 다음 구간 (이어진 맵의 다음 체크포인트) · 마지막 구간이면 다음 방 — 디버그 빌드(에디터 실행 · 디버그 내보내기)에서만
+##  F7 플레이어 앞 80px 에 근접 적 1명 소환 (SpawnDrop 연출 테스트) · Shift+F7 지금 방 즉시 클리어
+##  F8 관문 웨이브 즉시 시작 (보스방에선 철견 즉시 휘청) · F9 철견 포즈 뷰어 (숫자 키로 포즈, Shift+숫자 = 11번째부터)
 ##  F10 철견 패턴 강제 (① ~ ⑤ 차례로) · F11 철견 페이즈 순환 (1 → 2 → 3, Shift+F11 = 다음 페이즈 전환 연출 그대로)
 ##     — 디버그 빌드에서만
 ##  F12 철견 피날레 "빗방울 결투" 만 바로 재생 · Shift+F12 공격 종류 연습 방 (1겹 · 2겹 · 보라 더미) ↔ 원래 방 — 디버그 빌드에서만
@@ -92,8 +93,10 @@ func _input(event: InputEvent) -> void:
 					main.debug_arena_phase()
 				else:
 					main.debug_next_room()
-			else:
+			elif event.shift_pressed:
 				main.debug_clear_room()
+			else:
+				main.debug_spawn_test()
 		KEY_F12:
 			var main := get_tree().get_first_node_in_group("game")
 			if not debug_mode() or main == null or menu_open:
@@ -106,6 +109,12 @@ func _input(event: InputEvent) -> void:
 			main.restart()
 		KEY_F8, KEY_F9, KEY_F10, KEY_F11:
 			var b = _boss()
+			# F8 (보스방 밖): 관문 웨이브 즉시
+			if event.physical_keycode == KEY_F8 and b == null and debug_mode() and not menu_open:
+				var gm := get_tree().get_first_node_in_group("game")
+				if gm != null:
+					gm.debug_gate_wave()
+				return
 			# F11 (보스방 밖): 적 소개 기록 초기화
 			if event.physical_keycode == KEY_F11 and b == null and debug_mode() and not menu_open:
 				var main := get_tree().get_first_node_in_group("game")

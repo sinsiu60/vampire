@@ -13,7 +13,8 @@ const FILES := ["gun_fire", "parry_chang", "slowmo_in", "slowmo_loop", "time_ret
 	"gun_cock", "quickdraw", "pistol_whip", "execute", "stagger", "explosion", "flashbang", "thunder", "rain_loop",
 	"heartbeat", "drip", "sheathe", "bullet_split"]
 # 있으면 쓰고 없으면 조용히 무음 (경고 없음)
-const OPTIONAL := ["dash_whoosh", "slide", "jump", "grenade_pin", "roll", "ui_move", "ui_select", "ui_back", "radio_on", "radio_off", "radio_blip"]
+const OPTIONAL := ["dash_whoosh", "slide", "jump", "grenade_pin", "roll", "ui_move", "ui_select", "ui_back", "radio_on", "radio_off", "radio_blip",
+	"spawn_warn", "spawn_whoosh", "spawn_land", "shutter_close"]
 ## 파일 안에서 가장 큰 소리 위치 (초) — play_synced 가 이만큼 일찍 재생해 타격 순간에 맞춤
 const PEAKS := {
 	"gun_cock": 0.07, "quickdraw": 0.22, "pistol_whip": 0.12, "execute": 0.0, "stagger": 0.0,
@@ -30,6 +31,7 @@ const VOLUME_KEYS := {
 	"boss_intro": "SFX_BOSS_INTRO", "kill_sound": "SFX_KILL", "dash_whoosh": "SFX_DASH", "slide": "SFX_SLIDE", "jump": "SFX_JUMP",
 	"roll": "SFX_ROLL", "grenade_pin": "SFX_GRENADE_PIN",
 	"heartbeat": "SFX_HEARTBEAT", "drip": "SFX_DRIP", "sheathe": "SFX_SHEATHE", "bullet_split": "SFX_BULLET_SPLIT",
+	"spawn_warn": "SFX_SPAWN_WARN", "spawn_whoosh": "SFX_SPAWN_WHOOSH", "spawn_land": "SFX_SPAWN_LAND", "shutter_close": "SFX_SHUTTER_CLOSE",
 }
 const POOL_SIZE := 16
 const WORLD_BUS := "World"       # 효과음 대부분 — 섬광탄 동안 로우패스 (귀가 멍함)
@@ -340,6 +342,24 @@ func is_muffled() -> bool:
 ## vol_key = "" 이면 그 소리의 기본 볼륨 (VOLUME_KEYS)
 func sfx(name: String, vol_key := "", pitch := 1.0, clear := false) -> AudioStreamPlayer:
 	return play(name, volume_of(name) if vol_key == "" else float(Config.audio.get(vol_key, 1.0)), pitch, clear)
+
+
+## 지금 재생 중인 이 소리 개수
+func playing_count(name: String) -> int:
+	if not streams.has(name):
+		return 0
+	var n := 0
+	for p in _pool:
+		if p.playing and p.stream == streams[name]:
+			n += 1
+	return n
+
+
+## 같은 소리가 max_count 개 넘게 겹치지 않게 (넘으면 이번 것은 안 냄) — 관문 소환 spawn_warn
+func sfx_limited(name: String, max_count: int, pitch := 1.0) -> AudioStreamPlayer:
+	if playing_count(name) >= max_count:
+		return null
+	return sfx(name, "", pitch)
 
 
 ## 철견 등장 카드 · 페이즈 전환 포효 (boss_intro.wav)

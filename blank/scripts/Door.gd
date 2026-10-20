@@ -11,6 +11,7 @@ class_name Door
 ##  boss     보스방 문 — 셔터의 1.5배, 두꺼운 이중 셔터가 위아래로 갈라짐. door_boss.wav + 무전 한 줄
 ##
 ## 상태: 잠김(LOCKED, 충돌 있음) → 열리는 중(OPENING, open()) → 열림(OPEN, 충돌 없음)
+##  관문 셔터 (Gate): start_open 으로 열린 채 시작 → close_fast() 로 위에서 빠르게 내려와 닫힘 (CLOSING → LOCKED) → 다시 open()
 ## 시간표 (실제 시간, 효과음과 맞춤)
 ##  일반  0초 door_open.wav · 상태등 하늘색 · 간판 지지직 / 0.50초 2프레임 멈칫 / 0.64초 완전히 열림 + 먼지 + 흔들림 2px
 ##  보스  0초 door_boss.wav · 상태등 회전 / 0.35초 잠금 해제 쿵 + 흔들림 3px / 0.4~2.1초 증기 + 미세 진동 1px /
@@ -18,7 +19,7 @@ class_name Door
 ## 문이 놓인 자리의 지형 타일은 실행할 때 지워짐 (벽 속에 문을 놓아도 통로가 생김).
 ## @tool — 에디터에서도 그려져서 방 씬에서 보며 옮길 수 있음.
 
-enum { LOCKED, OPENING, OPEN }
+enum { LOCKED, OPENING, OPEN, CLOSING }
 
 @export_enum("entrance", "exit") var kind := "exit":
 	set(v):
@@ -30,10 +31,12 @@ enum { LOCKED, OPENING, OPEN }
 		queue_redraw()
 ## 보스방 문이 열리기 시작할 때 잡음 무전 (data/radio_lines.json 키, 비우면 없음)
 @export var radio_key := "boss_door"
+## 열린 채로 시작 (관문 셔터 — 플레이어가 관문에 들어오면 Gate 가 close_fast)
+@export var start_open := false
 
 var state := LOCKED
-var is_open: bool:               ## 잠금이 풀렸는가 (열리는 중 포함)
-	get: return state != LOCKED
+var is_open: bool:               ## 잠금이 풀렸는가 (열리는 중 포함, 닫히는 중은 아님)
+	get: return state == OPENING or state == OPEN
 var t := 0.0                     ## open() 뒤 실제 시간 (초)
 var open_t := -1.0               ## 완전히 열린 뒤 실제 시간 (초), 아니면 -1
 
@@ -46,6 +49,7 @@ var _sparkles: Array = []        # 바닥에 닿아 반짝 { x, t }
 var _rain_acc := 0.0
 var _cover := {}                 # 떨어져 나간 철망 덮개 { pos, vel, rot, vrot, rest_t }
 var _sound: AudioStreamPlayer
+var _close_time := 0.2           # close_fast 길이
 
 static var _editor_cfg := {}
 
@@ -131,6 +135,10 @@ func _ready() -> void:
 	_shape.position = br.get_center()
 	_body.add_child(_shape)
 	add_child(_body)
+	if start_open:
+		state = OPEN
+		open_t = 0.0
+		_shape.disabled = true
 
 
 ## 문이 놓인 자리의 지형 타일을 지움 (맨홀은 바닥 아래 끝까지 구멍)
@@ -166,6 +174,21 @@ func open(boss_sound := false) -> void:
 	queue_redraw()
 
 
+## 관문 셔터: 위에서 time 초 만에 내려와 닫힘 (닫히기 시작하는 순간부터 막음). 다 닫히면 LOCKED → open() 으로 다시 열 수 있음
+func close_fast(time: float) -> void:
+	if state != OPEN:
+		return
+	state = CLOSING
+	t = 0.0
+	_close_time = maxf(time, 0.01)
+	_fired = {}
+	_drops.clear()
+	_sparkles.clear()
+	if _shape != null:
+		_shape.set_deferred("disabled", false)
+	queue_redraw()
+
+
 ## 열린 문 안쪽에 플레이어가 들어갔는가 → 다음 방
 func player_entered(p: Player) -> bool:
 	if state != OPEN or kind != "exit":
@@ -189,6 +212,9 @@ func progress() -> float:
 		return 0.0
 	if state == OPEN:
 		return 1.0
+	if state == CLOSING:
+		var u := clampf(t / _close_time, 0.0, 1.0)
+		return 1.0 - u * u              # 떨어지듯 점점 빠르게
 	if door_type == "boss":
 		return clampf((t - D.BOSS_DOOR_OPEN) / D.BOSS_OPEN_TIME, 0.0, 1.0)
 	var T: float = D.DOOR_OPEN_TIME
@@ -222,6 +248,13 @@ func _physics_process(_delta: float) -> void:
 	elif state == OPEN:
 		open_t += dt
 		_update_rain(dt)
+	elif state == CLOSING:
+		t += dt
+		if t >= _close_time:
+			state = LOCKED
+			t = 0.0
+			var s := _frame_size()
+			_dust(Vector2.ZERO, cfg().DUST_COUNT, s.x)
 	if not _cover.is_empty():
 		_update_cover(dt)
 	queue_redraw()
@@ -374,7 +407,7 @@ func _ui() -> Color:
 ## 상태등 색: 잠김 = 회색 (출구는 2초마다 희미하게 깜빡), 열림 = 하늘색
 func _lamp_color() -> Color:
 	var D := cfg()
-	if state != LOCKED:
+	if is_open:
 		return _ui()
 	if kind == "exit" and fmod(_life, D.LOCK_BLINK_PERIOD) < D.LOCK_BLINK_TIME:
 		return D.LAMP_DIM
@@ -399,7 +432,7 @@ func _draw_lamp(c: Vector2, k := 1.0) -> void:
 		var beam := absf(cos(_life * D.BOSS_LAMP_SPIN))
 		draw_rect(Rect2(r.position.x - 6.0 * beam, r.position.y, r.size.x + 12.0 * beam, r.size.y), Color(_ui(), 0.18 * on))
 		return
-	if state != LOCKED:
+	if is_open:
 		draw_rect(r.grow(1.0), Color(_ui(), 0.25))
 	draw_rect(r, col)
 
@@ -407,7 +440,7 @@ func _draw_lamp(c: Vector2, k := 1.0) -> void:
 ## 간판 밝기 0~1 (꺼짐 0) — 열리는 중엔 지지직 깜빡인 뒤 켜짐
 func _sign_level() -> float:
 	var D := cfg()
-	if state == LOCKED:
+	if not is_open:
 		return 0.0
 	if state == OPEN or t >= D.SIGN_ON_AT:
 		return 1.0
