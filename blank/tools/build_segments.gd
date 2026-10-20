@@ -9,6 +9,8 @@ extends Node
 ## 데이터 (구간마다):
 ##  w · h · floor (바닥 윗줄, -1 = 바닥 없음) · fills [x0, y0, x1, y1] (칸, 끝 포함, 지형) · clears (지움) · plats [x0, x1, 줄] (일방향 발판)
 ##  enemies [종류, x px, y px, {속성}] · spawn [x, y] (체크포인트 · 없으면 null) · radios [키, x, y, w, h] · lamps · join_left/right · art · title
+## 4단계 밸런스 (자동 분석 — 체크포인트 노출 · 사수 겹침 · 구간 위협 점수): 옥상 A 끝 연사병 → 근접, 옥상 B 높은 옥상 총잡이 → 근접,
+##  골목 A 연사병 발판을 오른쪽으로 (총잡이와 동시에 보이는 범위를 줄임)
 ##  gate { x_back, x_front, trigger, waves [[[종류, x, y], ...], ...], radio_start, radio_clear } · exit [x, y] (보스방 문)
 
 const DIR := "res://rooms/ch1/"
@@ -24,8 +26,8 @@ const SEGMENTS := {
 		"title": "골목 조합 A — 턱 위 총잡이 · 발판 연사병 · 근접 · 돌격병",
 		"w": 130, "h": 34, "floor": 30, "art": "alley",
 		"fills": [[40, 26, 52, 29]],
-		"plats": [[70, 80, 24]],
-		"enemies": [["melee", 300, 240], ["gunner", 368, 208], ["burst", 600, 192], ["melee", 760, 240], ["charger", 920, 240]],
+		"plats": [[92, 102, 24]],
+		"enemies": [["melee", 300, 240], ["gunner", 368, 208], ["melee", 600, 240], ["burst", 776, 192], ["charger", 920, 240]],
 		"spawn": [44, 240], "lamps": [120, 420, 700, 960],
 	},
 	# ---- 쉬어가는 길 A (관문 1 뒤): 적 없음, 무전 — 이제 위로
@@ -53,7 +55,7 @@ const SEGMENTS := {
 		"clears": [[44, 30, 49, 49], [92, 30, 97, 49]],
 		"plats": [[44, 46, 45], [47, 49, 40], [44, 46, 35], [92, 94, 45], [95, 97, 40], [92, 94, 35]],
 		"enemies": [["melee", 240, 240], ["grenadier", 520, 240], ["melee", 600, 240], ["charger", 820, 240],
-			["gunner", 912, 200], ["burst", 1040, 240]],
+			["gunner", 912, 200], ["melee", 1040, 240]],
 		"radios": [["roof_top", 80, 200, 32, 48], ["roof_gap", 300, 200, 32, 48]],
 		"spawn": [44, 240],
 	},
@@ -64,7 +66,7 @@ const SEGMENTS := {
 		"fills": [[50, 25, 90, 29]],
 		"clears": [[104, 30, 109, 49]],
 		"plats": [[66, 76, 20], [104, 106, 45], [107, 109, 40], [104, 106, 35]],
-		"enemies": [["melee", 200, 240], ["grenadier", 480, 200], ["burst", 568, 160], ["gunner", 700, 200],
+		"enemies": [["melee", 200, 240], ["grenadier", 480, 200], ["burst", 568, 160], ["melee", 700, 200],
 			["charger", 960, 240], ["melee", 1060, 240]],
 		"spawn": [44, 240],
 	},

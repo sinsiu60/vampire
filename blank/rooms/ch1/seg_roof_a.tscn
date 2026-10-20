@@ -46,9 +46,8 @@ variant = "charger"
 [node name="Gunner1" parent="Enemies" instance=ExtResource("6_hp3lx")]
 position = Vector2(912, 200)
 
-[node name="Burst1" parent="Enemies" instance=ExtResource("6_hp3lx")]
+[node name="Melee3" parent="Enemies" instance=ExtResource("4_6huwh")]
 position = Vector2(1040, 240)
-burst_count = 2
 
 [node name="Radio_roof_top" type="Area2D" parent="."]
 position = Vector2(80, 200)
