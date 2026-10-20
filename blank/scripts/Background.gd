@@ -22,8 +22,11 @@ var dark_tint := 0.45
 var _seed := 1
 var alley := false               ## 시장 뒷골목 무대 (가까운 건물 층 대신 AlleyDressing 벽면)
 var dressing: AlleyDressing = null
+var roof: RoofDressing = null
 
 var _room_w := 480.0
+var _landmark := -1.0            # 철견의 탑 월드 x (Level.landmark_x) — 먼 건물 층에 세움
+var tower := {}                  ## 탑 { ix (먼 층 이미지 x), top (화면 y) } — 꼭대기 분홍 경고등이 깜빡임
 var _rng := RandomNumberGenerator.new()
 var _parallax: Node2D
 
@@ -44,6 +47,7 @@ func build(room_w: float, seed: int, floor_y := 240.0, room: Node = null) -> voi
 	base_y = floor_y
 	_seed = seed
 	alley = room != null and String(room.get("art_style")) == "alley"
+	_landmark = float(room.get("landmark_x")) if room != null and room.get("landmark_x") != null else -1.0
 	_build_layers()
 	if room != null:
 		rain_back.room = room
@@ -59,12 +63,42 @@ func _build_layers() -> void:
 	var t := dark_tint if dark else 1.0
 	var far := _city(Palette.PARALLAX_FAR, _dim(Palette.FAR_BUILDING, t), _dim(Palette.FAR_WINDOW, t), Vector2(90, 170), Vector2(26, 58),
 		dark_window_p if dark else 0.18, true)
+	if _landmark >= 0.0:
+		_tower(far.tex.get_image(), far)
 	layers.append(far)
 	if not alley:   # 골목 방은 가까운 건물 대신 월드의 골목 벽면 (AlleyDressing)
 		layers.append(_city(Palette.PARALLAX_NEAR, _dim(Palette.NEAR_BUILDING, t), _dim(Palette.NEAR_WINDOW, t), Vector2(50, 110), Vector2(30, 64),
 			dark_window_p if dark else 0.12, false))
 	if _parallax != null:
 		_parallax.queue_redraw()
+
+
+## 철견의 탑: 먼 건물 층에 우뚝 선 높은 건물 (폭 40, 꼭대기 계단식 + 안테나). 카메라가 landmark_x 에 오면 화면 가운데쯤
+func _tower(im: Image, layer: Dictionary) -> void:
+	var P := Palette
+	var f := float(layer.factor)
+	var ix := int(roundf(Config.view.w / 2.0 + (_landmark - Config.view.w / 2.0) * f))
+	var base := int(base_y)
+	var w := 40
+	var top := base - 196
+	var body := P.FAR_BUILDING.lerp(P.NEAR_WINDOW, 0.12)
+	if dark:
+		body = _dim(body, dark_tint)
+	_fill(im, ix - w / 2, top, w, Config.view.h - top, body)
+	_fill(im, ix - w / 2 + 5, top - 10, w - 10, 10, body)                 # 계단식 꼭대기
+	_fill(im, ix - w / 2 + 11, top - 18, w - 22, 8, body)
+	_fill(im, ix, top - 34, 1, 16, body)                                   # 안테나
+	_fill(im, ix - w / 2, top, 1, Config.view.h - top, Color(P.RIM, 0.12))   # 한쪽 림
+	# 세로 불빛 줄 + 꼭대기 창문 띠
+	for k in [-12, 0, 12]:
+		var yy := top + 18
+		while yy < base - 8:
+			if _rng.randf() < 0.55:
+				_fill(im, ix + k - 1, yy, 2, 4, P.FAR_WINDOW)
+			yy += 7
+	_fill(im, ix - w / 2 + 3, top + 6, w - 6, 2, Color(P.NEON_PINK_DARK, 0.7))
+	tower = { "ix": ix, "top": top - 35 }
+	layer.tex = ImageTexture.create_from_image(im)
 
 
 static func _dim(c: Color, t: float) -> Color:
@@ -195,6 +229,9 @@ func _paint_terrain(room: Node) -> void:
 	if alley:
 		dressing = AlleyDressing.new()
 		var simg := dressing.build(room, room.lamp_xs, _seed, base_y, img)
+		if room.has_method("dress_spans"):          # 이어진 맵: 옥상 · 비상계단 · 노점 꾸밈 (RoofDressing)
+			roof = RoofDressing.new()
+			roof.build(room, simg, img, _seed)
 		var ss := Sprite2D.new()
 		ss.centered = false
 		ss.texture = ImageTexture.create_from_image(simg)
@@ -226,5 +263,21 @@ func _draw_parallax() -> void:
 	var z: float = main.zoom if main != null else 1.0
 	if z > 1.0001:
 		cam_x = -(get_viewport().get_canvas_transform().origin.x - Config.view.w / 2.0 * (1.0 - z)) / z
+	# 세로 시차: 화면보다 높은 맵에서 위로 올라가면 (옥상) 먼 건물이 아래로 내려감 — 높이감
+	var dy := 0.0
+	if main != null and main.get("camera") != null:
+		var cam: Camera2D = main.camera
+		if cam.limit_bottom - cam.limit_top > Config.view.h + 32:     # 화면보다 확실히 높은 맵만 (1장 방 · 보스방은 0)
+			var ref: float = float(cam.limit_bottom) - Config.view.h / 2.0
+			var cy: float = -get_viewport().get_canvas_transform().origin.y + Config.view.h / 2.0
+			dy = maxf(0.0, ref - cy)
 	for L in layers:
-		_parallax.draw_texture(L.tex, Vector2(-roundf(cam_x * float(L.factor)), 0))
+		var v := float(Palette.PARALLAX_V.get(float(L.factor), 0.0))
+		_parallax.draw_texture(L.tex, Vector2(-roundf(cam_x * float(L.factor)), roundf(dy * v)))
+	# 철견의 탑 꼭대기 경고등 (분홍, 천천히 깜빡)
+	if not tower.is_empty():
+		var tx := float(tower.ix) - roundf(cam_x * Palette.PARALLAX_FAR)
+		var ty := float(tower.top) + roundf(dy * float(Palette.PARALLAX_V.get(Palette.PARALLAX_FAR, 0.0)))
+		var a := 0.35 + 0.65 * maxf(0.0, sin(Time.get_ticks_msec() / 1000.0 * 2.2))
+		_parallax.draw_rect(Rect2(tx - 3, ty - 2, 7, 5), Color(Palette.NEON_PINK, 0.12 * a))
+		_parallax.draw_rect(Rect2(tx - 1, ty - 1, 3, 2), Color(Palette.NEON_PINK, a))

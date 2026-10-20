@@ -11,6 +11,8 @@ class_name Level
 ## 구간 = 체크포인트 하나에서 다음 체크포인트 전까지 (GameState.checkpoint). 죽으면 마지막 체크포인트에서, 그 앞 구간의 적은 없앰.
 
 @export var segments: Array[PackedScene] = []
+## 먼 배경에 세워 둘 표지 건물 (철견의 탑) 의 월드 x — 이 x 에 카메라가 오면 화면 가운데쯤. 음수면 없음
+@export var landmark_x := -1.0
 
 var checkpoints: Array = []      ## 체크포인트 발 위치 (Vector2, x 순) — [0] = 시작 위치
 var segment_x: Array = []        ## 구간 씬마다 시작 x (px)
@@ -77,7 +79,7 @@ func _build() -> void:
 		# 무대 꾸밈 구간 (AlleyDressing 이 구간마다 그 바닥 높이로)
 		spans.append({ "x0": off * tile, "x1": (shift + end + 1) * tile, "oy": float(shifts[i]),
 			"floor": float(seg.get("join_left")) if seg.get("join_left") != null else 240.0,
-			"style": String(seg.get("art_style")), "lamps": seg_lamps, "seed": i + 1 })
+			"style": String(seg.get("art_style")), "lamps": seg_lamps, "seed": i + 1, "tall": r.end.y > 34 })
 		for child in seg.get_children():
 			if child == tm:
 				continue
@@ -112,6 +114,14 @@ func _build() -> void:
 	GameState.zone_count = checkpoints.size()
 	# 문 · 관문 같은 노드가 바닥에 그려지도록 Enemies 를 맨 뒤로 (적이 위에)
 	move_child(en, get_child_count() - 1)
+
+
+## x 가 속한 무대 꾸밈 구간 (없으면 {})
+func span_at(x: float) -> Dictionary:
+	for sp in spans:
+		if x >= float(sp.x0) and x < float(sp.x1):
+			return sp
+	return {}
 
 
 ## 무대 꾸밈 구간 [{ x0, x1 (px), oy (구간을 내린 높이), floor (구간 안 바닥 — join_left), style (alley | roof | none), lamps (구간 안 x), seed }]

@@ -377,6 +377,10 @@ var rooms := {
 var level := {
 	"INTRO_RANGE": 300.0,             # 처음 만나는 적 소개: 플레이어와 가로 거리가 이 안에 들어오면 (멀리 있는 적은 아직)
 	"ZONE_PAD": 0.0,                  # (예비) 구간 경계 여유
+	# 높은 곳 (맵 아래 끝에서 HIGH_ABOVE px 넘게 위 — 옥상 · 비상계단 위쪽): 비 세짐 · 빗소리 커짐 · 처음 올라가면 번개 한 번
+	"HIGH_ABOVE": 120.0,
+	"HIGH_RAIN": "heavy", "HIGH_AMBIENCE": 0.35, "MOOD_FADE": 1.2,
+	"FIRST_ROOF_FLASH": 0.28, "FIRST_ROOF_FLASH_HOLD": 0.06,
 }
 
 # ---------------------------------------------------------------- 관문 적 소환 연출 (SpawnDrop) — 시간은 월드 시간 (히트스톱 · 일시정지에 같이 멈춤)

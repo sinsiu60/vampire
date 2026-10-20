@@ -40,6 +40,8 @@ const SIGNAL_UI := Color("#5AC8E6")
 ##  5 Structures (시차 1.0) z -3 · 6 Floor z -2 · 7 RainBack z -1 · 8 인물 · 적 z 0 · 9 RainFront z 9 · 10 Overlay (화면 효과)
 const PARALLAX_FAR := 0.2
 const PARALLAX_NEAR := 0.5
+## 세로 시차 (화면보다 높은 맵에서 위로 올라간 만큼 먼 층이 내려가는 비율) — 가로 배율 → 세로 비율
+const PARALLAX_V := { 0.2: 0.3, 0.5: 0.55 }
 const Z_STRUCTURES := -3
 const Z_FLOOR := -2
 const Z_RAIN_BACK := -1

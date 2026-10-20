@@ -212,6 +212,7 @@ func _physics_process(_delta: float) -> void:
 	_resolve_combat()
 	_queue_intros()
 	_check_checkpoint()
+	_update_height_mood()
 	if game_state == "play" and _room_done():
 		_on_room_cleared()
 	_check_exit()
@@ -229,6 +230,31 @@ func _room_done() -> bool:
 				return false
 		return true
 	return enemies().is_empty()
+
+
+## 이어진 맵의 높은 곳 (옥상): 비 heavy · 빗소리 크게, 처음 올라가면 번개 섬광 + thunder 한 번 (이번 실행 동안)
+var _high := false
+var first_roof_flash := false     ## 이번 방에서 첫 옥상 번개가 났나 (테스트)
+
+func _update_height_mood() -> void:
+	if not (room is Level) or player.dead:
+		return
+	var L: Dictionary = Config.level
+	var high: bool = player.global_position.y < room.size_px().y - float(L.HIGH_ABOVE)
+	if high == _high:
+		return
+	_high = high
+	background.set_rain(String(L.HIGH_RAIN) if high else "normal")
+	var amb := Audio.ambience_player()
+	if amb != null:
+		var base_vol: float = room.ambience_volume if room.ambience_volume >= 0.0 else float(Config.audio.get("SFX_RAIN", 0.4))
+		Audio.set_loop_volume(amb, float(L.HIGH_AMBIENCE) if high else base_vol, float(L.MOOD_FADE))
+	if high and not GameState.radio_seen.has("_first_roof"):
+		GameState.radio_seen["_first_roof"] = true
+		first_roof_flash = true
+		if Settings.on("screen_flash"):
+			screen_fx.flash(Color(0.82, 0.88, 1.0), float(L.FIRST_ROOF_FLASH), float(L.FIRST_ROOF_FLASH_HOLD))
+		Audio.sfx("thunder")
 
 
 ## 이어진 맵: 다음 체크포인트를 지나면 구간 기록 · 저장

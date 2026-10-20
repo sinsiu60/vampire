@@ -19,6 +19,7 @@
 
 [node name="level_01" type="Node2D"]
 script = ExtResource("1_lvl")
+landmark_x = 11500.0
 room_title = "1장 — 비 내리는 시장 → 옥상 → 철견의 탑 (이어진 맵)"
 segments = Array[PackedScene]([ExtResource("s1"), ExtResource("s2"), ExtResource("s3"), ExtResource("s4"), ExtResource("s5"), ExtResource("s6"), ExtResource("s7"), ExtResource("s8"), ExtResource("s9"), ExtResource("s10"), ExtResource("s11"), ExtResource("s12"), ExtResource("s13"), ExtResource("s14"), ExtResource("s15")])
 
