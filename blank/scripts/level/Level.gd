@@ -9,6 +9,9 @@ class_name Level
 ##  - 높이: 구간의 join_left 를 앞 구간의 join_right 에 맞춰 위아래로 옮김 (옥상 · 비상계단). 가장 높은 구간이 y 0
 ##  - 적 · 그 밖의 노드는 위치만 옮겨 그대로. 골목 조명 (lamp_xs) 도 합침. 배경음은 첫 구간 것, 무대 꾸밈은 구간마다 (dress_spans)
 ## 구간 = 체크포인트 하나에서 다음 체크포인트 전까지 (GameState.checkpoint). 죽으면 마지막 체크포인트에서, 그 앞 구간의 적은 없앰.
+## 구간 씬 (segment) 정보: segment_info[i] = { id, name, gate, boss, x0, x1, oy, bounds (카메라 영역 — 월드 Rect2) } — 구간 씬의
+##  segment_id · segment_name · is_gate · is_boss · CameraBounds 에서. 구간 씬 기본형 = scenes/Segment.tscn
+## 활성화 (update_activation): 플레이어가 있는 구간 + 앞뒤 Config.level.ACTIVE_NEIGHBORS 개만 적 · 관문이 돎, 나머지는 멈춘 채 보이기만
 
 @export var segments: Array[PackedScene] = []
 ## 먼 배경에 세워 둘 표지 건물 (철견의 탑) 의 월드 x — 이 x 에 카메라가 오면 화면 가운데쯤. 음수면 없음
@@ -18,6 +21,10 @@ var checkpoints: Array = []      ## 체크포인트 발 위치 (Vector2, x 순) 
 var segment_x: Array = []        ## 구간 씬마다 시작 x (px)
 var segment_y: Array = []        ## 구간 씬마다 내린 높이 (px) — 옥상 같은 높은 구간이 0
 var spans: Array = []            # dress_spans()
+var segment_info: Array = []     ## 구간 씬마다 { id, name, gate, boss, x0, x1, oy, bounds }
+var current_segment := -1        ## 플레이어가 있는 구간 씬 (update_activation 이 정함)
+var active_lo := 0               ## 지금 도는 구간 씬 범위 [active_lo, active_hi]
+var active_hi := -1
 
 
 func _ready() -> void:
@@ -52,6 +59,7 @@ func _build() -> void:
 	var lamps := PackedFloat32Array()
 	var cps: Array = []
 	spans.clear()
+	segment_info.clear()
 	for i in n:
 		var seg: Node2D = segments[i].instantiate()
 		var tm: TileMapLayer = seg.get_node("Terrain")
@@ -80,8 +88,18 @@ func _build() -> void:
 		spans.append({ "x0": off * tile, "x1": (shift + end + 1) * tile, "oy": float(shifts[i]),
 			"floor": float(seg.get("join_left")) if seg.get("join_left") != null else 240.0,
 			"style": String(seg.get("art_style")), "lamps": seg_lamps, "seed": i + 1, "tall": r.end.y > 34 })
+		# 구간 정보 + 카메라 영역 (CameraBounds — 없거나 크기 0 이면 구간 지형 전체)
+		var cb := seg.get_node_or_null("CameraBounds")
+		var bounds := Rect2(Vector2(r.position) * tile, Vector2(r.size) * tile)
+		if cb != null and (cb.get("rect") as Rect2).size != Vector2.ZERO:
+			bounds = cb.get("rect")
+		bounds.position += px
+		var sid := String(seg.get("segment_id"))
+		segment_info.append({ "id": sid if sid != "" else "seg_%d" % (i + 1), "name": String(seg.get("segment_name")),
+			"gate": bool(seg.get("is_gate")), "boss": bool(seg.get("is_boss")),
+			"x0": off * tile, "x1": (shift + end + 1) * tile, "oy": float(shifts[i]), "bounds": bounds })
 		for child in seg.get_children():
-			if child == tm:
+			if child == tm or child == cb:
 				continue
 			var nm := String(child.name)
 			match nm:
@@ -115,6 +133,57 @@ func _build() -> void:
 	# 문 · 관문 같은 노드가 바닥에 그려지도록 Enemies 를 맨 뒤로 (적이 위에)
 	move_child(en, get_child_count() - 1)
 	invalidate_cells()                    # 타일을 이어 붙였으니 cell_kind 캐시 새로
+
+
+## x 가 속한 구간 씬 번호 (0 부터 — 맵 밖이면 가장 가까운 끝)
+func segment_index_at(x: float) -> int:
+	for i in segment_info.size():
+		if x < float(segment_info[i].x1):
+			return i
+	return segment_info.size() - 1
+
+
+## 지금 구간 씬 정보 (없으면 {})
+func current_info() -> Dictionary:
+	return segment_info[current_segment] if current_segment >= 0 and current_segment < segment_info.size() else {}
+
+
+## 구간 활성화: focus (플레이어) 가 있는 구간 + 앞뒤 ACTIVE_NEIGHBORS 개의 적 · 관문만 돌게. view = 카메라 화면 (월드) —
+## 이 안 (+ 여유) 의 적은 구간이 멀어도 돎. 멈춘 노드는 보이기만 함 (process 끔)
+func update_activation(focus: Vector2, view: Rect2) -> void:
+	var L: Dictionary = Config.level
+	current_segment = segment_index_at(focus.x)
+	var nb: int = int(L.ACTIVE_NEIGHBORS)
+	active_lo = maxi(0, current_segment - nb)
+	active_hi = mini(segment_info.size() - 1, current_segment + nb)
+	var seen := view.grow(float(L.ACTIVE_VIEW_MARGIN))
+	for e in get_node("Enemies").get_children():
+		if e is Node2D:
+			var p: Vector2 = (e as Node2D).global_position
+			var k := segment_index_at(p.x)
+			_set_active(e, (k >= active_lo and k <= active_hi) or seen.has_point(p))
+	for g in get_tree().get_nodes_in_group("gates"):
+		if is_ancestor_of(g):
+			var k := segment_index_at(g.trigger_x())
+			_set_active(g, g.active() or (k >= active_lo and k <= active_hi))
+
+
+func _set_active(n: Node, on: bool) -> void:
+	var m := Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_DISABLED
+	if n.process_mode != m:
+		n.process_mode = m
+
+
+## 지금 도는 적 수 / 전체 (디버그)
+func active_enemy_count() -> Vector2i:
+	var on := 0
+	var all := 0
+	for e in get_node("Enemies").get_children():
+		if e is Node2D:
+			all += 1
+			if e.process_mode != Node.PROCESS_MODE_DISABLED:
+				on += 1
+	return Vector2i(on, all)
 
 
 ## x 가 속한 무대 꾸밈 구간 (없으면 {})

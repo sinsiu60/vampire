@@ -1,0 +1,30 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/Room.gd" id="1_room"]
+[ext_resource type="TileSet" path="res://tiles/terrain.tres" id="2_tiles"]
+[ext_resource type="Script" path="res://scripts/level/CameraBounds.gd" id="3_cb"]
+
+[node name="Segment" type="Node2D"]
+script = ExtResource("1_room")
+ambience = "rain_loop"
+ambience_volume = 0.2
+paint_terrain = true
+art_style = "alley"
+segment_id = "new_segment"
+segment_name = "새 구간"
+
+[node name="Terrain" type="TileMapLayer" parent="."]
+tile_set = ExtResource("2_tiles")
+
+[node name="PlayerSpawn" type="Marker2D" parent="."]
+position = Vector2(44, 240)
+
+[node name="Enemies" type="Node2D" parent="."]
+
+[node name="Props" type="Node2D" parent="."]
+
+[node name="CameraBounds" type="Node2D" parent="."]
+script = ExtResource("3_cb")
+rect = Rect2(0, 0, 480, 272)
+
+[node name="TransitionZones" type="Node2D" parent="."]

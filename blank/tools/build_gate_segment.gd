@@ -94,6 +94,7 @@ func _ready() -> void:
 			m.position = Vector2(float(s[1]), float(s[2]) if s.size() > 2 else 236.0)
 			_add(wave, m, root)
 
+	SegmentKit.finish_ch1(root, "seg_gate_01")   # 구간 정보 · Props · CameraBounds · TransitionZones
 	var ps := PackedScene.new()
 	var err := ps.pack(root)
 	if err == OK:

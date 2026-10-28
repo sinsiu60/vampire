@@ -381,6 +381,10 @@ var level := {
 	"HIGH_ABOVE": 120.0,
 	"HIGH_RAIN": "heavy", "HIGH_AMBIENCE": 0.35, "MOOD_FADE": 1.2,
 	"FIRST_ROOF_FLASH": 0.28, "FIRST_ROOF_FLASH_HOLD": 0.06,
+	# 구간 활성화: 플레이어가 있는 구간 + 앞뒤 ACTIVE_NEIGHBORS 개만 적 · 관문이 돎 (나머지는 멈춘 채 보이기만)
+	# — 카메라 화면 + ACTIVE_VIEW_MARGIN px 안에 있는 적은 구간이 멀어도 돎 (화면에 멈춘 적이 보이지 않게)
+	"ACTIVE_NEIGHBORS": 1,
+	"ACTIVE_VIEW_MARGIN": 64.0,
 }
 
 # ---------------------------------------------------------------- 관문 적 소환 연출 (SpawnDrop) — 시간은 월드 시간 (히트스톱 · 일시정지에 같이 멈춤)

@@ -244,6 +244,7 @@ func _build(nm: String, D: Dictionary) -> Error:
 				m.position = Vector2(float(s[1]), float(s[2]))
 				_add(wave, m, root)
 
+	SegmentKit.finish_ch1(root, nm)          # 구간 정보 · Props · CameraBounds · TransitionZones
 	var ps := PackedScene.new()
 	var err := ps.pack(root)
 	if err == OK:

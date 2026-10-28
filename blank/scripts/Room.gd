@@ -17,6 +17,13 @@ class_name Room
 ## (예: 비상계단 구간 = 왼쪽 400 거리 · 오른쪽 240 옥상). 기본 240 = 1장 방 바닥
 @export var join_left := 240.0
 @export var join_right := 240.0
+## 구간 정보 (이어진 맵의 구간 · 보스방) — 기록 · 저장 · 디버그용. 구간 씬 기본형은 scenes/Segment.tscn
+@export_group("Segment")
+@export var segment_id := ""      ## 구간 id (영문, 예: "market_1") — 기록 · 저장
+@export var segment_name := ""    ## 구간 이름 (한글, 기록용)
+@export var is_gate := false      ## 관문 (셔터 잠금 전투) 구간
+@export var is_boss := false      ## 보스방
+@export_group("")
 
 @onready var terrain: TileMapLayer = $Terrain
 

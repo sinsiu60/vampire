@@ -32,7 +32,7 @@
 | `menu` | ESC (일시정지 메뉴) |
 
 디버그 키 (`Debug.gd`): F1 반사 보정 표시 · F2 타격감 토글 패널 · F3 슬로우 10% · F4 프레임 진행 (F4 한 틱, Enter 해제) · F5 패링 타이밍 바 + 입력 오차 ms
-· F6 다음 방으로 바로 (보스방에서는 무대 페이즈 상태 순환) · F7 지금 방 즉시 클리어 · F8 철견 즉시 휘청 · F9 철견 포즈 뷰어 (숫자 키, Shift+숫자)
+· F6 다음 방으로 바로 (보스방에서는 무대 페이즈 상태 순환) · F7 지금 방 즉시 클리어 · F8 철견 즉시 휘청 · F9 철견 포즈 뷰어 (숫자 키, Shift+숫자) · F9 (보스방 밖) 구간 표시 (지금 segment_id · 도는 구간 · 도는 적 수)
 · F10 철견 패턴 강제 (① ~ ⑤) · F11 철견 페이즈 순환 1 → 2 → 3 → 피날레 (Shift+F11 = 다음 페이즈 전환 연출 · 페이즈 3 이면 피날레)
 · F11 (보스방 밖) 처음 만나는 적 소개 기록 초기화 · 디버그 모드 왼쪽 위 = 이 방 사망 수 + 최근 원인 3개 (어떤 적의 어떤 공격 · 종류 · 패링 오차)
 (F6 ~ F11, 왼쪽 아래 "1장 - 방 3/6" 표시는 디버그 빌드에서만 — 에디터 실행 · 디버그 내보내기)
@@ -1110,3 +1110,20 @@ room_06 (철견) 은 그대로. 모든 수치는 `Config.gd` 의 `burst` · `cha
 - **기록 모아 보기** `tools/analyze_playtest.py` (파이썬 표준 라이브러리만) — 친구들 playtest 폴더를 한 폴더에 모아
   `python3 tools/analyze_playtest.py <폴더> > report.md` → 짚을 곳 (사망이 몰린 구간 · 오래 걸린 구간 · 많이 그만둔 곳 · 패링 입력 경향 ·
   성공률 낮은 공격 종류) + 구간별 표 (구간 이름 · 사람 · 사망 · 사람당 사망 · 걸린 시간 · 그만둠 · 패링 성공 · 가장 많이 죽인 공격) + 철견 · 패링 · 설문
+
+## 1장 구조 전환 1단계: 구간 (세그먼트) 구조
+1장은 이미 이어진 맵 하나 (방 1 ~ 5 + 새 구간 10개 = 구간 씬 15개, 관문 2개, 옥상) — 이번 단계는 그 위에 구간 단위 정보 · 카메라 영역 · 활성화 관리를 얹음.
+분량 · 배치 · 흐름 (보스방만 문 + 암전) 은 그대로.
+- **구간 씬 기본형** `scenes/Segment.tscn` (Room 스크립트) — Terrain (충돌 타일) · PlayerSpawn · Enemies · Props (배경 소품) ·
+  CameraBounds · TransitionZones (구간 넘어가는 지점 — 3단계). 체크포인트 (Checkpoint) 는 선택
+  - 속성 (Room 의 Segment 묶음): `segment_id` (영문 — 기록 · 저장) · `segment_name` (한글) · `is_gate` · `is_boss`
+  - **CameraBounds** (`scripts/level/CameraBounds.gd`) — 이 구간에서 카메라가 보여 줄 수 있는 가장 큰 영역 (Rect2, 에디터에서 노란 점선). 기본 = 구간 지형 전체
+  - 15개 구간 씬 + 보스방에 넣음 (`tools/add_segment_nodes.gd` 한 번 — 구간 정보 표는 `scripts/level/SegmentKit.gd` 의 CH1,
+    만드는 도구 `tools/build_segments.gd` · `build_gate_segment.gd` 도 같은 걸 넣음)
+  - 구간 id: market_1 ~ 4 · alley_a · market_5 · gate_1 · rest_a · climb · roof_a · roof_b · descent · alley_b · rest_b · gate_2 · (보스방) boss
+- **Level** — 이어 붙일 때 구간마다 `segment_info[i] = { id, name, gate, boss, x0, x1, oy, bounds (월드 좌표) }`. `segment_index_at(x)` · `current_info()`
+- **활성화 관리** (`Level.update_activation` — Main 이 매 틱) — 플레이어가 있는 구간 + 앞뒤 1개 (`Config.level.ACTIVE_NEIGHBORS`) 의 적 · 관문만 돎.
+  나머지는 process 를 끈 채 보이기만. 카메라 화면 + 64px (`ACTIVE_VIEW_MARGIN`) 안의 적은 구간이 멀어도 돎 (화면에 멈춘 적이 안 보이게). 진행 중인 관문은 항상
+- **F9** (디버그 빌드, 보스방 밖) — 왼쪽 위에 지금 구간 (id · 번호 · 이름 · 관문/보스) + 도는 구간 목록 + 도는 적 수. 보스방에선 그대로 포즈 뷰어,
+  플레이테스트 빌드에선 그대로 스크린샷
+- 확인: 방 1 → 관문 1 의 이음매 6곳을 걸어서 넘어도 방 교체 · 암전 없음, 먼 구간 적은 멈춘 채 제자리, 순간이동해도 도는 구간이 따라옴. 기존 테스트 전부 통과

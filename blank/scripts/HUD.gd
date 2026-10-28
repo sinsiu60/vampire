@@ -75,6 +75,8 @@ func _draw() -> void:
 	# 디버그 모드 (보스방 밖): 이 방 사망 수 + 최근 원인 · F11 알림
 	if Debug.debug_mode() and (main.boss == null or not is_instance_valid(main.boss)):
 		_draw_room_deaths()
+	if Debug.segment_debug and main.room is Level:
+		_draw_segments(main.room)
 	var ts: Dictionary = main.toast_state()
 	if not ts.is_empty():
 		Fonts.text(self, String(ts.text), Vector2(W / 2.0, 24), 10, Color(ui, clampf(1.6 - float(ts.t), 0.0, 1.0)), "center", false, true)
@@ -194,6 +196,30 @@ func _draw_death_log() -> void:
 		var tc: Color = Config.colors.unparryable if ty == Config.ATK_EVADE else (Config.colors.parry if ty == Config.ATK_OPPORTUNITY else Config.colors.attack)
 		var line := "%s · %s · %s · %s" % [String(d.get("pattern", "?")), String(d.get("attack", "?")), TYPE_LABELS.get(ty, ty), String(d.get("err", ""))]
 		Fonts.text(self, line, Vector2(x, y + 10 * (i + 1)), 8, Color(tc, 1.0 - 0.25 * i))
+
+
+## F9 디버그 (이어진 맵): 왼쪽 위 (사망 표시 아래) — 지금 구간 segment_id · 이름 · 도는 구간 목록 · 도는 적 수
+func _draw_segments(L: Level) -> void:
+	var ui: Color = Config.colors.ui
+	var info: Dictionary = L.current_info()
+	if info.is_empty():
+		return
+	var ids := []
+	for i in range(L.active_lo, L.active_hi + 1):
+		ids.append(String(L.segment_info[i].id))
+	var n := L.active_enemy_count()
+	var tags := ""
+	if info.gate: tags += " · 관문"
+	if info.boss: tags += " · 보스"
+	var lines := [
+		"구간 %s  (%d/%d) %s%s" % [info.id, L.current_segment + 1, L.segment_info.size(), info.name, tags],
+		"활성: %s  · 적 %d/%d 동작" % [" ".join(ids), n.x, n.y],
+	]
+	var x := 8.0
+	var y := 70.0
+	draw_rect(Rect2(x - 4, y - 7, 300, 22), Color(0, 0, 0, 0.5))
+	for i in lines.size():
+		Fonts.text(self, lines[i], Vector2(x, y + 10 * i), 9, Color(ui, 0.9), "left", false, true)
 
 
 ## 디버그 (보스방 밖): 왼쪽 위 — 이 방 사망 수 + 최근 3번 원인 (어떤 적의 어떤 공격 · 종류 · 패링 오차)

@@ -124,6 +124,7 @@ func _ready() -> void:
 		camera.drag_bottom_margin = float(C.DRAG_BOTTOM)
 		camera.reset_smoothing()
 	_queue_intros()
+	_update_segments(true)                    # 첫 틱 전에 먼 구간은 멈춰 둠
 	# 재시작 직후 짧게 밝아지는 페이드 (실제 시간, 입력은 바로 받음). 방 이동은 Boot 가 따로 검게 전환
 	if not entering:
 		fade.color = Color(0, 0, 0, 1)
@@ -211,6 +212,7 @@ func _physics_process(_delta: float) -> void:
 	_resolve_shots()
 	_resolve_combat()
 	_queue_intros()
+	_update_segments()
 	_check_checkpoint()
 	_update_height_mood()
 	if game_state == "play" and _room_done():
@@ -255,6 +257,15 @@ func _update_height_mood() -> void:
 		if Settings.on("screen_flash"):
 			screen_fx.flash(Color(0.82, 0.88, 1.0), float(L.FIRST_ROOF_FLASH), float(L.FIRST_ROOF_FLASH_HOLD))
 		Audio.sfx("thunder")
+
+
+## 이어진 맵: 플레이어가 있는 구간 + 앞뒤 구간만 돌게 (Level.update_activation). first = 방을 막 만든 때 (카메라가 아직 플레이어 위)
+func _update_segments(first := false) -> void:
+	if not (room is Level):
+		return
+	var half := Vector2(Config.view.w, Config.view.h) / 2.0 / camera.zoom
+	var c: Vector2 = player.global_position + _cam_off if first else camera.get_screen_center_position()
+	(room as Level).update_activation(player.global_position, Rect2(c - half, half * 2.0))
 
 
 ## 이어진 맵: 다음 체크포인트를 지나면 구간 기록 · 저장
