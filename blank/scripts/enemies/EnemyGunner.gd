@@ -136,7 +136,7 @@ func _physics_process(delta: float) -> void:
 		return
 	var d := player.center() - center()
 	# 벽에 가려 플레이어가 안 보이면 조준을 시작하지 않음
-	var sees: bool = not player.dead and absf(d.x) < C.aggro_range and absf(d.y) < C.aggro_height \
+	var sees: bool = not player.dead and Enemy.in_play(center()) and absf(d.x) < C.aggro_range and absf(d.y) < C.aggro_height \
 		and game.line_of_sight(pivot(), player.center())
 	if state != "aim" and state != "burst":   # 조준 · 연사는 아래에서 직접 셈 (기다림 · 패링 시퀀스)
 		t += delta

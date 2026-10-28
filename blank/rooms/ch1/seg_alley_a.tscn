@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=4]
+[gd_scene load_steps=8 format=4]
 
 [ext_resource type="Script" path="res://scripts/Room.gd" id="1_3ivse"]
 [ext_resource type="TileSet" path="res://tiles/terrain.tres" id="2_5s7jp"]
@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" path="res://scenes/EnemyMelee.tscn" id="4_tjdbl"]
 [ext_resource type="PackedScene" path="res://scenes/EnemyGunner.tscn" id="5_qxbe2"]
 [ext_resource type="Script" path="res://scripts/level/CameraBounds.gd" id="6_5s7jp"]
+[ext_resource type="Script" path="res://scripts/level/TransitionZone.gd" id="7_si2ko"]
 
 [node name="seg_alley_a" type="Node2D"]
 script = ExtResource("1_3ivse")
@@ -55,3 +56,9 @@ script = ExtResource("6_5s7jp")
 rect = Rect2(0, 0, 1040, 272)
 
 [node name="TransitionZones" type="Node2D" parent="."]
+
+[node name="ToNext" type="Node2D" parent="TransitionZones"]
+position = Vector2(1032, 0)
+script = ExtResource("7_si2ko")
+next_segment_id = "market_5"
+length = 272.0

@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=4]
+[gd_scene load_steps=8 format=4]
 
 [ext_resource type="Script" path="res://scripts/Room.gd" id="1_r1f4o"]
 [ext_resource type="TileSet" path="res://tiles/terrain.tres" id="2_ubwyk"]
@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" path="res://scenes/EnemyMelee.tscn" id="4_q3gjk"]
 [ext_resource type="PackedScene" path="res://scenes/EnemyGunner.tscn" id="5_v84lr"]
 [ext_resource type="Script" path="res://scripts/level/CameraBounds.gd" id="6_ubwyk"]
+[ext_resource type="Script" path="res://scripts/level/TransitionZone.gd" id="7_k56sw"]
 
 [node name="seg_climb" type="Node2D"]
 script = ExtResource("1_r1f4o")
@@ -49,3 +50,8 @@ script = ExtResource("6_ubwyk")
 rect = Rect2(0, 0, 800, 432)
 
 [node name="TransitionZones" type="Node2D" parent="."]
+
+[node name="ToNext" type="Node2D" parent="TransitionZones"]
+position = Vector2(792, 0)
+script = ExtResource("7_k56sw")
+next_segment_id = "roof_a"

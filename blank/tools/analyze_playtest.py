@@ -14,8 +14,15 @@ import statistics
 import sys
 from collections import Counter, defaultdict
 
-# 지금 1장 이어진 맵의 구간 이름 (rooms/ch1/level_01.tscn — 체크포인트 순서). "1-1.N" = N번째 구간, "1-2" = 보스방
+# 1장 구간 이름 — 기록의 segment_id 열 (구간 씬 id, rooms/ch1/level_01.tscn 순서). 옛 기록 ("room" 열 — "1-1.N" 체크포인트 구간) 도 읽음
+SEGMENT_ORDER = ["market_1", "market_2", "market_3", "market_4", "alley_a", "market_5", "gate_1", "rest_a",
+                 "climb", "roof_a", "roof_b", "descent", "alley_b", "rest_b", "gate_2", "boss"]
 ZONE_NAMES = {
+    "market_1": "시장 입구 1 (근접)", "market_2": "시장 입구 2 (총잡이)", "market_3": "시장 입구 3 (연사병 · 돌격병)",
+    "market_4": "시장 입구 4 (척탄병)", "alley_a": "골목 조합 A", "market_5": "종합 (방 5)", "gate_1": "관문 1",
+    "rest_a": "쉬어가는 길 A", "climb": "비상계단", "roof_a": "옥상 A", "roof_b": "옥상 B", "descent": "내려가기",
+    "alley_b": "골목 조합 B", "rest_b": "쉬어가는 길 B", "gate_2": "관문 2", "boss": "철견 (보스방)",
+    # 옛 기록 (체크포인트 구간)
     "1-1.1": "시장 입구 1 (근접)", "1-1.2": "시장 입구 2 (총잡이)", "1-1.3": "시장 입구 3 (연사병 · 돌격병)",
     "1-1.4": "시장 입구 4 (척탄병)", "1-1.5": "골목 조합 A", "1-1.6": "종합 (방 5)", "1-1.7": "관문 1",
     "1-1.8": "쉬어가는 길 A", "1-1.9": "비상계단", "1-1.10": "옥상 A", "1-1.11": "옥상 B", "1-1.12": "내려가기",
@@ -24,10 +31,12 @@ ZONE_NAMES = {
 
 
 def zone_order(k):
+    if k in SEGMENT_ORDER:
+        return SEGMENT_ORDER.index(k)
     try:
         ch, rest = k.split("-")
         parts = rest.split(".")
-        return int(ch) * 10000 + int(parts[0]) * 100 + (int(parts[1]) if len(parts) > 1 else 0)
+        return 1000 + int(ch) * 10000 + int(parts[0]) * 100 + (int(parts[1]) if len(parts) > 1 else 0)
     except ValueError:
         return 999999
 
@@ -88,6 +97,7 @@ def main(argv):
     feedback = defaultdict(Counter)
     comments = []
     difficulty = Counter()
+    death_spots = Counter()           # (구간, x 64px 칸) → 사망 수 — 새 기록 (death 의 x · y)
     for fpath in files:
         rows = load(fpath)
         if not rows:
@@ -98,7 +108,7 @@ def main(argv):
         did_clear = False
         last_fail = None
         for r in rows:
-            ev, z, d = r.get("event", ""), r.get("room", "-"), r["d"]
+            ev, z, d = r.get("event", ""), r.get("segment_id") or r.get("room", "-"), r["d"]
             if ev == "session_start":
                 difficulty[d.get("difficulty", "?")] += 1
             elif ev == "room_enter" and z not in ("-", "practice"):
@@ -112,6 +122,11 @@ def main(argv):
                     pass
             elif ev == "death":
                 zones[z]["deaths"] += 1
+                if "x" in d:
+                    try:
+                        death_spots[(z, int(float(d["x"])) // 64 * 64)] += 1
+                    except ValueError:
+                        pass
                 zones[z]["killers"]["%s · %s (%s)" % (d.get("enemy", "?"), d.get("attack", "?"), d.get("type", "?"))] += 1
                 if "phase" in d:
                     boss_phase[d["phase"]] += 1
@@ -197,6 +212,12 @@ def main(argv):
         out.append("| %s | %s | %d | %d | %d | %.1f | %s | %d | %s | %s |" % (
             k, name(k), len(z["players"]), z["enter"], z["deaths"], rate.get(k, 0.0), t, z["quit"], p, top[0][0] if top else "-"))
     out.append("")
+
+    if death_spots:
+        out.append("## 사망이 몰린 자리 (월드 x, 64px 칸)\n")
+        for (z, x), n in death_spots.most_common(8):
+            out.append("- %s · x %d ~ %d: %d번" % (name(z), x, x + 63, n))
+        out.append("")
 
     out.append("## 철견\n")
     out.append("- 페이즈별 사망: %s" % (dict(sorted(boss_phase.items())) or "-"))

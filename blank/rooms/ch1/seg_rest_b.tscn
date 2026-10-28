@@ -1,10 +1,11 @@
-[gd_scene load_steps=6 format=4]
+[gd_scene load_steps=7 format=4]
 
 [ext_resource type="Script" path="res://scripts/Room.gd" id="1_gu8cs"]
 [ext_resource type="TileSet" path="res://tiles/terrain.tres" id="2_d34m5"]
 [ext_resource type="PackedScene" path="res://scenes/Door.tscn" id="3_g8oq0"]
 [ext_resource type="Script" path="res://scripts/RadioTrigger.gd" id="4_4lov7"]
 [ext_resource type="Script" path="res://scripts/level/CameraBounds.gd" id="5_d34m5"]
+[ext_resource type="Script" path="res://scripts/level/TransitionZone.gd" id="6_g8oq0"]
 
 [node name="seg_rest_b" type="Node2D"]
 script = ExtResource("1_gu8cs")
@@ -40,3 +41,9 @@ script = ExtResource("5_d34m5")
 rect = Rect2(0, 0, 560, 272)
 
 [node name="TransitionZones" type="Node2D" parent="."]
+
+[node name="ToNext" type="Node2D" parent="TransitionZones"]
+position = Vector2(552, 0)
+script = ExtResource("6_g8oq0")
+next_segment_id = "gate_2"
+length = 272.0

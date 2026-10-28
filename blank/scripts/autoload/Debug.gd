@@ -11,6 +11,7 @@ extends Node
 ##  F8 관문 웨이브 즉시 시작 (보스방에선 철견 즉시 휘청) · F9 구간 표시 (지금 segment_id · 도는 구간 — 보스방에선 철견 포즈 뷰어:
 ##     숫자 키로 포즈, Shift+숫자 = 11번째부터)
 ##  F10 철견 패턴 강제 (① ~ ⑤ 차례로) · F11 철견 페이즈 순환 (1 → 2 → 3, Shift+F11 = 다음 페이즈 전환 연출 그대로)
+##  보스방 밖: F10 카메라 표시 (데드존 · 룩어헤드 · 경계) · F11 구간 전환 4배 느리게 · Shift+F11 적 소개 기록 초기화
 ##     — 디버그 빌드에서만
 ##  F12 철견 피날레 "빗방울 결투" 만 바로 재생 · Shift+F12 공격 종류 연습 방 (1겹 · 2겹 · 보라 더미) ↔ 원래 방 — 디버그 빌드에서만
 ## 플레이테스트 빌드 (PlaytestLogger.active): 디버그 키 F1 ~ F12 와 디버그 표시를 전부 끔. F9 = 스크린샷만.
@@ -23,6 +24,8 @@ var slow := false
 var step := false
 var timing := false
 var segment_debug := false       ## F9 (보스방 밖): 왼쪽 위에 지금 구간 · 도는 구간
+var cam_debug := false           ## F10 (보스방 밖): 카메라 데드존 · 룩어헤드 · 경계 선
+var trans_slow := false          ## F11 (보스방 밖): 구간 전환 Config.camera.CAM_TRANS_DEBUG_SLOW 배 느리게
 var frame := 0                   ## 처리된 게임 틱 수 (F3/F4 표시용)
 
 var _step_queue := 0
@@ -121,11 +124,18 @@ func _input(event: InputEvent) -> void:
 			if event.physical_keycode == KEY_F9 and b == null and debug_mode() and not menu_open:
 				segment_debug = not segment_debug
 				return
-			# F11 (보스방 밖): 적 소개 기록 초기화
+			# F10 (보스방 밖): 카메라 표시 (데드존 · 룩어헤드 목표점 · CameraBounds · 영역 · 전환 선)
+			if event.physical_keycode == KEY_F10 and b == null and debug_mode() and not menu_open:
+				cam_debug = not cam_debug
+				return
+			# F11 (보스방 밖): 구간 전환 4배 느리게 · Shift+F11 = 적 소개 기록 초기화
 			if event.physical_keycode == KEY_F11 and b == null and debug_mode() and not menu_open:
-				var main := get_tree().get_first_node_in_group("game")
-				if main != null:
-					main.debug_reset_intros()
+				if event.shift_pressed:
+					var main := get_tree().get_first_node_in_group("game")
+					if main != null:
+						main.debug_reset_intros()
+				else:
+					trans_slow = not trans_slow
 				return
 			if not debug_mode() or b == null or menu_open:
 				return

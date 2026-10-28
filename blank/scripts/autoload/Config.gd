@@ -14,9 +14,32 @@ const PLAYTEST_MODE := true
 var view := { "w": 480, "h": 270 }
 var fps := 60                                  # 물리 틱 (project.godot 의 physics_ticks_per_second 와 같게)
 var room := { "w": 960, "h": 270, "tile": 8 }  # 테스트 방 크기, 타일 한 칸 크기
-var camera := { "lerp": 0.12,                  # 프로토타입: 프레임당 보간 비율 → Camera2D 스무딩 속도 = lerp × fps
-	"TALL_FOOT_OFFSET": 92.0,                    # 화면보다 높은 맵: 카메라 중심 = 발 위 이만큼 (발이 화면 아래 ~ 227px 에)
-	"DRAG_TOP": 0.45, "DRAG_BOTTOM": 0.1 }       # 위아래 끌림 여유 (화면 반 높이 비율) — 점프로는 카메라가 거의 안 움직임
+## 카메라 (CameraRig — 480×270 기준 px · 초). 플레이어를 그냥 따라가지 않고 아래 규칙을 합침
+var camera := {
+	"FOOT_OFFSET": 8.0,                # 카메라 기준점 = 발 위 이만큼
+	"TALL_FOOT_OFFSET": 92.0,          # 화면보다 높은 구간 (비상계단 · 옥상): 발 위 이만큼 (발이 화면 아래쪽에)
+	# [A] 데드존: 화면 가운데 이 크기 사각형 안에서는 안 움직이고, 테두리를 밀면 그만큼만 따라감
+	"CAM_DEADZONE_W": 40.0, "CAM_DEADZONE_H": 24.0,
+	# [B] 룩어헤드: 바라보는 방향으로 목표점을 이만큼 앞으로 · 방향을 바꾸면 이 시간에 걸쳐 반대쪽으로 (부드럽게)
+	"CAM_LOOKAHEAD": 56.0, "CAM_LOOKAHEAD_TIME": 0.25,
+	# [C] 세로: 공중에서는 안 따라감 · 착지하면 새 바닥 높이로 이 시간에 걸쳐 (데드존 세로 반보다 작은 차이는 무시)
+	"CAM_SNAP_Y_TIME": 0.2,
+	"CAM_Y_PANIC": 32.0,               # 플레이어가 화면 위 · 아래 이만큼 안쪽까지 오면 공중이어도 바로 따라감 (긴 낙하)
+	# [D] 감쇠: 목표점으로 가로 · 세로 이 시간 상수로 보간
+	"CAM_SMOOTH_X": 0.10, "CAM_SMOOTH_Y": 0.25,
+	# [G] 카메라 영역 (CameraZone): 나오면 (들어갈 때도) 이 시간에 걸쳐 바뀜
+	"CAM_ZONE_BLEND": 0.4,
+	"CAM_GATE_ZOOM": 0.9,              # 관문 영역 줌 (더 넓게)
+	"TELEPORT_SNAP": 160.0,            # 플레이어가 한 틱에 이만큼 넘게 움직이면 (순간이동 · 다시 시작) 카메라도 바로 그 자리로
+	# 3) 구간 전환 (TransitionZone) — 실제 시간
+	"CAM_TRANS_PLAYER_CARRY": 12.0,    # 경계를 넘은 뒤 플레이어가 속도 그대로 더 가는 거리 → 멈춤
+	"CAM_TRANS_CARRY_MIN_SPEED": 90.0, # 넘을 때 거의 서 있었어도 이 속도로는 감
+	"CAM_TRANS_TIME": 0.35,            # 카메라가 다음 구간으로 미끄러지는 시간 (가로) — ease-out cubic
+	"CAM_TRANS_TIME_V": 0.40,          # 세로 전환 (위 · 아래)
+	"CAM_TRANS_SETTLE": 0.15,          # 전환 뒤 이 시간 동안 데드존 없이 바로 따라감 (한 번 더 움찔하지 않게)
+	"CAM_TRANS_GRACE": 0.3,            # 전환 뒤 이 시간 동안 다음 구간 적은 조준 · 공격을 시작하지 않음
+	"CAM_TRANS_DEBUG_SLOW": 4.0,       # F11 (보스방 밖): 전환을 이 배로 느리게
+}
 
 # 물리 레이어 (비트 값). 일방향 발판은 따로 둬서 사격·시야 판정이 통과하게 (프로토타입과 같게)
 var layers := {
@@ -385,6 +408,8 @@ var level := {
 	# — 카메라 화면 + ACTIVE_VIEW_MARGIN px 안에 있는 적은 구간이 멀어도 돎 (화면에 멈춘 적이 보이지 않게)
 	"ACTIVE_NEIGHBORS": 1,
 	"ACTIVE_VIEW_MARGIN": 64.0,
+	# 체크포인트 통과: 화면 오른쪽 아래 작은 점 (글자 없음) 이 이 시간 동안 깜빡
+	"CHECKPOINT_BLINK": 0.5, "CHECKPOINT_BLINK_HZ": 8.0,
 }
 
 # ---------------------------------------------------------------- 관문 적 소환 연출 (SpawnDrop) — 시간은 월드 시간 (히트스톱 · 일시정지에 같이 멈춤)
@@ -497,6 +522,8 @@ var ui_style := {
 	"VERSION": "v0.1",
 	# 잡음 무전 (RadioDialog) — 화면 왼쪽 아래 작은 판, 게임을 멈추지 않음
 	"RADIO_RECT": Rect2(8, 206, 200, 36),    # 판 (가로 200, 2줄)
+	"RADIO_BEHIND_ALPHA": 0.3,               # 플레이어가 판 뒤에 있으면 (구간 전환 직후 왼쪽 아래 등) 이만큼 흐리게
+	"RADIO_BEHIND_FADE": 0.15,
 	"RADIO_NAME": "잡음",
 	"RADIO_CHAR": 0.03,                      # 글자당
 	"RADIO_LINE_GAP": 1.6,                   # 여러 줄이면 다음 줄까지 (줄을 다 친 뒤)
@@ -518,7 +545,7 @@ var ui_style := {
 var logo := { "text": "시우 공방", "fade_in": 0.6, "hold": 0.8, "fade_out": 0.6 }  # 합계 2초
 var scanline := { "alpha": 0.2 }
 var hint_time := 7.0
-var restart_fade := 0.18
+var restart_fade := 0.2
 
 var audio := {
 	"dir": "res://sounds/",
@@ -530,6 +557,7 @@ var audio := {
 	"SFX_SPAWN_WHOOSH": 0.8,          # spawn_whoosh.wav (낙하 시작)
 	"SFX_SPAWN_LAND": 0.9,            # spawn_land.wav (착지)
 	"SFX_SHUTTER_CLOSE": 0.9,         # shutter_close.wav (관문 셔터가 닫힐 때)
+	"SFX_CAM_TRANSITION": 0.5,        # cam_transition.wav (구간 전환 — 파일이 있으면)
 	"SPAWN_WARN_MAX": 2, "SPAWN_WARN_PITCH": Vector2(0.95, 1.05),
 	"SFX_BOSS_INTRO": 1.0,            # boss_intro.wav (철견 이름 카드 · 포효)
 	"SFX_BOSS_ARMOR": 0.8,            # boss_armor.wav (반사탄이 장갑에 튕김)

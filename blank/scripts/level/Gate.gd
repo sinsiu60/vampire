@@ -5,6 +5,7 @@ class_name Gate
 ##  Back · Front   Door (shutter, start_open) — 뒤 · 앞 셔터 (열린 채 시작)
 ##  Trigger        Marker2D — 플레이어가 이 x 를 지나면 시작
 ##  Wave1, Wave2 …  Node2D — 아래에 GateSpawn (적 종류 · 착지 지점) 을 놓음. 이름 순서대로 웨이브
+##  CameraZone     CameraZone (kind gate) — 셔터 사이 카메라 영역 (줌 0.9 · 경계 고정). 관문 동안만 켜짐. 없으면 셔터 사이로 만듦
 ## 흐름: 시작 → 앞뒤 셔터가 위에서 0.2초 만에 닫힘 + shutter_close + 흔들림 4px + 무전 "gate_start"
 ##       → 웨이브마다 GateSpawn 을 SPAWN_GAP 간격으로 SpawnDrop (동시에 떠 있는 붉은 타원은 MAX_MARKS 개까지)
 ##       → 웨이브를 다 처치하면 WAVE_GAP 뒤 다음 웨이브 → 마지막 웨이브 처치 → 셔터 열림 (door_open) + 무전 "gate_clear"
@@ -30,6 +31,19 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
 	add_to_group("gates")
+	if get_node_or_null("CameraZone") == null and back_door() != null and front_door() != null:
+		var z := CameraZone.new()
+		z.name = "CameraZone"
+		z.kind = "gate"
+		var a := minf(back_door().position.x, front_door().position.x) - 8.0
+		var b := maxf(back_door().position.x, front_door().position.x) + 8.0
+		z.rect = Rect2(a, -480.0, b - a, 480.0)
+		add_child(z)
+
+
+## 관문 카메라 영역 (CameraZone, kind gate)
+func camera_zone() -> CameraZone:
+	return get_node_or_null("CameraZone") as CameraZone
 
 
 func waves() -> Array:
@@ -138,7 +152,8 @@ func begin() -> void:
 	if main != null:
 		main.add_shake(float(G.CLOSE_SHAKE), float(G.CLOSE_SHAKE_TIME), PI / 2.0)
 		main.radio(radio_start if radio_start != "" else String(G.RADIO_START))
-		main.lock_camera_x(arena_center())          # 앞뒤 셔터가 한 화면에 보이게
+	if camera_zone() != null:
+		camera_zone().enabled = true                # 앞뒤 셔터가 한 화면에 보이게 (줌 0.9 · 경계 = 셔터 사이)
 	PlaytestLogger.log_event("gate_start", { "gate": name, "waves": waves().size() })
 	started.emit()
 
@@ -236,7 +251,8 @@ func _finish() -> void:
 	var main := _main()
 	if main != null:
 		main.radio(radio_clear if radio_clear != "" else String(Config.gate.RADIO_CLEAR))
-		main.lock_camera_x(NAN)
+	if camera_zone() != null:
+		camera_zone().enabled = false
 	PlaytestLogger.log_event("gate_clear", { "gate": name })
 	cleared.emit()
 

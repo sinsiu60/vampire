@@ -75,6 +75,10 @@ func _draw() -> void:
 	# 디버그 모드 (보스방 밖): 이 방 사망 수 + 최근 원인 · F11 알림
 	if Debug.debug_mode() and (main.boss == null or not is_instance_valid(main.boss)):
 		_draw_room_deaths()
+	# 체크포인트 통과: 오른쪽 아래 작은 점이 잠깐 깜빡 (글자 없음)
+	var cb: float = main.checkpoint_blink
+	if cb >= 0.0 and fmod(cb * float(Config.level.CHECKPOINT_BLINK_HZ), 1.0) < 0.6:
+		draw_rect(Rect2(W - 10, H - 10, 2, 2), Color(ui, 0.9))
 	if Debug.segment_debug and main.room is Level:
 		_draw_segments(main.room)
 	var ts: Dictionary = main.toast_state()

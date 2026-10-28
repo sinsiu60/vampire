@@ -47,6 +47,26 @@ func _ready() -> void:
 			to_title.emit())
 
 
+## "구간별 사망  관문 2 ×3 · 옥상 B ×2 …" (GameState.stats.seg_deaths — 이름은 SegmentKit.CH1)
+func seg_deaths_text(limit := 4) -> String:
+	var sd: Variant = GameState.stats.get("seg_deaths", {})
+	if not (sd is Dictionary) or (sd as Dictionary).is_empty():
+		return "구간별 사망  없음"
+	var names := {}
+	for f in SegmentKit.CH1:
+		var nm := String(SegmentKit.CH1[f][1])
+		var cut := nm.find(" (")
+		names[String(SegmentKit.CH1[f][0])] = nm.substr(0, cut) if cut > 0 else nm
+	var keys: Array = (sd as Dictionary).keys()
+	keys.sort_custom(func(a, b): return int(sd[a]) > int(sd[b]))
+	var parts := []
+	for k in keys.slice(0, limit):
+		parts.append("%s ×%d" % [String(names.get(String(k), String(k))), int(sd[k])])
+	if keys.size() > limit:
+		parts.append("…")
+	return "구간별 사망  " + " · ".join(parts)
+
+
 func stat_text(key: String) -> String:
 	var v: Variant = GameState.stats.get(key, 0)
 	if key == "time":
@@ -176,3 +196,6 @@ func _draw() -> void:
 		UIKit.text(self, String(STAT_ROWS[k][1]), Vector2(x0, y), S.SIZE, S.TEXT)
 		UIKit.text(self, stat_text(STAT_ROWS[k][0]), Vector2(x1, y), S.SIZE, S.ACCENT, "right")
 		draw_rect(Rect2(roundf(x0), roundf(y + 8), x1 - x0, 1), Color(S.TEXT, 0.08))
+	# 구간별 사망 (많은 곳부터 4곳 — 없으면 "없음")
+	if stats_shown > STAT_ROWS.size():
+		UIKit.text(self, seg_deaths_text(), Vector2(W / 2.0, 132.0 + STAT_ROWS.size() * 17.0 + 2.0), 9, Color(S.TEXT, 0.6), "center")

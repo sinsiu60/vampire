@@ -250,7 +250,7 @@ func _paint_terrain(room: Node) -> void:
 # ---------------------------------------------------------------- 시차 (화면 왼쪽 끝 월드 x × 배율)
 func _process(_delta: float) -> void:
 	var main := get_tree().get_first_node_in_group("game")
-	var z: float = main.zoom if main != null else 1.0
+	var z: float = maxf(1.0, float(main.zoom)) if main != null else 1.0     # 먼 층은 줌인만 따라감 (줌아웃이면 가장자리가 비니까 그대로)
 	var layer := $Far as CanvasLayer
 	var c := Vector2(Config.view.w, Config.view.h) / 2.0
 	layer.transform = Transform2D(0.0, Vector2(z, z), 0.0, c * (1.0 - z))     # 패링 · 연출 줌을 같이 받음
@@ -258,18 +258,18 @@ func _process(_delta: float) -> void:
 
 
 func _draw_parallax() -> void:
-	var cam_x := -get_viewport().get_canvas_transform().origin.x
 	var main := get_tree().get_first_node_in_group("game")
-	var z: float = main.zoom if main != null else 1.0
-	if z > 1.0001:
-		cam_x = -(get_viewport().get_canvas_transform().origin.x - Config.view.w / 2.0 * (1.0 - z)) / z
+	# 화면 가운데 월드 x → 화면 폭 창의 왼쪽 끝 (줌이 있으면 줌을 빼고 — 패링 줌 · 관문 영역 줌 0.9)
+	var ct := get_viewport().get_canvas_transform()
+	var zt: float = ct.x.x if absf(ct.x.x) > 0.0001 else 1.0
+	var cam_x: float = (-ct.origin.x + Config.view.w / 2.0) / zt - Config.view.w / 2.0
 	# 세로 시차: 화면보다 높은 맵에서 위로 올라가면 (옥상) 먼 건물이 아래로 내려감 — 높이감
 	var dy := 0.0
-	if main != null and main.get("camera") != null:
-		var cam: Camera2D = main.camera
-		if cam.limit_bottom - cam.limit_top > Config.view.h + 32:     # 화면보다 확실히 높은 맵만 (1장 방 · 보스방은 0)
-			var ref: float = float(cam.limit_bottom) - Config.view.h / 2.0
-			var cy: float = -get_viewport().get_canvas_transform().origin.y + Config.view.h / 2.0
+	if main != null and main.get("room") != null:
+		var mh: float = main.room.size_px().y
+		if mh > Config.view.h + 32:     # 화면보다 확실히 높은 맵만 (1장 방 · 보스방은 0)
+			var ref: float = mh - Config.view.h / 2.0
+			var cy: float = (-ct.origin.y + Config.view.h / 2.0) / zt
 			dy = maxf(0.0, ref - cy)
 	for L in layers:
 		var v := float(Palette.PARALLAX_V.get(float(L.factor), 0.0))

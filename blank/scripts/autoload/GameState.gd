@@ -20,6 +20,8 @@ const CHAPTERS := {
 var chapter := 1
 var room := 1                    ## 1부터
 var checkpoint := 0              ## 큰 맵 안 체크포인트 (0 = 시작) — 다시 시작 · 이어하기 위치
+var checkpoint_id := ""          ## 그 체크포인트 id ("<segment_id>.<n>") — 저장 · 이어하기 (Level 이 번호로 바꿈)
+var segment_id := ""             ## 지금 구간 (이어진 맵의 구간 씬 · 보스방 "boss") — 기록 · 사망 수. Main 이 정함
 var zone_count := 1              ## 지금 방의 구간 수 (Level 이면 체크포인트 수, 아니면 1) — Level 이 정함
 var cleared := {}                ## "1-3" → true (클리어한 방)
 var boss_checkpoint := {}:       ## 보스 체크포인트 { key: "1-2" (room_key), phase, dead? } — 죽으면 R 로 지금 페이즈 시작부터
@@ -42,7 +44,7 @@ func _init() -> void:
 
 
 func reset_stats() -> void:
-	stats = { "time": 0.0, "deaths": 0, "parries": 0, "counters": 0 }
+	stats = { "time": 0.0, "deaths": 0, "parries": 0, "counters": 0, "seg_deaths": {} }   # seg_deaths = 구간 id → 사망 수
 
 
 func add_stat(key: String, n := 1) -> void:
@@ -66,6 +68,11 @@ func room_path() -> String:
 	return CHAPTERS[chapter].rooms[room - 1]
 
 
+## 구간까지 붙인 키 — 기록 · 디버그 사망 수 (구간 id, 없으면 room_key)
+func seg_key() -> String:
+	return segment_id if segment_id != "" else room_key()
+
+
 func room_count() -> int:
 	return CHAPTERS[chapter].rooms.size()
 
@@ -82,11 +89,9 @@ func room_key(c := -1, r := -1) -> String:
 	return "%d-%d" % [chapter if c < 0 else c, room if r < 0 else r]
 
 
-## 구간까지 붙인 키 — 큰 맵이면 "1-1.3" (3번째 구간), 아니면 room_key() (기록 · 디버그)
+## 기록 · 디버그 키 = 지금 구간 id (예 "market_3", 보스방 "boss") — 구간이 없는 방이면 room_key() ("1-2")
 func zone_key() -> String:
-	if zone_count > 1:
-		return "%s.%d" % [room_key(), checkpoint + 1]
-	return room_key()
+	return seg_key()
 
 
 func mark_cleared() -> void:
@@ -103,6 +108,7 @@ func advance() -> bool:
 		return false
 	room += 1
 	checkpoint = 0
+	checkpoint_id = ""
 	zone_count = 1
 	boss_checkpoint = {}
 	room_changed.emit()
@@ -128,7 +134,7 @@ func label() -> String:
 	if room_override != "":
 		return "연습 방 (Shift+F12 = 돌아가기)"
 	if zone_count > 1:
-		return "%d장 - 방 %d/%d · 구간 %d/%d" % [chapter, room, room_count(), checkpoint + 1, zone_count]
+		return "%d장 - 방 %d/%d · %s · 체크포인트 %d/%d" % [chapter, room, room_count(), segment_id, checkpoint + 1, zone_count]
 	return "%d장 - 방 %d/%d" % [chapter, room, room_count()]
 
 
@@ -142,6 +148,14 @@ func log_death(cause: Dictionary) -> void:
 	var k: String = c.get("pattern", "?")
 	death_counts[k] = int(death_counts.get(k, 0)) + 1
 	room_death_counts[c.room] = int(room_death_counts.get(c.room, 0)) + 1
+
+
+## 장 통계: 이 구간 사망 +1 (구간별 사망 — 장 클리어 화면)
+func add_seg_death() -> void:
+	if not (stats.get("seg_deaths") is Dictionary):
+		stats.seg_deaths = {}
+	var k := seg_key()
+	stats.seg_deaths[k] = int(stats.seg_deaths.get(k, 0)) + 1
 
 
 ## 이 방의 사망 기록 (최근이 끝)

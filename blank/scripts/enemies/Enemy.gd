@@ -7,6 +7,18 @@ signal died(enemy: Enemy)
 
 ## 처음 만나는 적 소개 중 (Main 이 켜고 끔) — 카메라가 다른 곳을 보는 동안 적 · 수류탄은 멈춰 기다림
 static var intro_hold := false
+## 이어진 맵: 카메라가 보는 구간 (CameraBounds, 월드) — 이 밖의 적은 플레이어를 알아채지 않음 (안 보이는 구간에서 쏘지 않게).
+## 비어 있으면 어디서나. Main 이 매 틱 정함
+static var play_rect := Rect2()
+## 구간 전환 직후 (Config.camera.CAM_TRANS_GRACE) — 다음 구간 적이 조준 · 공격을 시작하지 않음 (경계 넘자마자 맞지 않게)
+static var grace := false
+
+
+## 이 자리의 적이 플레이어를 알아채고 공격을 시작해도 되나
+static func in_play(p: Vector2) -> bool:
+	if grace:
+		return false
+	return play_rect.size == Vector2.ZERO or play_rect.has_point(p)
 
 var cfg: Dictionary
 var facing := -1                 # 처음엔 왼쪽(플레이어 시작 쪽)을 봄

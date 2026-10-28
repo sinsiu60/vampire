@@ -14,7 +14,7 @@ var _letterbox_to := 0.0
 var cinematic := false            # 연출 중 (입력 잠금, 피격 없음)
 var letterbox_time := -1.0        # 레터박스 들어오고 나가는 시간 (실제 초, -1 = CG.TR_LETTERBOX)
 var cam_override := {}            # 연출 카메라 { center (전역), zoom } — 비어 있으면 플레이어를 따라감
-var _cam_local := Vector2.ZERO
+var rig: CameraRig                ## 카메라 (데드존 · 룩어헤드 · 구간 경계 · 구간 전환 — scripts/CameraRig.gd)
 var _radio_at: float = CG.RADIO_DELAY
 var _exit_at: float = CG.EXIT_DELAY
 var _outro_radio := false
@@ -54,7 +54,9 @@ var intros_shown: Array = []      ## 이 방에서 소개한 적 종류 (테스�
 var _intro_queue: Array = []      # 소개할 적 [Enemy]
 var _intro := {}                  # 지금 소개 { e, t, from_c, from_z, to_c, to_z, locked }
 var _intro_wait := -1.0           # 다음 소개까지 (실제 초)
-var _cam_off := Vector2(0, -8)    # 카메라 기준점 (플레이어 발 기준) — 화면보다 높은 맵이면 더 위
+var _trans_paused: Array = []     # 구간 전환 동안 멈춘 노드 [노드, 원래 process_mode]
+var _radio_wait: Array = []       # 구간 전환 동안 미뤄 둔 무전 키 (전환이 끝나면 차례로)
+var checkpoint_blink := -1.0      ## 체크포인트 통과 뒤 지난 실제 시간 (HUD 오른쪽 아래 점 — Config.level.CHECKPOINT_BLINK 초)
 var _intro_keys := {}             # 이번에 소개 대기열에 넣은 종류
 var _toast := {}                  # 디버그 알림 한 줄 { text, t }
 var burst_misses := 0             ## 연사병 첫 탄 패링 (반사탄이 벽에 빗나감) 수 — 테스트
@@ -71,6 +73,7 @@ func _ready() -> void:
 		(room as Level).prune_before(GameState.checkpoint)
 	else:
 		GameState.zone_count = 1
+	GameState.segment_id = _segment_id_at(room.spawn_position().x)
 	PlaytestLogger.room_enter()
 	for b in get_tree().get_nodes_in_group("boss"):
 		if not b.dead:
@@ -97,14 +100,6 @@ func _ready() -> void:
 	# 방 배경음 (보스방 = 빗소리 반복). 재시작해도 끊기지 않고, 배경음이 없는 방이면 멈춤
 	Audio.set_ambience(room.ambience, room.ambience_volume)
 	var size := room.size_px()
-	camera.limit_left = 0
-	camera.limit_top = 0
-	camera.limit_right = int(size.x)
-	camera.limit_bottom = int(size.y)
-	# 프로토타입: 프레임당 lerp 0.12 → 초당 스무딩 속도로 환산
-	camera.position_smoothing_enabled = true
-	camera.position_smoothing_speed = Config.camera.lerp * Config.fps
-	camera.reset_smoothing()
 	hud.main = self
 	menu.main = self
 	radio_dialog = RadioDialog.new()
@@ -114,15 +109,14 @@ func _ready() -> void:
 	debug_draw.main = self
 	# 먼 배경 (화면에 고정된 층) 의 바닥 높이 = 화면 y — 이어진 맵은 높이가 구간마다 달라 1장 방 바닥 (240) 으로
 	background.build(size.x, GameState.chapter * 100 + GameState.room, 240.0 if room is Level else room.spawn_position().y, room)
-	# 화면보다 높은 맵 (옥상 · 비상계단): 발이 화면 아래쪽에 오게 + 위아래 끌림 여유 (점프마다 카메라가 출렁이지 않게)
-	if size.y > Config.view.h + 1:
-		var C: Dictionary = Config.camera
-		camera.position.y = -float(C.TALL_FOOT_OFFSET)
-		_cam_off = camera.position
-		camera.drag_vertical_enabled = true
-		camera.drag_top_margin = float(C.DRAG_TOP)
-		camera.drag_bottom_margin = float(C.DRAG_BOTTOM)
-		camera.reset_smoothing()
+	# 카메라: 플레이어에서 떼어 Main 아래로 (구간 전환 동안 플레이어를 멈춰도 카메라는 움직이게) — CameraRig 가 직접 움직임
+	camera.get_parent().remove_child(camera)
+	add_child(camera)
+	rig = CameraRig.new()
+	rig.name = "CameraRig"
+	add_child(rig)
+	rig.setup(self, camera)
+	rig.segment_entered.connect(_on_segment_entered)
 	_queue_intros()
 	_update_segments(true)                    # 첫 틱 전에 먼 구간은 멈춰 둠
 	# 재시작 직후 짧게 밝아지는 페이드 (실제 시간, 입력은 바로 받음). 방 이동은 Boot 가 따로 검게 전환
@@ -182,6 +176,9 @@ func _physics_process(_delta: float) -> void:
 	if _shake_frame != Engine.get_physics_frames():
 		_update_shake(1.0 / Config.fps)
 	_update_zoom()
+	rig.tick(get_physics_process_delta_time())
+	Enemy.grace = rig.grace > 0.0 or rig.transitioning()
+	Enemy.play_rect = rig.bounds if room is Level else Rect2()
 	_track_roll()
 	# 장 통계: 플레이 시간 (실제 시간, 일시정지 제외)
 	if game_state != "chapter_clear" and GameState.room_override == "":
@@ -196,6 +193,10 @@ func _physics_process(_delta: float) -> void:
 		_late_watch = {}
 	if open_msg_t >= 0.0:
 		open_msg_t += TimeManager.real_delta()
+	if checkpoint_blink >= 0.0:
+		checkpoint_blink += TimeManager.real_delta()
+		if checkpoint_blink > float(Config.level.CHECKPOINT_BLINK):
+			checkpoint_blink = -1.0
 	_try_open_exit()
 	_boss_outro_tick()
 	_intro_tick()
@@ -209,6 +210,8 @@ func _physics_process(_delta: float) -> void:
 	if TimeManager.frozen:
 		return
 	_opportunity_chimes()
+	if rig.transitioning():               # 구간 전환 중: 플레이어 무적 · 세상 멈춤
+		return
 	_resolve_shots()
 	_resolve_combat()
 	_queue_intros()
@@ -264,7 +267,9 @@ func _update_segments(first := false) -> void:
 	if not (room is Level):
 		return
 	var half := Vector2(Config.view.w, Config.view.h) / 2.0 / camera.zoom
-	var c: Vector2 = player.global_position + _cam_off if first else camera.get_screen_center_position()
+	var c: Vector2 = rig.center if rig != null and not first else player.global_position
+	if first and rig != null:
+		c = rig.center
 	(room as Level).update_activation(player.global_position, Rect2(c - half, half * 2.0))
 
 
@@ -275,24 +280,66 @@ func _check_checkpoint() -> void:
 	var z := (room as Level).zone_of(player.global_position.x)
 	if z <= GameState.checkpoint:
 		return
-	PlaytestLogger.room_clear()           # 지난 구간 (처음 들어온 뒤 걸린 시간)
+	var L := room as Level
 	GameState.checkpoint = z
+	GameState.checkpoint_id = String(L.checkpoint_ids[z])
 	SaveManager.save_game("checkpoint")
-	PlaytestLogger.room_enter()
+	checkpoint_blink = 0.0                # 오른쪽 아래 작은 점이 잠깐 깜빡 (글자 없음)
+	PlaytestLogger.log_event("checkpoint", { "id": GameState.checkpoint_id })
 
 
-## 관문: 카메라를 x 가운데 cx 화면 한 장에 가둠 (앞뒤 셔터가 다 보이게, 부드럽게 옮겨감). cx = NAN 이면 풀기
-func lock_camera_x(cx: float) -> void:
-	var size := room.size_px()
-	camera.limit_smoothed = true
-	if is_nan(cx):
-		camera.limit_left = 0
-		camera.limit_right = int(size.x)
+## 이 x 의 구간 id (이어진 맵 — 구간 씬, 아니면 방의 segment_id · 없으면 "")
+func _segment_id_at(x: float) -> String:
+	if room is Level:
+		var L := room as Level
+		return String(L.segment_info[L.segment_index_at(x)].id) if not L.segment_info.is_empty() else ""
+	return String(room.get("segment_id")) if room.get("segment_id") != null else ""
+
+
+## 새 구간에 들어섬 (전환이 끝남 · 순간이동): 지난 구간 기록 → 지금 구간 = 새 구간 → 들어옴 기록 · 미뤄 둔 무전
+func _on_segment_entered(_from: int, to: int) -> void:
+	var L := room as Level
+	if L == null:
 		return
-	var half: float = Config.view.w / 2.0
-	var c := clampf(cx, half, size.x - half)
-	camera.limit_left = int(roundf(c - half))
-	camera.limit_right = int(roundf(c + half))
+	PlaytestLogger.room_clear()           # 지난 구간 (처음 들어온 뒤 걸린 시간)
+	GameState.segment_id = String(L.segment_info[to].id)
+	PlaytestLogger.room_enter()
+	var keys := _radio_wait.duplicate()
+	_radio_wait.clear()
+	for k in keys:
+		radio(k)
+
+
+## 구간 전환 (CameraRig): 시작해도 되나 — 플레이 중이고 연출 · 패링 시퀀스 · 문 이동이 없을 때
+func can_transition() -> bool:
+	return game_state == "play" and not seq_active and not intro_active() and cam_override.is_empty() and not transitioning
+
+
+## 구간 전환 시작: 플레이어 입력 잠금 (CameraRig 가 CARRY 만큼 옮김) · 적 · 투사체 · 효과 멈춤 (process 끔 — time_scale 은 그대로).
+## 날아오던 탄 (패링 대기) 은 지움 — 전환 동안 무적
+func begin_segment_transition() -> void:
+	_trans_paused.clear()
+	var nodes: Array = [player, effects, gore]
+	for c in room.get_children():
+		if c is TileMapLayer or c == gore:
+			continue
+		nodes.append(c)
+	for n in nodes:
+		if n != null and is_instance_valid(n):
+			_trans_paused.append([n, n.process_mode])
+			n.process_mode = Node.PROCESS_MODE_DISABLED
+	pending_shots.clear()
+	player.velocity = Vector2.ZERO
+	Audio.sfx("cam_transition")             # 있으면 (sounds/cam_transition.wav) — 없으면 조용히
+	PlaytestLogger.log_event("segment_transition", { "to": String((room as Level).segment_info[rig.seg].id) })
+
+
+func end_segment_transition() -> void:
+	for pair in _trans_paused:
+		if is_instance_valid(pair[0]):
+			(pair[0] as Node).process_mode = pair[1]
+	_trans_paused.clear()
+	player.velocity = Vector2.ZERO
 
 
 ## HUD "남은 적": 이어진 맵이면 지금 구간의 적만
@@ -523,7 +570,7 @@ func _queue_intros() -> void:
 		return
 	var R: float = Config.level.INTRO_RANGE
 	for e in enemies():
-		if e.has_meta("gate_spawned"):
+		if e.has_meta("gate_spawned") or not Enemy.in_play(e.center()):   # 카메라가 보는 구간의 적만 (다음 구간을 미리 비추지 않게)
 			continue
 		var k: String = e.intro_key()
 		if k == "" or GameState.seen_intros.has(k) or _intro_keys.has(k):
@@ -600,12 +647,9 @@ func _start_intro(e: Enemy) -> void:
 	_intro = { "e": e, "t": 0.0, "from_c": _cam_follow_center(), "to_c": e.center(), "locked": true }
 
 
-## 플레이어를 따라갈 때의 화면 중심 (카메라 한계 안으로)
+## 플레이어를 따라갈 때의 화면 중심 (CameraRig — 경계 안)
 func _cam_follow_center() -> Vector2:
-	var half := Vector2(Config.view.w, Config.view.h) / 2.0
-	var size := room.size_px()
-	var c := player.global_position + _cam_off
-	return Vector2(clampf(c.x, half.x, maxf(half.x, size.x - half.x)), clampf(c.y, half.y, maxf(half.y, size.y - half.y)))
+	return rig.follow_center()
 
 
 static func _ease(x: float) -> float:
@@ -625,6 +669,9 @@ func toast_state() -> Dictionary:
 
 ## 잡음 무전 (RadioDialog — 화면 왼쪽 아래, 대기열로 차례로). key = data/radio_lines.json
 func radio(key: String) -> void:
+	if rig != null and rig.transitioning():   # 구간 전환 중이면 전환이 끝난 뒤 (구간 진입 시점)
+		_radio_wait.append(key)
+		return
 	radio_dialog.say_key(key)
 
 
@@ -651,28 +698,16 @@ func start_kill_shake(angle: float, stop_frames: int, mul := 1.0) -> void:
 	_update_shake(0.0)
 
 
+## 줌 배율 (패링 시퀀스 복귀 줌 · 연출 카메라 줌). 카메라 영역 줌은 CameraRig 가 곱함, Camera2D 에 넣는 것도 CameraRig
 func _update_zoom() -> void:
 	var P: Dictionary = Config.parry_seq
-	# 연출 카메라: 플레이어에서 떼어 지정한 곳 · 배율로 (피날레)
 	if not cam_override.is_empty():
-		if not camera.top_level:
-			_cam_local = camera.position
-			camera.top_level = true
-			camera.position_smoothing_enabled = false
 		zoom = float(cam_override.get("zoom", 1.0))
-		camera.global_position = cam_override.center
-		camera.zoom = Vector2(zoom, zoom)
 		return
-	if camera.top_level:
-		camera.top_level = false
-		camera.position = _cam_local
-		camera.position_smoothing_enabled = true
-		camera.reset_smoothing()
 	if seq.active:
 		zoom = 1.0 + P.ZOOM * pow(seq.return_u(), 2.0)
 	else:
 		zoom = move_toward(zoom, 1.0, P.ZOOM / P.ZOOM_OUT_FRAMES)
-	camera.zoom = Vector2(zoom, zoom)
 
 
 # ================================================================ 레이캐스트
@@ -1499,7 +1534,7 @@ func view_rect() -> Rect2:
 
 func _kill_player(angle: float, cause := {}) -> void:
 	# 구르기 무적: 히트스캔 · 근접 · 충격파 · 보라색 공격 모두 통과
-	if player.dead:
+	if player.dead or (rig != null and rig.transitioning()):   # 구간 전환 중 무적
 		return
 	if player.is_invincible():
 		_roll_dodged(String(cause.get("attack", "공격")))
@@ -1544,6 +1579,7 @@ func _roll_dodged(what: String) -> void:
 func _on_player_died() -> void:
 	game_state = "dead"
 	GameState.add_stat("deaths")
+	GameState.add_seg_death()
 	TimeManager.hitstop(roundi(Config.fx.death_hitstop * Config.fps))
 	Audio.death()
 

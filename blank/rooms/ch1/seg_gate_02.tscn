@@ -1,10 +1,11 @@
-[gd_scene load_steps=7 format=4]
+[gd_scene load_steps=8 format=4]
 
 [ext_resource type="Script" path="res://scripts/Room.gd" id="1_ce27p"]
 [ext_resource type="TileSet" path="res://tiles/terrain.tres" id="2_roeyd"]
 [ext_resource type="PackedScene" path="res://scenes/Door.tscn" id="3_apg7g"]
 [ext_resource type="Script" path="res://scripts/level/Gate.gd" id="4_3j3ts"]
 [ext_resource type="Script" path="res://scripts/level/GateSpawn.gd" id="5_ke73i"]
+[ext_resource type="Script" path="res://scripts/level/CameraZone.gd" id="6_apg7g"]
 [ext_resource type="Script" path="res://scripts/level/CameraBounds.gd" id="6_roeyd"]
 
 [node name="seg_gate_02" type="Node2D"]
@@ -120,6 +121,11 @@ kind = "burst"
 position = Vector2(500, 236)
 script = ExtResource("5_ke73i")
 kind = "grenadier"
+
+[node name="CameraZone" type="Node2D" parent="Gate"]
+script = ExtResource("6_apg7g")
+kind = "gate"
+rect = Rect2(80, 0, 488, 272)
 
 [node name="Props" type="Node2D" parent="."]
 

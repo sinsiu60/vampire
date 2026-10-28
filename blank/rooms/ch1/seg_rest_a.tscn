@@ -1,10 +1,11 @@
-[gd_scene load_steps=6 format=4]
+[gd_scene load_steps=7 format=4]
 
 [ext_resource type="Script" path="res://scripts/Room.gd" id="1_jrifq"]
 [ext_resource type="TileSet" path="res://tiles/terrain.tres" id="2_h13np"]
 [ext_resource type="PackedScene" path="res://scenes/Door.tscn" id="3_xtq7g"]
 [ext_resource type="Script" path="res://scripts/RadioTrigger.gd" id="4_cah4j"]
 [ext_resource type="Script" path="res://scripts/level/CameraBounds.gd" id="5_h13np"]
+[ext_resource type="Script" path="res://scripts/level/TransitionZone.gd" id="6_xtq7g"]
 
 [node name="seg_rest_a" type="Node2D"]
 script = ExtResource("1_jrifq")
@@ -43,3 +44,9 @@ script = ExtResource("5_h13np")
 rect = Rect2(0, 0, 800, 272)
 
 [node name="TransitionZones" type="Node2D" parent="."]
+
+[node name="ToNext" type="Node2D" parent="TransitionZones"]
+position = Vector2(792, 0)
+script = ExtResource("6_xtq7g")
+next_segment_id = "climb"
+length = 272.0

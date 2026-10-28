@@ -52,7 +52,7 @@ func _physics_process(delta: float) -> void:
 	if player == null or game == null:
 		return
 	var d := player.center() - center()
-	var sees: bool = not player.dead and absf(d.x) < C.aggro_range and absf(d.y) < C.aggro_height
+	var sees: bool = not player.dead and Enemy.in_play(center()) and absf(d.x) < C.aggro_range and absf(d.y) < C.aggro_height
 	t += delta
 	match state:
 		"idle":

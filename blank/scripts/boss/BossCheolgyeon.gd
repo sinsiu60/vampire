@@ -1503,7 +1503,7 @@ func _begin_finale(restart := false) -> void:
 			pl.velocity = Vector2.ZERO
 			var m := _main()
 			if m != null:
-				m.camera.reset_smoothing()
+				m.rig.reset()
 	_stop_pattern(false)
 	_chain = 0
 	_move = {}

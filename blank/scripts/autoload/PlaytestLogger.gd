@@ -3,7 +3,8 @@ extends Node
 ## 게임을 켜면 세션 ID (날짜시간, 예 2026-10-19_14-03-22) 를 만들고 user://playtest/<세션ID>.csv 에 이벤트를 한 줄씩 씀.
 ## 이벤트마다 바로 파일에 flush — 게임이 강제 종료돼도 그 순간까지 남음.
 ##
-## 열: time (게임을 켠 뒤 실제 초), play_time (장 통계 플레이 시간 — 일시정지 · 타이틀 제외), room ("1-3", 타이틀이면 "-"),
+## 열: time (게임을 켠 뒤 실제 초), play_time (장 통계 플레이 시간 — 일시정지 · 타이틀 제외),
+##     segment_id (지금 구간 — 이어진 맵의 구간 씬 id "market_3" · 보스방 "boss", 타이틀이면 "-", 연습 방 "practice"),
 ##     event, detail ("키=값; 키=값")
 ## 이벤트: session_start · new_game · continue · room_enter · room_clear · death · parry_success · parry_fail · parry_fail_update ·
 ##         roll · counter_success · boss_phase · pause · resume · to_title · option_change · chapter_clear · quit
@@ -11,7 +12,7 @@ extends Node
 ## 요약 리포트: 1장 클리어 · 게임 종료 때 user://playtest/<세션ID>_summary.txt (이번 세션 이벤트로 계산, 다시 쓰면 최신으로 덮어씀)
 
 const DIR := "user://playtest"
-const HEADER := "time,play_time,room,event,detail"
+const HEADER := "time,play_time,segment_id,event,detail"
 
 var active := false
 var session_id := ""
@@ -151,7 +152,7 @@ func _csv(s: String) -> String:
 	return s
 
 
-## 지금 방 ("1-3") — 게임 화면이 아니면 "-", 연습 방이면 "practice"
+## 지금 구간 id ("market_3" · "boss") — 게임 화면이 아니면 "-", 연습 방이면 "practice"
 func room_label() -> String:
 	var boot := get_tree().get_first_node_in_group("boot") if is_inside_tree() else null
 	if boot == null or String(boot.get("screen_name")) != "game":
@@ -199,6 +200,10 @@ func death(cause: Dictionary, boss_phase := -1) -> void:
 	if cause.has("err_ms"):
 		d.err_ms = cause.err_ms
 	d.err = String(cause.get("err", ""))
+	var g := get_tree().get_first_node_in_group("game") if is_inside_tree() else null
+	if g != null and g.get("player") != null:      # 사망 위치 (월드 좌표 — 구간은 segment_id 열)
+		d.x = int(g.player.global_position.x)
+		d.y = int(g.player.global_position.y)
 	log_event("death", d)
 	# 패링할 수 있는 공격에 죽음 = 패링 실패
 	if String(cause.get("type", "")) != Config.ATK_EVADE:

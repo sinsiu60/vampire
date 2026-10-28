@@ -4,6 +4,8 @@ class_name DebugDraw
 ##  F1: 반사 보정 — 스냅 범위 부채꼴(실선 = 일반 ±35°, 점선 = 쏜 적 우선 ±50°), 근접 패링 확대 판정 원,
 ##      쏜 적(가장 먼저 쏠 총잡이) 점선 상자, 지금 패링하면 선택될 대상 / 시퀀스 중 반사 대상 모서리 표시
 ##  F5: 조준선 옆 패링 판정 창 바 — 초록 = 판정 창, 빨강 = 발사 순간, 흰색 = 지금
+##  F10 (보스방 밖): 카메라 — 노랑 = 지금 경계 (CameraBounds · 영역 섞기), 흰 사각형 = 데드존, 분홍 + = 룩어헤드 목표점,
+##      하늘색 = 카메라 영역 (꺼진 건 흐리게), 주황 = 구간 전환 선 (지난 선 · 벽은 진하게)
 
 var main: Node
 
@@ -23,6 +25,38 @@ func _draw() -> void:
 		_draw_aim()
 	if Debug.timing:
 		_draw_timing()
+	if Debug.cam_debug and main.get("rig") != null:
+		_draw_camera()
+
+
+func _draw_camera() -> void:
+	var rig: CameraRig = main.rig
+	var C: Dictionary = Config.camera
+	_rect_lines(rig.bounds.grow(-1.0), Color(1.0, 0.85, 0.3, 0.9))
+	var dz := Vector2(float(C.CAM_DEADZONE_W), float(C.CAM_DEADZONE_H))
+	_rect_lines(Rect2(rig.anchor - dz / 2.0, dz), Color(1, 1, 1, 0.8))
+	var t := rig.target.round()
+	draw_line(t + Vector2(-4, 0), t + Vector2(4, 0), Color("#FF5AC8"), 1.0)
+	draw_line(t + Vector2(0, -4), t + Vector2(0, 4), Color("#FF5AC8"), 1.0)
+	var c := rig.center.round()
+	draw_rect(Rect2(c - Vector2(1, 1), Vector2(2, 2)), Color(1, 1, 1, 0.9))
+	for z in get_tree().get_nodes_in_group("camera_zones"):
+		var cz := z as CameraZone
+		_rect_lines(cz.world_rect().grow(-2.0), Color(0.4, 0.85, 1.0, 0.85 if cz.enabled else 0.3))
+	for z in get_tree().get_nodes_in_group("transition_zones"):
+		var tz := z as TransitionZone
+		var g := tz.global_position
+		var col := Color(1.0, 0.55, 0.2, 0.85 if tz.wall_on() else 0.4)
+		if tz.direction == "RIGHT" or tz.direction == "LEFT":
+			draw_rect(Rect2(g.x - 4.0, g.y, 8.0, tz.length), col)
+		else:
+			draw_rect(Rect2(g.x, g.y - 4.0, tz.length, 8.0), col)
+
+
+func _rect_lines(r: Rect2, col: Color) -> void:
+	var p := [r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)]
+	for i in 4:
+		draw_line(p[i], p[(i + 1) % 4], col, 1.0)
 
 
 func _draw_aim() -> void:

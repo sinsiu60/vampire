@@ -59,6 +59,9 @@ func state() -> Dictionary:
 		"t": current.t, "alpha": _alpha, "phase": current.phase }
 
 
+var _behind := 1.0               # 플레이어가 판 뒤에 있을 때 흐리게 (1 = 그대로)
+
+
 func _next() -> void:
 	if queue.is_empty():
 		current = {}
@@ -74,6 +77,14 @@ func _next() -> void:
 
 func _process(delta: float) -> void:
 	var S := UIKit.style()
+	# 플레이어가 판 뒤에 있으면 흐리게 (화면 왼쪽 아래 — 오른쪽으로 구간을 넘으면 플레이어가 그쪽에 섬)
+	var goal := 1.0
+	var pl: Node2D = get_tree().get_first_node_in_group("player") as Node2D
+	if pl != null and pl.is_inside_tree():
+		var sp: Vector2 = pl.get_viewport().get_canvas_transform() * pl.global_position
+		if (S.RADIO_RECT as Rect2).grow(4.0).intersects(Rect2(sp - Vector2(8, 30), Vector2(16, 30))):
+			goal = float(S.RADIO_BEHIND_ALPHA)
+	_behind = move_toward(_behind, goal, delta / float(S.RADIO_BEHIND_FADE))
 	if current.is_empty():
 		_alpha = maxf(0.0, _alpha - delta / 0.2)
 		queue_redraw()
@@ -123,7 +134,7 @@ func _draw() -> void:
 		return
 	var S := UIKit.style()
 	var r: Rect2 = S.RADIO_RECT
-	var a := _alpha
+	var a := _alpha * _behind
 	draw_rect(r, Color(S.PANEL, S.PANEL.a * a))
 	draw_rect(r, Color(S.ACCENT, 0.35 * a), false, 1.0)
 	# 왼쪽 칸: 이름표 + 그 아래 파형 (말하는 동안 흔들림)

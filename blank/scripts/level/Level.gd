@@ -18,6 +18,7 @@ class_name Level
 @export var landmark_x := -1.0
 
 var checkpoints: Array = []      ## 체크포인트 발 위치 (Vector2, x 순) — [0] = 시작 위치
+var checkpoint_ids: Array = []   ## 체크포인트 id ("<segment_id>.<n>" — 그 구간의 n 번째), checkpoints 와 같은 순서
 var segment_x: Array = []        ## 구간 씬마다 시작 x (px)
 var segment_y: Array = []        ## 구간 씬마다 내린 높이 (px) — 옥상 같은 높은 구간이 0
 var spans: Array = []            # dress_spans()
@@ -94,6 +95,10 @@ func _build() -> void:
 		if cb != null and (cb.get("rect") as Rect2).size != Vector2.ZERO:
 			bounds = cb.get("rect")
 		bounds.position += px
+		# 구간끼리 겹치지 않게 (이음매의 벽 기둥 칸까지 보이지 않게): 이 구간의 x 범위로 자름
+		var bx0 := float(off * tile)
+		var bx1 := float((shift + end + 1) * tile)
+		bounds = Rect2(maxf(bounds.position.x, bx0), bounds.position.y, minf(bounds.end.x, bx1) - maxf(bounds.position.x, bx0), bounds.size.y)
 		var sid := String(seg.get("segment_id"))
 		segment_info.append({ "id": sid if sid != "" else "seg_%d" % (i + 1), "name": String(seg.get("segment_name")),
 			"gate": bool(seg.get("is_gate")), "boss": bool(seg.get("is_boss")),
@@ -113,23 +118,40 @@ func _build() -> void:
 					if i == 0:
 						_adopt(child, self, px, "PlayerSpawn")
 					else:
-						cps.append((child as Node2D).position + px)
+						cps.append([(child as Node2D).position + px, i])
 				"Enemies":
 					for e in child.get_children():
 						_adopt(e, en, px, "S%d_%s" % [i + 1, e.name])
 				_:
 					if child is Checkpoint:
-						cps.append((child as Node2D).position + px)
+						cps.append([(child as Node2D).position + px, i])
 					else:
 						_adopt(child, self, px, "S%d_%s" % [i + 1, nm])
 		off = shift + end + 1
 		seg.free()
 	lamp_xs = lamps
 	terrain.update_internals()
-	checkpoints = [spawn_position()]
-	cps.sort_custom(func(a, b): return a.x < b.x)
-	checkpoints.append_array(cps)
+	# 체크포인트가 없는 구간 (첫 구간 말고) 은 시작 지점에 하나 (구간마다 하나씩은 있게)
+	for i in range(1, n):
+		if not cps.any(func(c): return int(c[1]) == i):
+			var sx: float = float(segment_info[i].x0) + 44.0
+			var fy: float = float(segment_info[i].oy) + (float(spans[i].floor))
+			cps.append([Vector2(sx, fy), i])
+	cps.sort_custom(func(a, b): return a[0].x < b[0].x)
+	checkpoints = [$PlayerSpawn.global_position]
+	checkpoint_ids = ["%s.1" % segment_info[0].id]
+	var per := {}
+	for c in cps:
+		var si: int = c[1]
+		per[si] = int(per.get(si, 1 if si == 0 else 0)) + 1
+		checkpoints.append(c[0])
+		checkpoint_ids.append("%s.%d" % [segment_info[si].id, per[si]])
 	GameState.zone_count = checkpoints.size()
+	# 이어하기 · 다시 시작: 저장된 체크포인트 id 가 있으면 그 번호로
+	if GameState.checkpoint_id != "":
+		var k := checkpoint_ids.find(GameState.checkpoint_id)
+		if k >= 0:
+			GameState.checkpoint = k
 	# 문 · 관문 같은 노드가 바닥에 그려지도록 Enemies 를 맨 뒤로 (적이 위에)
 	move_child(en, get_child_count() - 1)
 	invalidate_cells()                    # 타일을 이어 붙였으니 cell_kind 캐시 새로
@@ -141,6 +163,14 @@ func segment_index_at(x: float) -> int:
 		if x < float(segment_info[i].x1):
 			return i
 	return segment_info.size() - 1
+
+
+## segment_id 로 구간 씬 번호 (없으면 -1)
+func segment_index_by_id(id: String) -> int:
+	for i in segment_info.size():
+		if String(segment_info[i].id) == id:
+			return i
+	return -1
 
 
 ## 지금 구간 씬 정보 (없으면 {})

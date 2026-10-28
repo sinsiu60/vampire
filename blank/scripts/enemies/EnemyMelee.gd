@@ -72,7 +72,7 @@ func _melee_tick(player: Player, delta: float) -> void:
 	match state:
 		"idle":
 			walk(0, 0.0, C.accel, delta)
-			if not player.dead and absf(d.x) < C.aggro_range and absf(d.y) < C.aggro_height:
+			if not player.dead and Enemy.in_play(center()) and absf(d.x) < C.aggro_range and absf(d.y) < C.aggro_height:
 				set_state("chase")
 		"chase":
 			if player.dead:
@@ -111,7 +111,7 @@ func _charger_tick(player: Player, delta: float) -> void:
 	match state:
 		"idle":
 			walk(0, 0.0, C.accel, delta)
-			if not player.dead and absf(d.x) < C.aggro_range and absf(d.y) < C.aggro_height:
+			if not player.dead and Enemy.in_play(center()) and absf(d.x) < C.aggro_range and absf(d.y) < C.aggro_height:
 				set_state("chase")
 		"chase":
 			if player.dead:
